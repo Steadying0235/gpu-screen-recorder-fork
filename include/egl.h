@@ -33,12 +33,14 @@ typedef void* EGLImageKHR;
 typedef void *GLeglImageOES;
 typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 
+#define EGL_SUCCESS                             0x3000
 #define EGL_BUFFER_SIZE                         0x3020
 #define EGL_RENDERABLE_TYPE                     0x3040
 #define EGL_OPENGL_ES2_BIT                      0x0004
 #define EGL_NONE                                0x3038
 #define EGL_CONTEXT_CLIENT_VERSION              0x3098
 #define EGL_BACK_BUFFER                         0x3084
+#define EGL_GL_TEXTURE_2D                       0x30B1
 
 #define GL_TEXTURE_2D                           0x0DE1
 #define GL_RGB                                  0x1907
@@ -97,6 +99,7 @@ typedef struct {
     EGLContext egl_context;
     Window window;
 
+    int32_t (*eglGetError)(void);
     EGLDisplay (*eglGetDisplay)(EGLNativeDisplayType display_id);
     unsigned int (*eglInitialize)(EGLDisplay dpy, int32_t *major, int32_t *minor);
     unsigned int (*eglTerminate)(EGLDisplay dpy);

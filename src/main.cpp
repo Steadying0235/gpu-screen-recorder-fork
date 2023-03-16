@@ -335,7 +335,7 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
 
 static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
                             VideoQuality video_quality,
-                            int fps, const AVCodec *codec, bool is_livestream) {
+                            int fps, const AVCodec *codec, bool is_livestream, gpu_vendor vendor) {
 
     AVCodecContext *codec_context = avcodec_alloc_context3(codec);
 
@@ -415,6 +415,13 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
 
     av_opt_set_int(codec_context->priv_data, "b_ref_mode", 0, 0);
 
+    if(vendor != GPU_VENDOR_NVIDIA) {
+        // TODO: More options, better options
+        //codec_context->bit_rate = codec_context->width * codec_context->height;
+        av_opt_set(codec_context->priv_data, "rc_mode", "CQP", 0);
+        codec_context->global_quality = 4;
+    }
+
     //codec_context->rc_max_rate = codec_context->bit_rate;
     //codec_context->rc_min_rate = codec_context->bit_rate;
     //codec_context->rc_buffer_size = codec_context->bit_rate / 10;
@@ -424,10 +431,14 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     return codec_context;
 }
 
-static bool check_if_codec_valid_for_hardware(const AVCodec *codec) {
+static bool check_if_codec_valid_for_hardware(const AVCodec *codec, gpu_vendor vendor) {
+    // TODO: For now we assume that amd and intel always support h264 and hevc, but we default to h264
+    if(vendor != GPU_VENDOR_NVIDIA)
+        return true;
+
     bool success = false;
     // Do not use AV_PIX_FMT_CUDA because we dont want to do full check with hardware context
-    AVCodecContext *codec_context = create_video_codec_context(AV_PIX_FMT_YUV420P, VideoQuality::VERY_HIGH, 60, codec, false);
+    AVCodecContext *codec_context = create_video_codec_context(AV_PIX_FMT_YUV420P, VideoQuality::VERY_HIGH, 60, codec, false, vendor);
     codec_context->width = 1920;
     codec_context->height = 1080;
     if(codec_context) {
@@ -446,7 +457,7 @@ static const AVCodec* find_h264_encoder(gpu_vendor vendor) {
     static bool checked_success = true;
     if(!checked) {
         checked = true;
-        if(!check_if_codec_valid_for_hardware(codec))
+        if(!check_if_codec_valid_for_hardware(codec, vendor))
             checked_success = false;
     }
     return checked_success ? codec : nullptr;
@@ -466,7 +477,7 @@ static const AVCodec* find_h265_encoder(gpu_vendor vendor) {
     static bool checked_success = true;
     if(!checked) {
         checked = true;
-        if(!check_if_codec_valid_for_hardware(codec))
+        if(!check_if_codec_valid_for_hardware(codec, vendor))
             checked_success = false;
     }
     return checked_success ? codec : nullptr;
@@ -508,36 +519,78 @@ static AVFrame* open_audio(AVCodecContext *audio_codec_context) {
     return frame;
 }
 
-static void open_video(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu) {
-    bool supports_p4 = false;
-    bool supports_p6 = false;
-
-    const AVOption *opt = nullptr;
-    while((opt = av_opt_next(codec_context->priv_data, opt))) {
-        if(opt->type == AV_OPT_TYPE_CONST) {
-            if(strcmp(opt->name, "p4") == 0)
-                supports_p4 = true;
-            else if(strcmp(opt->name, "p6") == 0)
-                supports_p6 = true;
-        }
-    }
-
+static void open_video(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu, gpu_vendor vendor) {
     AVDictionary *options = nullptr;
-    if(very_old_gpu) {
-        switch(video_quality) {
-            case VideoQuality::MEDIUM:
-                av_dict_set_int(&options, "qp", 37, 0);
-                break;
-            case VideoQuality::HIGH:
-                av_dict_set_int(&options, "qp", 32, 0);
-                break;
-            case VideoQuality::VERY_HIGH:
-                av_dict_set_int(&options, "qp", 27, 0);
-                break;
-            case VideoQuality::ULTRA:
-                av_dict_set_int(&options, "qp", 21, 0);
-                break;
+    if(vendor == GPU_VENDOR_NVIDIA) {
+        bool supports_p4 = false;
+        bool supports_p6 = false;
+
+        const AVOption *opt = nullptr;
+        while((opt = av_opt_next(codec_context->priv_data, opt))) {
+            if(opt->type == AV_OPT_TYPE_CONST) {
+                if(strcmp(opt->name, "p4") == 0)
+                    supports_p4 = true;
+                else if(strcmp(opt->name, "p6") == 0)
+                    supports_p6 = true;
+            }
         }
+
+        if(very_old_gpu) {
+            switch(video_quality) {
+                case VideoQuality::MEDIUM:
+                    av_dict_set_int(&options, "qp", 37, 0);
+                    break;
+                case VideoQuality::HIGH:
+                    av_dict_set_int(&options, "qp", 32, 0);
+                    break;
+                case VideoQuality::VERY_HIGH:
+                    av_dict_set_int(&options, "qp", 27, 0);
+                    break;
+                case VideoQuality::ULTRA:
+                    av_dict_set_int(&options, "qp", 21, 0);
+                    break;
+            }
+        } else {
+            switch(video_quality) {
+                case VideoQuality::MEDIUM:
+                    av_dict_set_int(&options, "qp", 40, 0);
+                    break;
+                case VideoQuality::HIGH:
+                    av_dict_set_int(&options, "qp", 35, 0);
+                    break;
+                case VideoQuality::VERY_HIGH:
+                    av_dict_set_int(&options, "qp", 30, 0);
+                    break;
+                case VideoQuality::ULTRA:
+                    av_dict_set_int(&options, "qp", 24, 0);
+                    break;
+            }
+        }
+
+        if(!supports_p4 && !supports_p6)
+            fprintf(stderr, "Info: your ffmpeg version is outdated. It's recommended that you use the flatpak version of gpu-screen-recorder version instead, which you can find at https://flathub.org/apps/details/com.dec05eba.gpu_screen_recorder\n");
+
+        //if(is_livestream) {
+        //    av_dict_set_int(&options, "zerolatency", 1, 0);
+        //    //av_dict_set(&options, "preset", "llhq", 0);
+        //}
+
+        // Fuck nvidia and ffmpeg, I want to use a good preset for the gpu but all gpus prefer different
+        // presets. Nvidia and ffmpeg used to support "hq" preset that chose the best preset for the gpu
+        // with pretty good performance but you now have to choose p1-p7, which are gpu agnostic and on
+        // older gpus p5-p7 slow the gpu down to a crawl...
+        // "hq" is now just an alias for p7 in ffmpeg :(
+        // TODO: Temporary disable because of stuttering?
+        if(very_old_gpu)
+            av_dict_set(&options, "preset", supports_p4 ? "p4" : "medium", 0);
+        else
+            av_dict_set(&options, "preset", supports_p6 ? "p6" : "slow", 0);
+
+        av_dict_set(&options, "tune", "hq", 0);
+        av_dict_set(&options, "rc", "constqp", 0);
+
+        if(codec_context->codec_id == AV_CODEC_ID_H264)
+            av_dict_set(&options, "profile", "high", 0);
     } else {
         switch(video_quality) {
             case VideoQuality::MEDIUM:
@@ -553,32 +606,19 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
                 av_dict_set_int(&options, "qp", 24, 0);
                 break;
         }
+
+        // TODO: More quality options
+        av_dict_set(&options, "rc_mode", "CQP", 0);
+        //av_dict_set_int(&options, "low_power", 1, 0);
+
+        if(codec_context->codec_id == AV_CODEC_ID_H264) {
+            av_dict_set(&options, "profile", "high", 0);
+            av_dict_set(&options, "coder", "cavlc", 0);// TODO: cavlc is faster than cabac but worse compression. Which to use?
+            av_dict_set_int(&options, "quality", 50, 0);
+        } else {
+            av_dict_set(&options, "profile", "main", 0);
+        }
     }
-
-    if(!supports_p4 && !supports_p6)
-        fprintf(stderr, "Info: your ffmpeg version is outdated. It's recommended that you use the flatpak version of gpu-screen-recorder version instead, which you can find at https://flathub.org/apps/details/com.dec05eba.gpu_screen_recorder\n");
-
-    //if(is_livestream) {
-    //    av_dict_set_int(&options, "zerolatency", 1, 0);
-    //    //av_dict_set(&options, "preset", "llhq", 0);
-    //}
-
-    // Fuck nvidia and ffmpeg, I want to use a good preset for the gpu but all gpus prefer different
-    // presets. Nvidia and ffmpeg used to support "hq" preset that chose the best preset for the gpu
-    // with pretty good performance but you now have to choose p1-p7, which are gpu agnostic and on
-    // older gpus p5-p7 slow the gpu down to a crawl...
-    // "hq" is now just an alias for p7 in ffmpeg :(
-    // TODO: Temporary disable because of stuttering?
-    if(very_old_gpu)
-        av_dict_set(&options, "preset", supports_p4 ? "p4" : "medium", 0);
-    else
-        av_dict_set(&options, "preset", supports_p6 ? "p6" : "slow", 0);
-
-    av_dict_set(&options, "tune", "hq", 0);
-    av_dict_set(&options, "rc", "constqp", 0);
-
-    if(codec_context->codec_id == AV_CODEC_ID_H264)
-        av_dict_set(&options, "profile", "high", 0);
 
     av_dict_set(&options, "strict", "experimental", 0);
 
@@ -602,7 +642,7 @@ static void usage() {
     fprintf(stderr, "  -r    Replay buffer size in seconds. If this is set, then only the last seconds as set by this option will be stored"
         " and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature."
         " This option has be between 5 and 1200. Note that the replay buffer size will not always be precise, because of keyframes. Optional, disabled by default.\n");
-    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264' or 'h265'. Defaults to 'auto' which defaults to 'h265' unless recording at a higher resolution than 3840x2160. Forcefully set to 'h264' if -c is 'flv'.\n");
+    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264' or 'h265'. Defaults to 'auto' which defaults to 'h265' on nvidia unless recording at a higher resolution than 3840x2160. On AMD/Intel this defaults to 'auto' which defaults to 'h264'. Forcefully set to 'h264' if -c is 'flv'.\n");
     fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'. 'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r). In replay mode this has to be an existing directory instead of a file.\n");
     fprintf(stderr, "NOTES:\n");
@@ -1387,23 +1427,41 @@ int main(int argc, char **argv) {
     const double target_fps = 1.0 / (double)fps;
 
     if(strcmp(video_codec_to_use, "auto") == 0) {
-        const AVCodec *h265_codec = find_h265_encoder(gpu_inf.vendor);
+        if(gpu_inf.vendor == GPU_VENDOR_NVIDIA) {
+            const AVCodec *h265_codec = find_h265_encoder(gpu_inf.vendor);
 
-        // h265 generally allows recording at a higher resolution than h264 on nvidia cards. On a gtx 1080 4k is the max resolution for h264 but for h265 it's 8k.
-        // Another important info is that when recording at a higher fps than.. 60? h265 has very bad performance. For example when recording at 144 fps the fps drops to 1
-        // while with h264 the fps doesn't drop.
-        if(!h265_codec) {
-            fprintf(stderr, "Info: using h264 encoder because a codec was not specified and your gpu does not support h265\n");
-            video_codec_to_use = "h264";
-            video_codec = VideoCodec::H264;
-        } else if(fps > 60) {
-            fprintf(stderr, "Info: using h264 encoder because a codec was not specified and fps is more than 60\n");
-            video_codec_to_use = "h264";
-            video_codec = VideoCodec::H264;
+            // h265 generally allows recording at a higher resolution than h264 on nvidia cards. On a gtx 1080 4k is the max resolution for h264 but for h265 it's 8k.
+            // Another important info is that when recording at a higher fps than.. 60? h265 has very bad performance. For example when recording at 144 fps the fps drops to 1
+            // while with h264 the fps doesn't drop.
+            if(!h265_codec) {
+                fprintf(stderr, "Info: using h264 encoder because a codec was not specified and your gpu does not support h265\n");
+                video_codec_to_use = "h264";
+                video_codec = VideoCodec::H264;
+            } else if(fps > 60) {
+                fprintf(stderr, "Info: using h264 encoder because a codec was not specified and fps is more than 60\n");
+                video_codec_to_use = "h264";
+                video_codec = VideoCodec::H264;
+            } else {
+                fprintf(stderr, "Info: using h265 encoder because a codec was not specified\n");
+                video_codec_to_use = "h265";
+                video_codec = VideoCodec::H265;
+            }
         } else {
-            fprintf(stderr, "Info: using h265 encoder because a codec was not specified\n");
-            video_codec_to_use = "h265";
-            video_codec = VideoCodec::H265;
+            const AVCodec *h264_codec = find_h264_encoder(gpu_inf.vendor);
+
+            if(!h264_codec) {
+                fprintf(stderr, "Info: using h265 encoder because a codec was not specified and your gpu does not support h264\n");
+                video_codec_to_use = "h265";
+                video_codec = VideoCodec::H265;
+            //} else if(fps > 60) {
+            //    fprintf(stderr, "Info: using h264 encoder because a codec was not specified and fps is more than 60\n");
+            //    video_codec_to_use = "h264";
+            //    video_codec = VideoCodec::H264;
+            } else {
+                fprintf(stderr, "Info: using h264 encoder because a codec was not specified\n");
+                video_codec_to_use = "h264";
+                video_codec = VideoCodec::H264;
+            }
         }
     }
 
@@ -1442,7 +1500,7 @@ int main(int argc, char **argv) {
     AVStream *video_stream = nullptr;
     std::vector<AudioTrack> audio_tracks;
 
-    AVCodecContext *video_codec_context = create_video_codec_context(gpu_inf.vendor == GPU_VENDOR_NVIDIA ? AV_PIX_FMT_CUDA : AV_PIX_FMT_VAAPI, quality, fps, video_codec_f, is_livestream);
+    AVCodecContext *video_codec_context = create_video_codec_context(gpu_inf.vendor == GPU_VENDOR_NVIDIA ? AV_PIX_FMT_CUDA : AV_PIX_FMT_VAAPI, quality, fps, video_codec_f, is_livestream, gpu_inf.vendor);
     if(replay_buffer_size_secs == -1)
         video_stream = create_stream(av_format_context, video_codec_context);
 
@@ -1451,7 +1509,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    open_video(video_codec_context, quality, very_old_gpu);
+    open_video(video_codec_context, quality, very_old_gpu, gpu_inf.vendor);
     if(video_stream)
         avcodec_parameters_from_context(video_stream->codecpar, video_codec_context);
 

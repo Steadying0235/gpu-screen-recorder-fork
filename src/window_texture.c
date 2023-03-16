@@ -85,8 +85,10 @@ int window_texture_on_resize(WindowTexture *self) {
 
     self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+    while(self->egl->eglGetError() != EGL_SUCCESS) {}
 
     image = self->egl->eglCreateImage(self->egl->egl_display, NULL, EGL_NATIVE_PIXMAP_KHR, (EGLClientBuffer)pixmap, pixmap_attrs);
     if(!image) {
@@ -95,7 +97,7 @@ int window_texture_on_resize(WindowTexture *self) {
     }
 
     self->egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
-    if(self->egl->glGetError() != 0) {
+    if(self->egl->glGetError() != 0 || self->egl->eglGetError() != EGL_SUCCESS) {
         result = 5;
         goto cleanup;
     }

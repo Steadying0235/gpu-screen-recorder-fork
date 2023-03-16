@@ -37,14 +37,12 @@ bool gsr_cuda_load(gsr_cuda *self) {
         { NULL, NULL }
     };
 
+    CUresult res;
+
     if(!dlsym_load_list(lib, required_dlsym)) {
         fprintf(stderr, "gsr error: gsr_cuda_load failed: missing required symbols in libcuda.so/libcuda.so.1\n");
-        dlclose(lib);
-        memset(self, 0, sizeof(gsr_cuda));
-        return false;
+        goto fail;
     }
-
-    CUresult res;
 
     res = self->cuInit(0);
     if(res != CUDA_SUCCESS) {

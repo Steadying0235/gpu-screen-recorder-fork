@@ -26,7 +26,10 @@ If you are running another distro then you can run `install.sh` as root: `sudo .
 You can also install gpu screen recorder ([the gtk gui version](https://git.dec05eba.com/gpu-screen-recorder-gtk/)) from [flathub](https://flathub.org/apps/details/com.dec05eba.gpu_screen_recorder).
 
 # Dependencies
-`libglvnd (which provides libgl and libegl), (mesa if you are using an amd or intel gpu), ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libpulse`. You need to additionally have `libcuda.so` installed when you run `gpu-screen-recorder` and `libnvidia-fbc.so.1` when using nvfbc.\
+## AMD/Intel
+`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libpulse, libva.so`.
+## NVIDIA
+`libglvnd (which provides libgl and libegl), ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libpulse, libcuda.so`. Additionally, you need to have `libnvidia-fbc.so.1` installed when using nvfbc.
 
 # How to use
 Run `scripts/interactive.sh` or run gpu-screen-recorder directly, for example: `gpu-screen-recorder -w $(xdotool selectwindow) -c mp4 -f 60 -a "$(pactl get-default-sink).monitor" -o test_video.mp4` then stop the screen recorder with Ctrl+C, which will also save the recording. You can change -w to -w screen if you want to record all monitors or if you want to record a specific monitor then you can use -w monitor-name, for example -w HDMI-0 (use xrandr command to find the name of your monitor. The name can also be found in your desktop environments display settings).\
@@ -56,8 +59,7 @@ The plugin does everything on the GPU and gives the texture to OBS, but OBS does
 FFMPEG only uses the GPU with CUDA when doing transcoding from an input video to an output video, and not when recording the screen when using x11grab. So FFMPEG has the same fps drop issues that OBS has.
 
 # TODO
-* Support AMD and Intel, using VAAPI. Currently there are a lot of driver bugs with both AMD and Intel that causes video encoding to either fail, performance issues or causes the entire driver to crash.
 * Dynamically change bitrate/resolution to match desired fps. This would be helpful when streaming for example, where the encode output speed also depends on upload speed to the streaming service.
-* Show cursor when recording. Currently the cursor is not visible when recording a window.
+* Show cursor when recording. Currently the cursor is not visible when recording a window or when using amd/intel.
 * Implement opengl injection to capture texture. This fixes VRR without having to use NvFBC direct capture.
 * Always use direct capture with NvFBC once the capture issue in mpv fullscreen has been resolved (maybe detect if direct capture fails in nvfbc and switch to non-direct recording. NvFBC says if direct capture fails).

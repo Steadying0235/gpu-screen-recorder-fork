@@ -14,3 +14,4 @@ Support fullscreen capture on amd/intel using external kms process.
 Support amf and qsv.
 Disable flipping on nvidia? this might fix some stuttering issues on some setups. See NvCtrlGetAttribute/NvCtrlSetAttributeAndGetStatus NV_CTRL_SYNC_TO_VBLANK https://github.com/NVIDIA/nvidia-settings/blob/d5f022976368cbceb2f20b838ddb0bf992f0cfb9/src/gtk%2B-2.x/ctkopengl.c.
 Replays seem to have some issues with audio/video. Why?
+Cleanup unused gl/egl functions, macro, etc.

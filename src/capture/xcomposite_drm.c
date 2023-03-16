@@ -1,5 +1,6 @@
 #include "../../include/capture/xcomposite_drm.h"
 #include "../../include/egl.h"
+#include "../../include/vaapi.h"
 #include "../../include/window_texture.h"
 #include "../../include/time.h"
 #include <stdlib.h>
@@ -7,7 +8,7 @@
 #include <X11/Xlib.h>
 #include <X11/extensions/Xcomposite.h>
 #include <libavutil/hwcontext.h>
-#include <libavutil/hwcontext_drm.h>
+#include <libavutil/hwcontext_vaapi.h>
 #include <libavutil/frame.h>
 #include <libavcodec/avcodec.h>
 //#include <drm_fourcc.h>
@@ -28,6 +29,7 @@ typedef struct {
     WindowTexture window_texture;
 
     gsr_egl egl;
+    gsr_vaapi vaapi;
 
     int fourcc;
     int num_planes;
@@ -36,12 +38,16 @@ typedef struct {
     int32_t stride;
     int32_t offset;
 
-    unsigned int target_texture_id;
+    unsigned int target_textures[2];
 
-    unsigned int FramebufferName;
-    unsigned int quad_VertexArrayID;
-    unsigned int quad_vertexbuffer;
+    unsigned int FramebufferNameY;
+    unsigned int FramebufferNameUV; // TODO: Remove
     unsigned int quadVAO;
+
+    unsigned int shader_y;
+    unsigned int shader_uv;
+
+    VADisplay va_dpy;
 } gsr_capture_xcomposite_drm;
 
 static int max_int(int a, int b) {
@@ -71,10 +77,15 @@ static bool drm_create_codec_context(gsr_capture_xcomposite_drm *cap_xcomp, AVCo
         (AVHWFramesContext *)frame_context->data;
     hw_frame_context->width = video_codec_context->width;
     hw_frame_context->height = video_codec_context->height;
-    hw_frame_context->sw_format = AV_PIX_FMT_YUV420P;//AV_PIX_FMT_0RGB32;//AV_PIX_FMT_YUV420P;//AV_PIX_FMT_0RGB32;//AV_PIX_FMT_NV12;
+    hw_frame_context->sw_format = AV_PIX_FMT_NV12;//AV_PIX_FMT_0RGB32;//AV_PIX_FMT_YUV420P;//AV_PIX_FMT_0RGB32;//AV_PIX_FMT_NV12;
     hw_frame_context->format = video_codec_context->pix_fmt;
     hw_frame_context->device_ref = device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
+
+    hw_frame_context->initial_pool_size = 1;
+
+    AVVAAPIDeviceContext *vactx =((AVHWDeviceContext*)device_ctx->data)->hwctx;
+    cap_xcomp->va_dpy = vactx->display;
 
     if (av_hwframe_ctx_init(frame_context) < 0) {
         fprintf(stderr, "Error: Failed to initialize hardware frame context "
@@ -87,45 +98,6 @@ static bool drm_create_codec_context(gsr_capture_xcomposite_drm *cap_xcomp, AVCo
     video_codec_context->hw_device_ctx = device_ctx; // TODO: av_buffer_ref? and in more places
     video_codec_context->hw_frames_ctx = frame_context;
     return true;
-}
-
-#define EGL_SURFACE_TYPE                  0x3033
-#define EGL_WINDOW_BIT                    0x0004
-#define EGL_PIXMAP_BIT                    0x0002
-#define EGL_BIND_TO_TEXTURE_RGB           0x3039
-#define EGL_TRUE                          1
-#define EGL_RED_SIZE                      0x3024
-#define EGL_GREEN_SIZE                    0x3023
-#define EGL_BLUE_SIZE                     0x3022
-#define EGL_ALPHA_SIZE                    0x3021
-#define EGL_TEXTURE_FORMAT                0x3080
-#define EGL_TEXTURE_RGB                   0x305D
-#define EGL_TEXTURE_TARGET                0x3081
-#define EGL_TEXTURE_2D                    0x305F
-#define EGL_GL_TEXTURE_2D                 0x30B1
-
-#define GL_RGBA                           0x1908
-
-static unsigned int gl_create_texture(gsr_capture_xcomposite_drm *cap_xcomp, int width, int height) {
-    // Generating this second texture is needed because
-    // cuGraphicsGLRegisterImage cant be used with the texture that is mapped
-    // directly to the pixmap.
-    // TODO: Investigate if it's somehow possible to use the pixmap texture
-    // directly, this should improve performance since only less image copy is
-    // then needed every frame.
-    // Ignoring failure for now.. TODO: Show proper error
-    unsigned int texture_id = 0;
-    cap_xcomp->egl.glGenTextures(1, &texture_id);
-    cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, texture_id);
-    cap_xcomp->egl.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-
-    cap_xcomp->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    cap_xcomp->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    cap_xcomp->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    cap_xcomp->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-    cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
-    return texture_id;
 }
 
 #define GL_COMPILE_STATUS                 0x8B81
@@ -249,10 +221,7 @@ unsigned int esLoadProgram ( gsr_capture_xcomposite_drm *cap_xcomp, const char *
    return programObject;
 }
 
-static unsigned int shader_program = 0;
-static unsigned int texID = 0;
-
-static void LoadShaders(gsr_capture_xcomposite_drm *cap_xcomp) {
+static unsigned int LoadShadersY(gsr_capture_xcomposite_drm *cap_xcomp) {
 	char vShaderStr[] =
         "#version 300 es                                 \n"
         "in vec2 pos;                                    \n"
@@ -322,12 +291,26 @@ static void LoadShaders(gsr_capture_xcomposite_drm *cap_xcomp) {
         "#version 300 es                                           \n"
 		"precision mediump float;                                  \n"
         "in vec2 texcoords_out;                                        \n"
-        "uniform sampler2D tex;                                    \n"
+        "uniform sampler2D tex1;                                    \n"
+        //"uniform sampler2D tex2;                                    \n"
         "out vec4 FragColor;                                       \n"
+        //"out vec4 FragColor2;                                       \n"
+        "mat4 RGBtoYUV() {\n"
+        "   return mat4(\n"
+        "       vec4(0.257,  0.439, -0.148, 0.0),\n"
+        "      vec4(0.504, -0.368, -0.291, 0.0),\n"
+        "      vec4(0.098, -0.071,  0.439, 0.0),\n"
+        "      vec4(0.0625, 0.500,  0.500, 1.0)\n"
+        "   );\n"
+        "}\n"
 		"void main()                                               \n"
 		"{                                                         \n"
-        "  vec3 rgb = texture(tex, texcoords_out).rgb;             \n"
-		"  FragColor = vec4(rgb, 1.0);                            \n"
+        //"  vec3 yuv = rgb2yuv(texture(tex1, texcoords_out).rgb);             \n"
+		//"  FragColor.x = yuv.x;                            \n"
+        //"  FragColor2.xy = yuv.xy;                            \n"
+        //" vec3 rgb = texture(tex1, texcoords_out).rgb;\n"
+        "FragColor.x = (RGBtoYUV() * vec4(texture(tex1, texcoords_out).rgb, 1.0)).x;\n"
+        //"FragColor2.xy = (RGBtoYUV() * vec4(texture(tex1, texcoords_out*2.0).rgb, 1.0)).zy;\n"
 		"}                                                         \n";
 #else
     char fShaderStr[] =
@@ -364,15 +347,152 @@ static void LoadShaders(gsr_capture_xcomposite_drm *cap_xcomp) {
 		"}                                                         \n";
 #endif
 
-    shader_program = esLoadProgram(cap_xcomp, vShaderStr, fShaderStr);
+    unsigned int shader_program = esLoadProgram(cap_xcomp, vShaderStr, fShaderStr);
 	if (shader_program == 0) {
         fprintf(stderr, "failed to create shader!\n");
-        return;
+        return 0;
     }
 
     cap_xcomp->egl.glBindAttribLocation(shader_program, 0, "pos");
     cap_xcomp->egl.glBindAttribLocation(shader_program, 1, "texcoords");
-	return;
+	return shader_program;
+}
+
+static unsigned int LoadShadersUV(gsr_capture_xcomposite_drm *cap_xcomp) {
+	char vShaderStr[] =
+        "#version 300 es                                 \n"
+        "in vec2 pos;                                    \n"
+        "in vec2 texcoords;                              \n"
+        "out vec2 texcoords_out;                         \n"
+		"void main()                                     \n"
+		"{                                               \n"
+        "  texcoords_out = texcoords;                    \n"
+		"  gl_Position = vec4(pos.x, pos.y, 0.0, 1.0);   \n"
+		"}                                               \n";
+
+#if 0
+	char fShaderStr[] =
+        "#version 300 es                                           \n"
+		"precision mediump float;                                  \n"
+        "in vec2 texcoords_out;                                        \n"
+        "uniform sampler2D tex;                                    \n"
+        "out vec4 FragColor;                                       \n"
+
+
+        "float imageWidth = 1920.0;\n"
+        "float imageHeight = 1080.0;\n"
+
+        "float getYPixel(vec2 position) {\n"
+        "    position.y = (position.y * 2.0 / 3.0) + (1.0 / 3.0);\n"
+        "    return texture2D(tex, position).x;\n"
+        "}\n"
+"\n"
+        "vec2 mapCommon(vec2 position, float planarOffset) {\n"
+        "    planarOffset += (imageWidth * floor(position.y / 2.0)) / 2.0 +\n"
+        "                    floor((imageWidth - 1.0 - position.x) / 2.0);\n"
+        "    float x = floor(imageWidth - 1.0 - floor(mod(planarOffset, imageWidth)));\n"
+        "    float y = floor(floor(planarOffset / imageWidth));\n"
+        "    return vec2((x + 0.5) / imageWidth, (y + 0.5) / (1.5 * imageHeight));\n"
+        "}\n"
+"\n"
+        "vec2 mapU(vec2 position) {\n"
+        "    float planarOffset = (imageWidth * imageHeight) / 4.0;\n"
+        "    return mapCommon(position, planarOffset);\n"
+        "}\n"
+"\n"
+        "vec2 mapV(vec2 position) {\n"
+        "    return mapCommon(position, 0.0);\n"
+        "}\n"
+
+		"void main()                                               \n"
+		"{                                                         \n"
+
+        "vec2 pixelPosition = vec2(floor(imageWidth * texcoords_out.x),\n"
+        "                        floor(imageHeight * texcoords_out.y));\n"
+        "pixelPosition -= vec2(0.5, 0.5);\n"
+"\n"
+        "float yChannel = getYPixel(texcoords_out);\n"
+        "float uChannel = texture2D(tex, mapU(pixelPosition)).x;\n"
+        "float vChannel = texture2D(tex, mapV(pixelPosition)).x;\n"
+        "vec4 channels = vec4(yChannel, uChannel, vChannel, 1.0);\n"
+        "mat4 conversion = mat4(1.0,  0.0,    1.402, -0.701,\n"
+        "                        1.0, -0.344, -0.714,  0.529,\n"
+        "                        1.0,  1.772,  0.0,   -0.886,\n"
+        "                        0, 0, 0, 0);\n"
+        "vec3 rgb = (channels * conversion).xyz;\n"
+
+		"  FragColor = vec4(rgb, 1.0);                            \n"
+		"}                                                         \n";
+#elif 1
+    char fShaderStr[] =
+        "#version 300 es                                           \n"
+		"precision mediump float;                                  \n"
+        "in vec2 texcoords_out;                                        \n"
+        "uniform sampler2D tex1;                                    \n"
+        //"uniform sampler2D tex2;                                    \n"
+        "out vec4 FragColor;                                       \n"
+        //"out vec4 FragColor2;                                       \n"
+        "mat4 RGBtoYUV() {\n"
+        "   return mat4(\n"
+        "       vec4(0.257,  0.439, -0.148, 0.0),\n"
+        "      vec4(0.504, -0.368, -0.291, 0.0),\n"
+        "      vec4(0.098, -0.071,  0.439, 0.0),\n"
+        "      vec4(0.0625, 0.500,  0.500, 1.0)\n"
+        "   );\n"
+        "}\n"
+		"void main()                                               \n"
+		"{                                                         \n"
+        //"  vec3 yuv = rgb2yuv(texture(tex1, texcoords_out).rgb);             \n"
+		//"  FragColor.x = yuv.x;                            \n"
+        //"  FragColor2.xy = yuv.xy;                            \n"
+        //" vec3 rgb = texture(tex1, texcoords_out).rgb;\n"
+        //"FragColor.x = (RGBtoYUV() * vec4(texture(tex1, texcoords_out).rgb, 1.0)).x;\n"
+        "FragColor.xy = (RGBtoYUV() * vec4(texture(tex1, texcoords_out*2.0).rgb, 1.0)).zy;\n"
+		"}                                                         \n";
+#else
+    char fShaderStr[] =
+        "#version 300 es                                           \n"
+		"precision mediump float;                                  \n"
+        "in vec2 texcoords_out;                                        \n"
+        "uniform sampler2D tex;                                    \n"
+        "out vec4 FragColor;                                       \n"
+
+        "vec3 rgb2yuv(vec3 rgb){\n"
+        "    float y = 0.299*rgb.r + 0.587*rgb.g + 0.114*rgb.b;\n"
+        "    return vec3(y, 0.493*(rgb.b-y), 0.877*(rgb.r-y));\n"
+        "}\n"
+
+        "vec3 yuv2rgb(vec3 yuv){\n"
+        "    float y = yuv.x;\n"
+        "    float u = yuv.y;\n"
+        "    float v = yuv.z;\n"
+        "    \n"
+        "    return vec3(\n"
+        "        y + 1.0/0.877*v,\n"
+        "        y - 0.39393*u - 0.58081*v,\n"
+        "        y + 1.0/0.493*u\n"
+        "    );\n"
+        "}\n"
+
+		"void main()                                               \n"
+		"{                                                         \n"
+        "   float s = 0.5;\n"
+        "    vec3 lum = texture(tex, texcoords_out).rgb;\n"
+        "    vec3 chr = texture(tex, floor(texcoords_out*s-.5)/s).rgb;\n"
+        "    vec3 rgb = vec3(rgb2yuv(lum).x, rgb2yuv(chr).yz);\n"
+		"  FragColor = vec4(rgb, 1.0);                            \n"
+		"}                                                         \n";
+#endif
+
+    unsigned int shader_program = esLoadProgram(cap_xcomp, vShaderStr, fShaderStr);
+	if (shader_program == 0) {
+        fprintf(stderr, "failed to create shader!\n");
+        return 0;
+    }
+
+    cap_xcomp->egl.glBindAttribLocation(shader_program, 0, "pos");
+    cap_xcomp->egl.glBindAttribLocation(shader_program, 1, "texcoords");
+	return shader_program;
 }
 
 #define GL_FLOAT				0x1406
@@ -381,12 +501,20 @@ static void LoadShaders(gsr_capture_xcomposite_drm *cap_xcomp) {
 #define GL_TRIANGLES				0x0004
 #define DRM_FORMAT_MOD_INVALID 72057594037927935
 
+#define EGL_TRUE                          1
+#define EGL_IMAGE_PRESERVED_KHR           0x30D2
+#define EGL_NATIVE_PIXMAP_KHR             0x30B0
+
+static uint32_t fourcc(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
+    return (d << 24) | (c << 16) | (b << 8) | a;
+}
+
 static int gsr_capture_xcomposite_drm_start(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_xcomposite_drm *cap_xcomp = cap->priv;
 
     XWindowAttributes attr;
     if(!XGetWindowAttributes(cap_xcomp->dpy, cap_xcomp->params.window, &attr)) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_start failed: invalid window id: %lu\n", cap_xcomp->params.window);
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_start failed: invalid window id: %lu\n", cap_xcomp->params.window);
         return -1;
     }
 
@@ -399,18 +527,24 @@ static int gsr_capture_xcomposite_drm_start(gsr_capture *cap, AVCodecContext *vi
     XSelectInput(cap_xcomp->dpy, cap_xcomp->params.window, StructureNotifyMask | ExposureMask);
 
     if(!gsr_egl_load(&cap_xcomp->egl, cap_xcomp->dpy)) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_start: failed to load opengl\n");
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_start: failed to load opengl\n");
         return -1;
     }
 
     if(!cap_xcomp->egl.eglExportDMABUFImageQueryMESA) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_start: could not find eglExportDMABUFImageQueryMESA\n");
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_start: could not find eglExportDMABUFImageQueryMESA\n");
         gsr_egl_unload(&cap_xcomp->egl);
         return -1;
     }
 
     if(!cap_xcomp->egl.eglExportDMABUFImageMESA) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_start: could not find eglExportDMABUFImageMESA\n");
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_start: could not find eglExportDMABUFImageMESA\n");
+        gsr_egl_unload(&cap_xcomp->egl);
+        return -1;
+    }
+
+    if(!gsr_vaapi_load(&cap_xcomp->vaapi)) {
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_start: failed to load vaapi\n");
         gsr_egl_unload(&cap_xcomp->egl);
         return -1;
     }
@@ -462,17 +596,6 @@ static int gsr_capture_xcomposite_drm_start(gsr_capture *cap, AVCodecContext *vi
     cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
     cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
 
-    #if 1
-    cap_xcomp->target_texture_id = gl_create_texture(cap_xcomp, cap_xcomp->texture_size.x, cap_xcomp->texture_size.y);
-    if(cap_xcomp->target_texture_id == 0) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_start: failed to create opengl texture\n");
-        return -1;
-    }
-    #else
-    // TODO:
-    cap_xcomp->target_texture_id = window_texture_get_opengl_texture_id(&cap_xcomp->window_texture);
-    #endif
-
     cap_xcomp->texture_size.x = max_int(2, cap_xcomp->texture_size.x & ~1);
     cap_xcomp->texture_size.y = max_int(2, cap_xcomp->texture_size.y & ~1);
 
@@ -480,13 +603,18 @@ static int gsr_capture_xcomposite_drm_start(gsr_capture *cap, AVCodecContext *vi
     video_codec_context->height = cap_xcomp->texture_size.y;
 
     {
-        EGLImage img = cap_xcomp->egl.eglCreateImage(cap_xcomp->egl.egl_display, cap_xcomp->egl.egl_context, EGL_GL_TEXTURE_2D, (EGLClientBuffer)(uint64_t)cap_xcomp->target_texture_id, NULL);
+        const intptr_t pixmap_attrs[] = {
+            EGL_IMAGE_PRESERVED_KHR, EGL_TRUE,
+            EGL_NONE,
+        };
+
+        EGLImage img = cap_xcomp->egl.eglCreateImage(cap_xcomp->egl.egl_display, cap_xcomp->egl.egl_context, EGL_GL_TEXTURE_2D, (EGLClientBuffer)(uint64_t)window_texture_get_opengl_texture_id(&cap_xcomp->window_texture), pixmap_attrs);
         if(!img) {
             fprintf(stderr, "eglCreateImage failed\n");
             return -1;
         }
 
-        if(!cap_xcomp->egl.eglExportDMABUFImageQueryMESA(cap_xcomp->egl.egl_display, img, &cap_xcomp->fourcc, &cap_xcomp->num_planes, &cap_xcomp->modifiers) || cap_xcomp->modifiers == DRM_FORMAT_MOD_INVALID) {
+        if(!cap_xcomp->egl.eglExportDMABUFImageQueryMESA(cap_xcomp->egl.egl_display, img, &cap_xcomp->fourcc, &cap_xcomp->num_planes, &cap_xcomp->modifiers)) {
             fprintf(stderr, "eglExportDMABUFImageQueryMESA failed\n"); 
             return -1;
         }
@@ -502,78 +630,9 @@ static int gsr_capture_xcomposite_drm_start(gsr_capture *cap, AVCodecContext *vi
             return -1;
         }
 
-        fprintf(stderr, "texture: %u, dmabuf: %d, stride: %d, offset: %d\n", cap_xcomp->target_texture_id, cap_xcomp->dmabuf_fd, cap_xcomp->stride, cap_xcomp->offset);
+        fprintf(stderr, "texture: %u, dmabuf: %d, stride: %d, offset: %d\n", window_texture_get_opengl_texture_id(&cap_xcomp->window_texture), cap_xcomp->dmabuf_fd, cap_xcomp->stride, cap_xcomp->offset);
         fprintf(stderr, "fourcc: %d, num planes: %d, modifiers: %zu\n", cap_xcomp->fourcc, cap_xcomp->num_planes, cap_xcomp->modifiers);
     }
-
-    cap_xcomp->egl.glGenFramebuffers(1, &cap_xcomp->FramebufferName);
-    cap_xcomp->egl.glBindFramebuffer(GL_FRAMEBUFFER, cap_xcomp->FramebufferName);
-
-    cap_xcomp->egl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cap_xcomp->target_texture_id, 0);
-
-    // Set the list of draw buffers.
-    unsigned int DrawBuffers[1] = {GL_COLOR_ATTACHMENT0};
-    cap_xcomp->egl.glDrawBuffers(1, DrawBuffers); // "1" is the size of DrawBuffers
-
-    if(cap_xcomp->egl.glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        fprintf(stderr, "Failed to setup framebuffer\n");
-        return -1;
-    }
-
-    cap_xcomp->egl.glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    //cap_xcomp->egl.glGenVertexArrays(1, &cap_xcomp->quad_VertexArrayID);
-    //cap_xcomp->egl.glBindVertexArray(cap_xcomp->quad_VertexArrayID);
-
-    static const float g_quad_vertex_buffer_data[] = {
-        -1.0f, -1.0f, 0.0f,
-        1.0f, -1.0f, 0.0f,
-        -1.0f,  1.0f, 0.0f,
-        -1.0f,  1.0f, 0.0f,
-        1.0f, -1.0f, 0.0f,
-        1.0f,  1.0f, 0.0f,
-    };
-
-    //cap_xcomp->egl.glGenBuffers(1, &cap_xcomp->quad_vertexbuffer);
-    //cap_xcomp->egl.glBindBuffer(GL_ARRAY_BUFFER, cap_xcomp->quad_vertexbuffer);
-    //cap_xcomp->egl.glBufferData(GL_ARRAY_BUFFER, sizeof(g_quad_vertex_buffer_data), g_quad_vertex_buffer_data, GL_STATIC_DRAW);
-
-    // Create and compile our GLSL program from the shaders
-    LoadShaders(cap_xcomp);
-    texID = cap_xcomp->egl.glGetUniformLocation(shader_program, "tex");
-    fprintf(stderr, "uniform id: %u\n", texID);
-
-    float vVertices[] = {
-        -1.0f,  1.0f,  0.0f, 1.0f,
-        -1.0f, -1.0f,  0.0f, 0.0f,
-         1.0f, -1.0f,  1.0f, 0.0f,
-
-        -1.0f,  1.0f,  0.0f, 1.0f,
-         1.0f, -1.0f,  1.0f, 0.0f,
-         1.0f,  1.0f,  1.0f, 1.0f
-    };
-
-    unsigned int quadVBO;
-    cap_xcomp->egl.glGenVertexArrays(1, &cap_xcomp->quadVAO);
-    cap_xcomp->egl.glGenBuffers(1, &quadVBO);
-    cap_xcomp->egl.glBindVertexArray(cap_xcomp->quadVAO);
-    cap_xcomp->egl.glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
-    cap_xcomp->egl.glBufferData(GL_ARRAY_BUFFER, sizeof(vVertices), &vVertices, GL_STATIC_DRAW);
-
-    cap_xcomp->egl.glEnableVertexAttribArray(0);
-    cap_xcomp->egl.glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-
-    cap_xcomp->egl.glEnableVertexAttribArray(1);
-    cap_xcomp->egl.glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-
-    cap_xcomp->egl.glBindVertexArray(0);
-
-    //cap_xcomp->egl.glUniform1i(texID, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
-
-    //cap_xcomp->egl.glViewport(0, 0, 1920, 1080);
-
-    //cap_xcomp->egl.glBindBuffer(GL_ARRAY_BUFFER, 0);
-    //cap_xcomp->egl.glBindVertexArray(0);
 
     if(!drm_create_codec_context(cap_xcomp, video_codec_context)) {
         fprintf(stderr, "failed to create hw codec context\n");
@@ -581,22 +640,10 @@ static int gsr_capture_xcomposite_drm_start(gsr_capture *cap, AVCodecContext *vi
         return -1;
     }
 
-    fprintf(stderr, "sneed: %u\n", cap_xcomp->FramebufferName);
+    //fprintf(stderr, "sneed: %u\n", cap_xcomp->FramebufferName);
     return 0;
 #endif
 }
-
-// TODO:
-static void free_desc(void *opaque, uint8_t *data) {
-    AVDRMFrameDescriptor *desc = (AVDRMFrameDescriptor*)data;
-    int i;
-
-    //for (i = 0; i < desc->nb_objects; i++)
-    //    close(desc->objects[i].fd);
-
-    av_free(desc);
-}
-
 
 static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame **frame) {
     gsr_capture_xcomposite_drm *cap_xcomp = cap->priv;
@@ -605,77 +652,6 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
 
     if(!cap_xcomp->created_hw_frame) {
         cap_xcomp->created_hw_frame = true;
-
-        /*if(av_hwframe_get_buffer(video_codec_context->hw_frames_ctx, *frame, 0) < 0) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick: av_hwframe_get_buffer failed\n");
-            return;
-        }*/
-
-        AVDRMFrameDescriptor *desc = av_malloc(sizeof(AVDRMFrameDescriptor));
-        if(!desc) {
-            fprintf(stderr, "poop\n");
-            return;
-        }
-
-        fprintf(stderr, "tick fd: %d\n", cap_xcomp->dmabuf_fd);
-
-        cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, cap_xcomp->target_texture_id);
-        int xx = 0;
-        int yy = 0;
-        cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &xx);
-        cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &yy);
-        cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
-
-        *desc = (AVDRMFrameDescriptor) {
-            .nb_objects = 1,
-            .objects[0] = {
-                .fd               = cap_xcomp->dmabuf_fd,
-                .size             = yy * cap_xcomp->stride,
-                .format_modifier  = cap_xcomp->modifiers,
-            },
-            .nb_layers = 1,
-            .layers[0] = {
-                .format           = cap_xcomp->fourcc, // DRM_FORMAT_NV12
-                .nb_planes        = 1, //cap_xcomp->num_planes, // TODO: Ensure this is 1, otherwise ffmpeg cant handle it in av_hwframe_map
-                .planes[0] = {
-                    .object_index = 0,
-                    .offset       = cap_xcomp->offset,
-                    .pitch        = cap_xcomp->stride,
-                },
-            },
-        };
-
-        #if 0
-        AVBufferRef *device_ctx;
-        if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_DRM, "/dev/dri/card0", NULL, 0) < 0) {
-            fprintf(stderr, "Error: Failed to create hardware device context\n");
-            return;
-        }
-
-        AVBufferRef *frame_context = av_hwframe_ctx_alloc(device_ctx);
-        if(!frame_context) {
-            fprintf(stderr, "Error: Failed to create hwframe context\n");
-            av_buffer_unref(&device_ctx);
-            return;
-        }
-
-        AVHWFramesContext *hw_frame_context =
-            (AVHWFramesContext *)frame_context->data;
-        hw_frame_context->width = video_codec_context->width;
-        hw_frame_context->height = video_codec_context->height;
-        hw_frame_context->sw_format = AV_PIX_FMT_0RGB32;
-        hw_frame_context->format = AV_PIX_FMT_DRM_PRIME;
-        hw_frame_context->device_ref = device_ctx;
-        hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
-
-        if (av_hwframe_ctx_init(frame_context) < 0) {
-            fprintf(stderr, "Error: Failed to initialize hardware frame context "
-                            "(note: ffmpeg version needs to be > 4.0)\n");
-            av_buffer_unref(&device_ctx);
-            av_buffer_unref(&frame_context);
-            return;
-        }
-        #endif
 
         av_frame_free(frame);
         *frame = av_frame_alloc();
@@ -694,32 +670,184 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
             return;
         }
 
-        AVFrame *src_frame = av_frame_alloc();
-        assert(src_frame);
-        src_frame->format = AV_PIX_FMT_DRM_PRIME;
-        src_frame->width = video_codec_context->width;
-        src_frame->height = video_codec_context->height;
-        src_frame->color_range = AVCOL_RANGE_JPEG;
+        fprintf(stderr, "fourcc: %u\n", cap_xcomp->fourcc);
+        fprintf(stderr, "va surface id: %u\n", (VASurfaceID)(uintptr_t)(*frame)->data[3]);
 
-        src_frame->buf[0] = av_buffer_create((uint8_t*)desc, sizeof(*desc),
-                                     &free_desc, video_codec_context, 0);
-        if (!src_frame->buf[0]) {
-            fprintf(stderr, "failed to create buffer!\n");
+        VADRMPRIMESurfaceDescriptor prime;
+
+        VASurfaceID surface_id = (uintptr_t)(*frame)->data[3];
+        VAStatus va_status = cap_xcomp->vaapi.vaExportSurfaceHandle(cap_xcomp->va_dpy, surface_id, VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2, VA_EXPORT_SURFACE_READ_WRITE | VA_EXPORT_SURFACE_SEPARATE_LAYERS, &prime); // TODO: Composed layers
+        if(va_status != VA_STATUS_SUCCESS) {
+            fprintf(stderr, "vaExportSurfaceHandle failed\n");
             return;
         }
+        cap_xcomp->vaapi.vaSyncSurface(cap_xcomp->va_dpy, surface_id);
 
-        src_frame->data[0] = (uint8_t*)desc;
-        src_frame->extended_data = src_frame->data;
-        src_frame->format  = AV_PIX_FMT_DRM_PRIME;
+        fprintf(stderr, "fourcc: %u, width: %u, height: %u\n", prime.fourcc, prime.width, prime.height);
+        for(int i = 0; i < prime.num_layers; ++i) {
+            fprintf(stderr, "  drm format: %u, num planes: %u\n", prime.layers[i].drm_format, prime.layers[i].num_planes);
+            for(int j = 0; j < prime.layers[i].num_planes; ++j) {
+                const uint32_t object_index = prime.layers[i].object_index[j];
+                fprintf(stderr, "    object index: %u, offset: %u, pitch: %u, fd: %d, size: %u, drm format mod: %lu\n", object_index, prime.layers[i].offset[j], prime.layers[i].pitch[j], prime.objects[object_index].fd, prime.objects[object_index].size, prime.objects[object_index].drm_format_modifier);
+            }
+        }
 
-        res = av_hwframe_map(*frame, src_frame, AV_HWFRAME_MAP_DIRECT);
-        if(res < 0) {
-            fprintf(stderr, "av_hwframe_map failed: %d\n", res);
+        #define EGL_LINUX_DRM_FOURCC_EXT          0x3271
+        #define EGL_WIDTH                         0x3057
+        #define EGL_HEIGHT                        0x3056
+        #define EGL_DMA_BUF_PLANE0_FD_EXT         0x3272
+        #define EGL_DMA_BUF_PLANE0_OFFSET_EXT     0x3273
+        #define EGL_DMA_BUF_PLANE0_PITCH_EXT      0x3274
+        #define EGL_LINUX_DMA_BUF_EXT             0x3270
+
+        #define GL_TEXTURE0				0x84C0
+        #define GL_COLOR_ATTACHMENT1              0x8CE1
+
+        #define FOURCC_NV12 842094158
+
+        if(prime.fourcc == FOURCC_NV12) { // This happens on AMD
+            while(cap_xcomp->egl.eglGetError() != EGL_SUCCESS){}
+
+            EGLImage images[2];
+            cap_xcomp->egl.glGenTextures(2, cap_xcomp->target_textures);
+            assert(cap_xcomp->egl.glGetError() == 0);
+            for(int i = 0; i < 2; ++i) {
+                const uint32_t formats[2] = { fourcc('R', '8', ' ', ' '), fourcc('G', 'R', '8', '8') };
+                const int layer = i;
+                const int plane = 0;
+
+                const intptr_t img_attr[] = {
+                    EGL_LINUX_DRM_FOURCC_EXT,   formats[i],
+                    EGL_WIDTH,                  prime.width / (1 + i), // half size
+                    EGL_HEIGHT,                 prime.height / (1 + i), // for chroma
+                    EGL_DMA_BUF_PLANE0_FD_EXT,  prime.objects[prime.layers[layer].object_index[plane]].fd,
+                    EGL_DMA_BUF_PLANE0_OFFSET_EXT,  prime.layers[layer].offset[plane],
+                    EGL_DMA_BUF_PLANE0_PITCH_EXT,  prime.layers[layer].pitch[plane],
+                    EGL_NONE
+                };
+                images[i] = cap_xcomp->egl.eglCreateImage(cap_xcomp->egl.egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr); // TODO: Cleanup at the end of this for loop
+                assert(images[i]);
+                assert(cap_xcomp->egl.eglGetError() == EGL_SUCCESS);
+
+                //cap_xcomp->egl.glActiveTexture(GL_TEXTURE0 + i);
+                cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, cap_xcomp->target_textures[i]);
+                assert(cap_xcomp->egl.glGetError() == 0);
+
+                cap_xcomp->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                cap_xcomp->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                cap_xcomp->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                cap_xcomp->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                assert(cap_xcomp->egl.glGetError() == 0);
+
+                cap_xcomp->egl.glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, images[i]);
+                assert(cap_xcomp->egl.glGetError() == 0);
+                assert(cap_xcomp->egl.eglGetError() == EGL_SUCCESS);
+            }
+            //cap_xcomp->egl.glActiveTexture(GL_TEXTURE0);
+            cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
+
+
+
+            cap_xcomp->egl.glGenFramebuffers(1, &cap_xcomp->FramebufferNameY);
+            cap_xcomp->egl.glBindFramebuffer(GL_FRAMEBUFFER, cap_xcomp->FramebufferNameY);
+
+            cap_xcomp->egl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cap_xcomp->target_textures[0], 0);
+           // cap_xcomp->egl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, cap_xcomp->target_textures[1], 0);
+
+            // Set the list of draw buffers.
+            unsigned int DrawBuffers[1] = {GL_COLOR_ATTACHMENT0};
+            cap_xcomp->egl.glDrawBuffers(1, DrawBuffers); // "1" is the size of DrawBuffers
+
+            if(cap_xcomp->egl.glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+                fprintf(stderr, "Failed to setup framebuffer\n");
+                return;
+            }
+
+            cap_xcomp->egl.glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+            cap_xcomp->egl.glGenFramebuffers(1, &cap_xcomp->FramebufferNameUV);
+            cap_xcomp->egl.glBindFramebuffer(GL_FRAMEBUFFER, cap_xcomp->FramebufferNameUV);
+
+            cap_xcomp->egl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cap_xcomp->target_textures[1], 0);
+           // cap_xcomp->egl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, cap_xcomp->target_textures[1], 0);
+
+            // Set the list of draw buffers.
+            cap_xcomp->egl.glDrawBuffers(1, DrawBuffers); // "1" is the size of DrawBuffers
+
+            if(cap_xcomp->egl.glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+                fprintf(stderr, "Failed to setup framebuffer\n");
+                return;
+            }
+
+            cap_xcomp->egl.glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+            //cap_xcomp->egl.glGenVertexArrays(1, &cap_xcomp->quad_VertexArrayID);
+            //cap_xcomp->egl.glBindVertexArray(cap_xcomp->quad_VertexArrayID);
+
+            static const float g_quad_vertex_buffer_data[] = {
+                -1.0f, -1.0f, 0.0f,
+                1.0f, -1.0f, 0.0f,
+                -1.0f,  1.0f, 0.0f,
+                -1.0f,  1.0f, 0.0f,
+                1.0f, -1.0f, 0.0f,
+                1.0f,  1.0f, 0.0f,
+            };
+
+            //cap_xcomp->egl.glGenBuffers(1, &cap_xcomp->quad_vertexbuffer);
+            //cap_xcomp->egl.glBindBuffer(GL_ARRAY_BUFFER, cap_xcomp->quad_vertexbuffer);
+            //cap_xcomp->egl.glBufferData(GL_ARRAY_BUFFER, sizeof(g_quad_vertex_buffer_data), g_quad_vertex_buffer_data, GL_STATIC_DRAW);
+
+            // Create and compile our GLSL program from the shaders
+            cap_xcomp->shader_y = LoadShadersY(cap_xcomp);
+            cap_xcomp->shader_uv = LoadShadersUV(cap_xcomp);
+            //int tex1 = cap_xcomp->egl.glGetUniformLocation(cap_xcomp->shader_y, "tex1");
+            //cap_xcomp->egl.glUniform1i(tex1, 0);
+            //tex1 = cap_xcomp->egl.glGetUniformLocation(cap_xcomp->shader_uv, "tex1");
+            //cap_xcomp->egl.glUniform1i(tex1, 0);
+            //int tex2 = cap_xcomp->egl.glGetUniformLocation(shader_program, "tex2");
+            //fprintf(stderr, "uniform id: %u\n", tex1);
+
+            float vVertices[] = {
+                -1.0f,  1.0f,  0.0f, 1.0f,
+                -1.0f, -1.0f,  0.0f, 0.0f,
+                1.0f, -1.0f,  1.0f, 0.0f,
+
+                -1.0f,  1.0f,  0.0f, 1.0f,
+                1.0f, -1.0f,  1.0f, 0.0f,
+                1.0f,  1.0f,  1.0f, 1.0f
+            };
+
+            unsigned int quadVBO;
+            cap_xcomp->egl.glGenVertexArrays(1, &cap_xcomp->quadVAO);
+            cap_xcomp->egl.glGenBuffers(1, &quadVBO);
+            cap_xcomp->egl.glBindVertexArray(cap_xcomp->quadVAO);
+            cap_xcomp->egl.glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+            cap_xcomp->egl.glBufferData(GL_ARRAY_BUFFER, sizeof(vVertices), &vVertices, GL_STATIC_DRAW);
+
+            cap_xcomp->egl.glEnableVertexAttribArray(0);
+            cap_xcomp->egl.glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+
+            cap_xcomp->egl.glEnableVertexAttribArray(1);
+            cap_xcomp->egl.glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+
+            cap_xcomp->egl.glBindVertexArray(0);
+
+            //cap_xcomp->egl.glUniform1i(tex1, 0);
+            //cap_xcomp->egl.glUniform1i(tex2, 1);
+
+            //cap_xcomp->egl.glViewport(0, 0, 1920, 1080);
+
+            //cap_xcomp->egl.glBindBuffer(GL_ARRAY_BUFFER, 0);
+            //cap_xcomp->egl.glBindVertexArray(0);
+        } else { // This happens on intel
+            fprintf(stderr, "unexpected fourcc: %u, expected nv12\n", prime.fourcc);
+            abort();
         }
 
         // Clear texture with black background because the source texture (window_texture_get_opengl_texture_id(&cap_xcomp->window_texture))
         // might be smaller than cap_xcomp->target_texture_id
-        cap_xcomp->egl.glClearTexImage(cap_xcomp->target_texture_id, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        // TODO:
+        //cap_xcomp->egl.glClearTexImage(cap_xcomp->target_texture_id, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     }
 }
 
@@ -732,92 +860,35 @@ static bool gsr_capture_xcomposite_drm_should_stop(gsr_capture *cap, bool *err) 
 #define GL_TRUE					1
 #define GL_TRIANGLES				0x0004
 
-void FBO_2_PPM_file(gsr_capture_xcomposite_drm *cap_xcomp, int output_width, int output_height)
-{
-    FILE    *output_image;
-
-    /// READ THE PIXELS VALUES from FBO AND SAVE TO A .PPM FILE
-    int             i, j, k;
-    unsigned char   *pixels = (unsigned char*)malloc(output_width*output_height*3);
-
-    unsigned int err = cap_xcomp->egl.glGetError();
-    fprintf(stderr, "opengl err 1: %u\n", err);
-
-    /// READ THE CONTENT FROM THE FBO
-    cap_xcomp->egl.glReadBuffer(GL_COLOR_ATTACHMENT0);
-
-    err = cap_xcomp->egl.glGetError();
-    fprintf(stderr, "opengl err 2: %u\n", err);
-
-    cap_xcomp->egl.glReadPixels(0, 0, output_width, output_height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-
-    err = cap_xcomp->egl.glGetError();
-    fprintf(stderr, "opengl err 3: %u\n", err);
-
-    output_image = fopen("output.ppm", "wb");
-    fprintf(output_image,"P3\n");
-    fprintf(output_image,"# Created by Ricao\n");
-    fprintf(output_image,"%d %d\n",output_width,output_height);
-    fprintf(output_image,"255\n");
-
-    k = 0;
-    for(i=0; i<output_width; i++)
-    {
-        for(j=0; j<output_height; j++)
-        {
-            fprintf(output_image,"%u %u %u ",(unsigned int)pixels[k],(unsigned int)pixels[k+1],
-                                             (unsigned int)pixels[k+2]);
-            k = k+4;
-        }
-        fprintf(output_image,"\n");
-    }
-    free(pixels);
-    fclose(output_image);
-}
-
 static int gsr_capture_xcomposite_drm_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_xcomposite_drm *cap_xcomp = cap->priv;
     vec2i source_size = cap_xcomp->texture_size;
 
-    #if 1
-    /* TODO: Remove this copy, which is only possible by using nvenc directly and encoding window_pixmap.target_texture_id */
-    cap_xcomp->egl.glCopyImageSubData(
-        window_texture_get_opengl_texture_id(&cap_xcomp->window_texture), GL_TEXTURE_2D, 0, 0, 0, 0,
-        cap_xcomp->target_texture_id, GL_TEXTURE_2D, 0, 0, 0, 0,
-        source_size.x, source_size.y, 1);
-    unsigned int err = cap_xcomp->egl.glGetError();
-    if(err != 0) {
-        static bool error_shown = false;
-        if(!error_shown) {
-            error_shown = true;
-            fprintf(stderr, "Error: glCopyImageSubData failed, gl error: %d\n", err);
-        }
-    }
-    #elif 0
-    cap_xcomp->egl.glBindFramebuffer(GL_FRAMEBUFFER, cap_xcomp->FramebufferName);
-    cap_xcomp->egl.glViewport(0, 0, 1920, 1080);
-    //cap_xcomp->egl.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    cap_xcomp->egl.glClear(GL_COLOR_BUFFER_BIT);
-
-    cap_xcomp->egl.glUseProgram(shader_program);
-    cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
     cap_xcomp->egl.glBindVertexArray(cap_xcomp->quadVAO);
-    cap_xcomp->egl.glDrawArrays(GL_TRIANGLES, 0, 6);
-    cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
+    cap_xcomp->egl.glViewport(0, 0, source_size.x, source_size.y);
+    cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
 
-    static int counter = 0;
-    ++counter;
-    static bool image_saved = false;
-    if(!image_saved && counter == 5) {
-        image_saved = true;
-        FBO_2_PPM_file(cap_xcomp, 1920, 1080);
-        fprintf(stderr, "saved image!\n");
+    {
+        cap_xcomp->egl.glBindFramebuffer(GL_FRAMEBUFFER, cap_xcomp->FramebufferNameY);
+        //cap_xcomp->egl.glClear(GL_COLOR_BUFFER_BIT);
+
+        cap_xcomp->egl.glUseProgram(cap_xcomp->shader_y);
+        cap_xcomp->egl.glDrawArrays(GL_TRIANGLES, 0, 6);
+    }
+
+    {
+        cap_xcomp->egl.glBindFramebuffer(GL_FRAMEBUFFER, cap_xcomp->FramebufferNameUV);
+        //cap_xcomp->egl.glClear(GL_COLOR_BUFFER_BIT);
+
+        cap_xcomp->egl.glUseProgram(cap_xcomp->shader_uv);
+        cap_xcomp->egl.glDrawArrays(GL_TRIANGLES, 0, 6);
     }
 
     cap_xcomp->egl.glBindVertexArray(0);
     cap_xcomp->egl.glUseProgram(0);
+    cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
     cap_xcomp->egl.glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    #endif
+
     cap_xcomp->egl.eglSwapBuffers(cap_xcomp->egl.egl_display, cap_xcomp->egl.egl_surface);
 
     return 0;
@@ -825,9 +896,14 @@ static int gsr_capture_xcomposite_drm_capture(gsr_capture *cap, AVFrame *frame) 
 
 static void gsr_capture_xcomposite_drm_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
     (void)video_codec_context;
+    gsr_capture_xcomposite_drm *cap_xcomp = cap->priv;
     if(cap->priv) {
         free(cap->priv);
         cap->priv = NULL;
+    }
+    if(cap_xcomp->dpy) {
+        XCloseDisplay(cap_xcomp->dpy);
+        cap_xcomp->dpy = NULL;
     }
     free(cap);
 }

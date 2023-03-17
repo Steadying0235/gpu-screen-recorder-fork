@@ -706,6 +706,7 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
         #define FOURCC_NV12 842094158
 
         if(prime.fourcc == FOURCC_NV12) { // This happens on AMD
+            while(cap_xcomp->egl.glGetError()) {}
             while(cap_xcomp->egl.eglGetError() != EGL_SUCCESS){}
 
             EGLImage images[2];
@@ -902,7 +903,8 @@ static void gsr_capture_xcomposite_drm_destroy(gsr_capture *cap, AVCodecContext 
         cap->priv = NULL;
     }
     if(cap_xcomp->dpy) {
-        XCloseDisplay(cap_xcomp->dpy);
+        // TODO: This causes a crash, why? maybe some other library dlclose xlib and that also happened to unload this???
+        //XCloseDisplay(cap_xcomp->dpy);
         cap_xcomp->dpy = NULL;
     }
     free(cap);

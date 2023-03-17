@@ -88,6 +88,7 @@ int window_texture_on_resize(WindowTexture *self) {
     self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
+    while(self->egl->glGetError()) {}
     while(self->egl->eglGetError() != EGL_SUCCESS) {}
 
     image = self->egl->eglCreateImage(self->egl->egl_display, NULL, EGL_NATIVE_PIXMAP_KHR, (EGLClientBuffer)pixmap, pixmap_attrs);

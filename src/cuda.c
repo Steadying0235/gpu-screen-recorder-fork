@@ -2,8 +2,9 @@
 #include "../include/library_loader.h"
 #include <string.h>
 
-bool gsr_cuda_load(gsr_cuda *self) {
+bool gsr_cuda_load(gsr_cuda *self, Display *display, bool do_overclock) {
     memset(self, 0, sizeof(gsr_cuda));
+    self->do_overclock = do_overclock;
 
     dlerror(); /* clear */
     void *lib = dlopen("libcuda.so.1", RTLD_LAZY);
@@ -76,6 +77,13 @@ bool gsr_cuda_load(gsr_cuda *self) {
         goto fail;
     }
 
+    if(self->do_overclock) {
+        if(gsr_overclock_load(&self->overclock, display))
+            gsr_overclock_start(&self->overclock);
+        else
+            fprintf(stderr, "gsr warning: gsr_cuda_load: failed to load xnvctrl, failed to overclock memory transfer rate\n");
+    }
+
     self->library = lib;
     return true;
 
@@ -91,8 +99,13 @@ void gsr_cuda_unload(gsr_cuda *self) {
             self->cuCtxDestroy_v2(self->cu_ctx);
             self->cu_ctx = 0;
         }
-
         dlclose(self->library);
-        memset(self, 0, sizeof(gsr_cuda));
     }
+
+    if(self->do_overclock && self->overclock.xnvctrl.library) {
+        gsr_overclock_stop(&self->overclock);
+        gsr_overclock_unload(&self->overclock);
+    }
+
+    memset(self, 0, sizeof(gsr_cuda));
 }

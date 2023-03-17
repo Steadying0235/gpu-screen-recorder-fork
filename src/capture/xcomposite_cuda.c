@@ -222,7 +222,7 @@ static int gsr_capture_xcomposite_cuda_start(gsr_capture *cap, AVCodecContext *v
         return -1;
     }
 
-    if(!gsr_cuda_load(&cap_xcomp->cuda)) {
+    if(!gsr_cuda_load(&cap_xcomp->cuda, cap_xcomp->dpy, cap_xcomp->params.overclock)) {
         gsr_capture_xcomposite_cuda_stop(cap, video_codec_context);
         return -1;
     }
@@ -269,7 +269,8 @@ static void gsr_capture_xcomposite_cuda_stop(gsr_capture *cap, AVCodecContext *v
 
     gsr_egl_unload(&cap_xcomp->egl);
     if(cap_xcomp->dpy) {
-        XCloseDisplay(cap_xcomp->dpy);
+        // TODO: This causes a crash, why? maybe some other library dlclose xlib and that also happened to unload this???
+        //XCloseDisplay(cap_xcomp->dpy);
         cap_xcomp->dpy = NULL;
     }
 }
@@ -424,6 +425,7 @@ static int gsr_capture_xcomposite_cuda_capture(gsr_capture *cap, AVFrame *frame)
     vec2i source_size = cap_xcomp->texture_size;
 
     if(cap_xcomp->window_texture.texture_id != 0) {
+        while(cap_xcomp->egl.glGetError()) {}
         /* TODO: Remove this copy, which is only possible by using nvenc directly and encoding window_pixmap.target_texture_id */
         cap_xcomp->egl.glCopyImageSubData(
             window_texture_get_opengl_texture_id(&cap_xcomp->window_texture), GL_TEXTURE_2D, 0, source_pos.x, source_pos.y, 0,

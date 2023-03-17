@@ -12,7 +12,8 @@ typedef struct {
     int fps;
     vec2i pos;
     vec2i size;
-    bool direct_capture; /* temporary disabled */
+    bool direct_capture;
+    bool overclock;
 } gsr_capture_nvfbc_params;
 
 gsr_capture* gsr_capture_nvfbc_create(const gsr_capture_nvfbc_params *params);

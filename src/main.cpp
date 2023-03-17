@@ -630,7 +630,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 }
 
 static void usage() {
-    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>...] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265] [-ac aac|opus|flac] [-o <output_file>]\n");
+    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>...] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265] [-ac aac|opus|flac] [-oc yes|no] [-o <output_file>]\n");
     fprintf(stderr, "OPTIONS:\n");
     fprintf(stderr, "  -w    Window to record, a display, \"screen\", \"screen-direct\", \"screen-direct-force\" or \"focused\". The display is the display (monitor) name in xrandr and if \"screen\" or \"screen-direct\" is selected then all displays are recorded. If this is \"focused\" then the currently focused window is recorded. When recording the focused window then the -s option has to be used as well.\n"
         "        \"screen-direct\"/\"screen-direct-force\" skips one texture copy for fullscreen applications so it may lead to better performance and it works with VRR monitors when recording fullscreen application but may break some applications, such as mpv in fullscreen mode. Direct mode doesn't capture cursor either. \"screen-direct-force\" is not recommended unless you use a VRR monitor because there might be driver issues that cause the video to stutter or record a black screen.\n");
@@ -644,6 +644,7 @@ static void usage() {
         " This option has be between 5 and 1200. Note that the replay buffer size will not always be precise, because of keyframes. Optional, disabled by default.\n");
     fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264' or 'h265'. Defaults to 'auto' which defaults to 'h265' on nvidia unless recording at a higher resolution than 3840x2160. On AMD/Intel this defaults to 'auto' which defaults to 'h264'. Forcefully set to 'h264' if -c is 'flv'.\n");
     fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'. 'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
+    fprintf(stderr, "  -oc   Overclock memory transfer rate to the maximum performance level. This only applies to NVIDIA and exists to overcome a bug in NVIDIA driver where performance level is dropped when you record a game. Only needed if you are recording a game that is bottlenecked by GPU. Works only if your have \"Coolbits\" set to \"12\" in NVIDIA X settings, see README for more information. Obs! use at your own risk! Optional, disabled by default\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r). In replay mode this has to be an existing directory instead of a file.\n");
     fprintf(stderr, "NOTES:\n");
     fprintf(stderr, "  Send signal SIGINT (Ctrl+C) to gpu-screen-recorder to stop and save the recording (when not using replay mode).\n");
@@ -1064,10 +1065,11 @@ int main(int argc, char **argv) {
         { "-o", Arg { {}, true, false } },
         { "-r", Arg { {}, true, false } },
         { "-k", Arg { {}, true, false } },
-        { "-ac", Arg { {}, true, false } }
+        { "-ac", Arg { {}, true, false } },
+        { "-oc", Arg { {}, true, false } }
     };
 
-    for(int i = 1; i < argc - 1; i += 2) {
+    for(int i = 1; i < argc; i += 2) {
         auto it = args.find(argv[i]);
         if(it == args.end()) {
             fprintf(stderr, "Invalid argument '%s'\n", argv[i]);
@@ -1076,6 +1078,11 @@ int main(int argc, char **argv) {
 
         if(!it->second.values.empty() && !it->second.list) {
             fprintf(stderr, "Expected argument '%s' to only be specified once\n", argv[i]);
+            usage();
+        }
+
+        if(i + 1 >= argc) {
+            fprintf(stderr, "Missing value for argument '%s'\n", argv[i]);
             usage();
         }
 
@@ -1118,6 +1125,11 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Error: -ac should either be either 'aac', 'opus' or 'flac', got: '%s'\n", audio_codec_to_use);
         usage();
     }
+
+    const char *overclock_str = args["-oc"].value();
+    if(!overclock_str)
+        overclock_str = "no";
+    const bool overclock = strcmp(overclock_str, "yes") == 0;
 
     const Arg &audio_input_arg = args["-a"];
     const std::vector<AudioInput> audio_inputs = get_pulseaudio_inputs();
@@ -1221,6 +1233,10 @@ int main(int argc, char **argv) {
         usage();
     }
 
+    vec2i region_size = { 0, 0 };
+    Window src_window_id = None;
+    bool follow_focused = false;
+
     gsr_capture *capture = nullptr;
     if(strcmp(window_str, "focused") == 0) {
         if(!screen_region) {
@@ -1228,7 +1244,6 @@ int main(int argc, char **argv) {
             usage();
         }
 
-        vec2i region_size = { 0, 0 };
         if(sscanf(screen_region, "%dx%d", &region_size.x, &region_size.y) != 2) {
             fprintf(stderr, "Error: invalid value for option -s '%s', expected a value in format WxH\n", screen_region);
             usage();
@@ -1239,38 +1254,7 @@ int main(int argc, char **argv) {
             usage();
         }
 
-        switch(gpu_inf.vendor) {
-            case GPU_VENDOR_AMD: {
-                gsr_capture_xcomposite_drm_params xcomposite_params;
-                xcomposite_params.window = 0;
-                xcomposite_params.follow_focused = true;
-                xcomposite_params.region_size = region_size;
-                capture = gsr_capture_xcomposite_drm_create(&xcomposite_params);
-                if(!capture)
-                    return 1;
-                break;
-            }
-            case GPU_VENDOR_INTEL: {
-                gsr_capture_xcomposite_drm_params xcomposite_params;
-                xcomposite_params.window = 0;
-                xcomposite_params.follow_focused = true;
-                xcomposite_params.region_size = region_size;
-                capture = gsr_capture_xcomposite_drm_create(&xcomposite_params);
-                if(!capture)
-                    return 1;
-                break;
-            }
-            case GPU_VENDOR_NVIDIA: {
-                gsr_capture_xcomposite_cuda_params xcomposite_params;
-                xcomposite_params.window = 0;
-                xcomposite_params.follow_focused = true;
-                xcomposite_params.region_size = region_size;
-                capture = gsr_capture_xcomposite_cuda_create(&xcomposite_params);
-                if(!capture)
-                    return 1;
-                break;
-            }
-        }
+        follow_focused = true;
     } else if(contains_non_hex_number(window_str)) {
         if(gpu_inf.vendor != GPU_VENDOR_NVIDIA) {
             fprintf(stderr, "Error: recording a monitor is only supported on NVIDIA right now. Record \"focused\" instead for convenient fullscreen window recording\n");
@@ -1310,23 +1294,26 @@ int main(int argc, char **argv) {
         nvfbc_params.pos = { 0, 0 };
         nvfbc_params.size = { 0, 0 };
         nvfbc_params.direct_capture = direct_capture;
+        nvfbc_params.overclock = overclock;
         capture = gsr_capture_nvfbc_create(&nvfbc_params);
         if(!capture)
             return 1;
     } else {
         errno = 0;
-        Window src_window_id = strtol(window_str, nullptr, 0);
+        src_window_id = strtol(window_str, nullptr, 0);
         if(src_window_id == None || errno == EINVAL) {
             fprintf(stderr, "Invalid window number %s\n", window_str);
             usage();
         }
+    }
 
+    if(!capture) {
         switch(gpu_inf.vendor) {
             case GPU_VENDOR_AMD: {
                 gsr_capture_xcomposite_drm_params xcomposite_params;
                 xcomposite_params.window = src_window_id;
-                xcomposite_params.follow_focused = false;
-                xcomposite_params.region_size = { 0, 0 };
+                xcomposite_params.follow_focused = follow_focused;
+                xcomposite_params.region_size = region_size;
                 capture = gsr_capture_xcomposite_drm_create(&xcomposite_params);
                 if(!capture)
                     return 1;
@@ -1335,8 +1322,8 @@ int main(int argc, char **argv) {
             case GPU_VENDOR_INTEL: {
                 gsr_capture_xcomposite_drm_params xcomposite_params;
                 xcomposite_params.window = src_window_id;
-                xcomposite_params.follow_focused = false;
-                xcomposite_params.region_size = { 0, 0 };
+                xcomposite_params.follow_focused = follow_focused;
+                xcomposite_params.region_size = region_size;
                 capture = gsr_capture_xcomposite_drm_create(&xcomposite_params);
                 if(!capture)
                     return 1;
@@ -1345,8 +1332,9 @@ int main(int argc, char **argv) {
             case GPU_VENDOR_NVIDIA: {
                 gsr_capture_xcomposite_cuda_params xcomposite_params;
                 xcomposite_params.window = src_window_id;
-                xcomposite_params.follow_focused = false;
-                xcomposite_params.region_size = { 0, 0 };
+                xcomposite_params.follow_focused = follow_focused;
+                xcomposite_params.region_size = region_size;
+                xcomposite_params.overclock = overclock;
                 capture = gsr_capture_xcomposite_cuda_create(&xcomposite_params);
                 if(!capture)
                     return 1;
@@ -1874,8 +1862,10 @@ int main(int argc, char **argv) {
 
     gsr_capture_destroy(capture, video_codec_context);
 
-    if(dpy)
-        XCloseDisplay(dpy);
+    if(dpy) {
+        // TODO: This causes a crash, why? maybe some other library dlclose xlib and that also happened to unload this???
+        //XCloseDisplay(dpy);
+    }
 
     free(empty_audio);
     return should_stop_error ? 3 : 0;

@@ -15,3 +15,7 @@ Support amf and qsv.
 Disable flipping on nvidia? this might fix some stuttering issues on some setups. See NvCtrlGetAttribute/NvCtrlSetAttributeAndGetStatus NV_CTRL_SYNC_TO_VBLANK https://github.com/NVIDIA/nvidia-settings/blob/d5f022976368cbceb2f20b838ddb0bf992f0cfb9/src/gtk%2B-2.x/ctkopengl.c.
 Replays seem to have some issues with audio/video. Why?
 Cleanup unused gl/egl functions, macro, etc.
+Add option to disable overlapping of replays (the old behavior kinda. Remove the whole replay buffer data after saving when doing this).
+Set audio track name to audio device name (if not merge of multiple audio devices).
+Add support for webcam, but only really for amd/intel because amd/intel can get drm fd access to webcam, nvidia cant. This allows us to create an opengl texture directly from the webcam fd for optimal performance.
+Reverse engineer nvapi so we can disable "force p2 state" on linux too (nvapi profile api with the settings id 0x50166c5e).

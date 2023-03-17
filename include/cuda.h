@@ -1,11 +1,14 @@
 #ifndef GSR_CUDA_H
 #define GSR_CUDA_H
 
+#include "overclock.h"
 #include <stddef.h>
 #include <stdbool.h>
 
 // To prevent hwcontext_cuda.h from including cuda.h
 #define CUDA_VERSION 11070
+
+#define CU_CTX_SCHED_AUTO 0
 
 #if defined(_WIN64) || defined(__LP64__)
 typedef unsigned long long CUdeviceptr_v2;
@@ -68,11 +71,12 @@ typedef struct CUDA_MEMCPY2D_st {
 } CUDA_MEMCPY2D_v2;
 typedef CUDA_MEMCPY2D_v2 CUDA_MEMCPY2D;
 
-#define CU_CTX_SCHED_AUTO 0
-
 typedef struct CUgraphicsResource_st *CUgraphicsResource;
 
 typedef struct {
+    gsr_overclock overclock;
+    bool do_overclock;
+
     void *library;
     CUcontext cu_ctx;
 
@@ -95,7 +99,7 @@ typedef struct {
     CUresult (*cuGraphicsSubResourceGetMappedArray)(CUarray *pArray, CUgraphicsResource resource, unsigned int arrayIndex, unsigned int mipLevel);
 } gsr_cuda;
 
-bool gsr_cuda_load(gsr_cuda *self);
+bool gsr_cuda_load(gsr_cuda *self, Display *display, bool overclock);
 void gsr_cuda_unload(gsr_cuda *self);
 
 #endif /* GSR_CUDA_H */

@@ -183,7 +183,7 @@ static bool ffmpeg_create_cuda_contexts(gsr_capture_nvfbc *cap_nvfbc, AVCodecCon
 
 static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_nvfbc *cap_nvfbc = cap->priv;
-    if(!gsr_cuda_load(&cap_nvfbc->cuda))
+    if(!gsr_cuda_load(&cap_nvfbc->cuda, cap_nvfbc->params.dpy, cap_nvfbc->params.overclock))
         return -1;
 
     if(!gsr_capture_nvfbc_load_library(cap)) {

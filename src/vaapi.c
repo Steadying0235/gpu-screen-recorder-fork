@@ -20,7 +20,7 @@ bool gsr_vaapi_load(gsr_vaapi *self) {
     };
 
     if(!dlsym_load_list(lib, required_dlsym)) {
-        fprintf(stderr, "gsr error: gsr_vaapi_load failed: missing required symbols in libcuda.so/libcuda.so.1\n");
+        fprintf(stderr, "gsr error: gsr_vaapi_load failed: missing required symbols in libva.so\n");
         goto fail;
     }
 

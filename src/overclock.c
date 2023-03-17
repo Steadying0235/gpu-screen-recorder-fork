@@ -12,10 +12,6 @@
 
 // Fields are 0 if not set
 
-static min_int(int a, int b) {
-    return a < b ? a : b;
-}
-
 typedef struct {
     int perf;
 

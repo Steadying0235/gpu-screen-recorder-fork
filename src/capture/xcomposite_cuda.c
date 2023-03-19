@@ -3,7 +3,6 @@
 #include "../../include/cuda.h"
 #include "../../include/window_texture.h"
 #include "../../include/time.h"
-#include <X11/extensions/Xcomposite.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_cuda.h>
 #include <libavutil/frame.h>

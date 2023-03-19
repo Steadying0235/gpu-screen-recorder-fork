@@ -39,8 +39,6 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define EGL_OPENGL_ES2_BIT                      0x0004
 #define EGL_NONE                                0x3038
 #define EGL_CONTEXT_CLIENT_VERSION              0x3098
-#define EGL_BACK_BUFFER                         0x3084
-#define EGL_GL_TEXTURE_2D                       0x30B1
 
 #define GL_TEXTURE_2D                           0x0DE1
 #define GL_RGB                                  0x1907
@@ -64,32 +62,6 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define GL_VENDOR                               0x1F00
 #define GL_RENDERER                             0x1F01
 
-#define GLX_BUFFER_SIZE                         2
-#define GLX_DOUBLEBUFFER                        5
-#define GLX_RED_SIZE                            8
-#define GLX_GREEN_SIZE                          9
-#define GLX_BLUE_SIZE                           10
-#define GLX_ALPHA_SIZE                          11
-#define GLX_DEPTH_SIZE                          12
-
-#define GLX_RGBA_BIT                            0x00000001
-#define GLX_RENDER_TYPE                         0x8011
-#define GLX_FRONT_EXT                           0x20DE
-#define GLX_BIND_TO_TEXTURE_RGB_EXT             0x20D0
-#define GLX_DRAWABLE_TYPE                       0x8010
-#define GLX_WINDOW_BIT                          0x00000001
-#define GLX_PIXMAP_BIT                          0x00000002
-#define GLX_BIND_TO_TEXTURE_TARGETS_EXT         0x20D3
-#define GLX_TEXTURE_2D_BIT_EXT                  0x00000002
-#define GLX_TEXTURE_TARGET_EXT                  0x20D6
-#define GLX_TEXTURE_2D_EXT                      0x20DC
-#define GLX_TEXTURE_FORMAT_EXT                  0x20D5
-#define GLX_TEXTURE_FORMAT_RGB_EXT              0x20D9
-#define GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB  0x00000002
-#define GLX_CONTEXT_MAJOR_VERSION_ARB           0x2091
-#define GLX_CONTEXT_MINOR_VERSION_ARB           0x2092
-#define GLX_CONTEXT_FLAGS_ARB                   0x2094
-
 typedef struct {
     void *egl_library;
     void *gl_library;
@@ -107,18 +79,14 @@ typedef struct {
     EGLSurface (*eglCreateWindowSurface)(EGLDisplay dpy, EGLConfig config, EGLNativeWindowType win, const int32_t *attrib_list);
     EGLContext (*eglCreateContext)(EGLDisplay dpy, EGLConfig config, EGLContext share_context, const int32_t *attrib_list);
     unsigned int (*eglMakeCurrent)(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx);
-    EGLSurface (*eglCreatePixmapSurface)(EGLDisplay dpy, EGLConfig config, EGLNativePixmapType pixmap, const int32_t *attrib_list);
     EGLImage (*eglCreateImage)(EGLDisplay dpy, EGLContext ctx, unsigned int target, EGLClientBuffer buffer, const intptr_t *attrib_list);
     unsigned int (*eglDestroyContext)(EGLDisplay dpy, EGLContext ctx);
     unsigned int (*eglDestroySurface)(EGLDisplay dpy, EGLSurface surface);
     unsigned int (*eglDestroyImage)(EGLDisplay dpy, EGLImage image);
-    unsigned int (*eglBindTexImage)(EGLDisplay dpy, EGLSurface surface, int32_t buffer);
     unsigned int (*eglSwapInterval)(EGLDisplay dpy, int32_t interval);
     unsigned int (*eglSwapBuffers)(EGLDisplay dpy, EGLSurface surface);
     __eglMustCastToProperFunctionPointerType (*eglGetProcAddress)(const char *procname);
 
-    unsigned int (*eglExportDMABUFImageQueryMESA)(EGLDisplay dpy, EGLImageKHR image, int *fourcc, int *num_planes, uint64_t *modifiers);
-    unsigned int (*eglExportDMABUFImageMESA)(EGLDisplay dpy, EGLImageKHR image, int *fds, int32_t *strides, int32_t *offsets);
     void (*glEGLImageTargetTexture2DOES)(unsigned int target, GLeglImageOES image);
 
     unsigned int (*glGetError)(void);
@@ -142,7 +110,6 @@ typedef struct {
     void (*glBindBuffer)(unsigned int target, unsigned int buffer);
     void (*glGenBuffers)(int n, unsigned int *buffers);
     void (*glBufferData)(unsigned int target, khronos_ssize_t size, const void *data, unsigned int usage);
-    int (*glGetUniformLocation)(unsigned int program, const char *name);
     void (*glGenVertexArrays)(int n, unsigned int *arrays);
     void (*glBindVertexArray)(unsigned int array);
 
@@ -157,18 +124,12 @@ typedef struct {
     void (*glGetProgramInfoLog)(unsigned int program, int bufSize, int *length, char *infoLog);
     void (*glGetShaderiv)(unsigned int shader, unsigned int pname, int *params);
     void (*glGetShaderInfoLog)(unsigned int shader, int bufSize, int *length, char *infoLog);
-    void (*glGetShaderSource)(unsigned int shader, int bufSize, int *length, char *source);
     void (*glDeleteProgram)(unsigned int program);
     void (*glDeleteShader)(unsigned int shader);
     void (*glGetProgramiv)(unsigned int program, unsigned int pname, int *params);
     void (*glVertexAttribPointer)(unsigned int index, int size, unsigned int type, unsigned char normalized, int stride, const void *pointer);
     void (*glEnableVertexAttribArray)(unsigned int index);
     void (*glDrawArrays)(unsigned int mode, int first, int count );
-    void (*glReadBuffer)( unsigned int mode );
-    void (*glReadPixels)(int x, int y,
-                                    int width, int height,
-                                    unsigned int format, unsigned int type,
-                                    void *pixels );
 } gsr_egl;
 
 bool gsr_egl_load(gsr_egl *self, Display *dpy);

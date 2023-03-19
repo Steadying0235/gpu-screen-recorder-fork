@@ -90,12 +90,10 @@ static bool gsr_egl_load_egl(gsr_egl *self, void *library) {
         { (void**)&self->eglCreateWindowSurface, "eglCreateWindowSurface" },
         { (void**)&self->eglCreateContext, "eglCreateContext" },
         { (void**)&self->eglMakeCurrent, "eglMakeCurrent" },
-        { (void**)&self->eglCreatePixmapSurface, "eglCreatePixmapSurface" },
-        { (void**)&self->eglCreateImage, "eglCreateImage" }, /* TODO: use eglCreateImageKHR instead? */
+        { (void**)&self->eglCreateImage, "eglCreateImage" },
         { (void**)&self->eglDestroyContext, "eglDestroyContext" },
         { (void**)&self->eglDestroySurface, "eglDestroySurface" },
         { (void**)&self->eglDestroyImage, "eglDestroyImage" },
-        { (void**)&self->eglBindTexImage, "eglBindTexImage" },
         { (void**)&self->eglSwapInterval, "eglSwapInterval" },
         { (void**)&self->eglSwapBuffers, "eglSwapBuffers" },
         { (void**)&self->eglGetProcAddress, "eglGetProcAddress" },
@@ -112,8 +110,6 @@ static bool gsr_egl_load_egl(gsr_egl *self, void *library) {
 }
 
 static bool gsr_egl_proc_load_egl(gsr_egl *self) {
-    self->eglExportDMABUFImageQueryMESA = self->eglGetProcAddress("eglExportDMABUFImageQueryMESA");
-    self->eglExportDMABUFImageMESA = self->eglGetProcAddress("eglExportDMABUFImageMESA");
     self->glEGLImageTargetTexture2DOES = self->eglGetProcAddress("glEGLImageTargetTexture2DOES");
 
     if(!self->glEGLImageTargetTexture2DOES) {
@@ -147,7 +143,6 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
         { (void**)&self->glBindBuffer, "glBindBuffer" },
         { (void**)&self->glGenBuffers, "glGenBuffers" },
         { (void**)&self->glBufferData, "glBufferData" },
-        { (void**)&self->glGetUniformLocation, "glGetUniformLocation" },
         { (void**)&self->glGenVertexArrays, "glGenVertexArrays" },
         { (void**)&self->glBindVertexArray, "glBindVertexArray" },
         { (void**)&self->glCreateProgram, "glCreateProgram" },
@@ -161,15 +156,12 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
         { (void**)&self->glGetProgramInfoLog, "glGetProgramInfoLog" },
         { (void**)&self->glGetShaderiv, "glGetShaderiv" },
         { (void**)&self->glGetShaderInfoLog, "glGetShaderInfoLog" },
-        { (void**)&self->glGetShaderSource, "glGetShaderSource" },
         { (void**)&self->glDeleteProgram, "glDeleteProgram" },
         { (void**)&self->glDeleteShader, "glDeleteShader" },
         { (void**)&self->glGetProgramiv, "glGetProgramiv" },
         { (void**)&self->glVertexAttribPointer, "glVertexAttribPointer" },
         { (void**)&self->glEnableVertexAttribArray, "glEnableVertexAttribArray" },
         { (void**)&self->glDrawArrays, "glDrawArrays" },
-        { (void**)&self->glReadBuffer, "glReadBuffer" },
-        { (void**)&self->glReadPixels, "glReadPixels" },
 
         { NULL, NULL }
     };

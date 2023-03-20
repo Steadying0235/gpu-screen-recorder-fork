@@ -789,9 +789,6 @@ static void save_replay_async(AVCodecContext *video_codec_context, int video_str
         AVFormatContext *av_format_context;
         avformat_alloc_output_context2(&av_format_context, nullptr, container_format, nullptr);
 
-        av_format_context->flags |= AVFMT_FLAG_GENPTS;
-        av_format_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-
         AVStream *video_stream = create_stream(av_format_context, video_codec_context);
         avcodec_parameters_from_context(video_stream->codecpar, video_codec_context);
 
@@ -1400,8 +1397,6 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    av_format_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-    av_format_context->flags |= AVFMT_FLAG_GENPTS;
     const AVOutputFormat *output_format = av_format_context->oformat;
 
     std::string file_extension = output_format->extensions;

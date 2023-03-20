@@ -377,6 +377,10 @@ static void gsr_capture_nvfbc_tick(gsr_capture *cap, AVCodecContext *video_codec
         (*frame)->hw_frames_ctx = video_codec_context->hw_frames_ctx;
         (*frame)->buf[0] = av_buffer_pool_get(((AVHWFramesContext*)video_codec_context->hw_frames_ctx->data)->pool);
         (*frame)->extended_data = (*frame)->data;
+        (*frame)->color_range = video_codec_context->color_range;
+        (*frame)->color_primaries = video_codec_context->color_primaries;
+        (*frame)->color_trc = video_codec_context->color_trc;
+        (*frame)->colorspace = video_codec_context->colorspace;
     }
 }
 

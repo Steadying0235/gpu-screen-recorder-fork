@@ -8,7 +8,6 @@ Allow recording all monitors/selected monitor without nvfbc by recording the com
 Allow recording a region by recording the compositor proxy window / nvfbc window and copying part of it.
 Use nvenc directly, which allows removing the use of cuda.
 Handle xrandr monitor change in nvfbc.
-Add option for yuv 4:4:4 chroma sampling for the output video.
 Implement follow focused in drm.
 Support fullscreen capture on amd/intel using external kms process.
 Support amf and qsv.
@@ -19,3 +18,7 @@ Add option to disable overlapping of replays (the old behavior kinda. Remove the
 Set audio track name to audio device name (if not merge of multiple audio devices).
 Add support for webcam, but only really for amd/intel because amd/intel can get drm fd access to webcam, nvidia cant. This allows us to create an opengl texture directly from the webcam fd for optimal performance.
 Reverse engineer nvapi so we can disable "force p2 state" on linux too (nvapi profile api with the settings id 0x50166c5e).
+Support yuv444p on amd/intel.
+fix yuv444 for hevc.
+Do not allow streaming if yuv444.
+Support 10 bit output because of better gradients. May even be smaller file size.

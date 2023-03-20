@@ -389,7 +389,10 @@ static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *v
         (*frame)->format = video_codec_context->pix_fmt;
         (*frame)->width = video_codec_context->width;
         (*frame)->height = video_codec_context->height;
-        (*frame)->color_range = AVCOL_RANGE_JPEG;
+        (*frame)->color_range = video_codec_context->color_range;
+        (*frame)->color_primaries = video_codec_context->color_primaries;
+        (*frame)->color_trc = video_codec_context->color_trc;
+        (*frame)->colorspace = video_codec_context->colorspace;
 
         if(av_hwframe_get_buffer(video_codec_context->hw_frames_ctx, *frame, 0) < 0) {
             fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_tick: av_hwframe_get_buffer failed\n");

@@ -41,6 +41,8 @@ extern "C" {
 #include <deque>
 #include <future>
 
+// TODO: If options are not supported then they are returned (allocated) in the options. This should be free'd.
+
 typedef enum {
     GPU_VENDOR_AMD,
     GPU_VENDOR_INTEL,
@@ -144,6 +146,11 @@ enum class AudioCodec {
     AAC,
     OPUS,
     FLAC
+};
+
+enum class PixelFormat {
+    YUV420,
+    YUV444
 };
 
 static int x11_error_handler(Display *dpy, XErrorEvent *ev) {
@@ -365,7 +372,10 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     }
     codec_context->max_b_frames = 0;
     codec_context->pix_fmt = pix_fmt;
-    codec_context->color_range = AVCOL_RANGE_JPEG;
+    //codec_context->color_range = AVCOL_RANGE_JPEG;
+    //codec_context->color_primaries = AVCOL_PRI_BT709;
+    //codec_context->color_trc = AVCOL_TRC_BT709;
+    //codec_context->colorspace = AVCOL_SPC_BT709;
     if(codec->id == AV_CODEC_ID_HEVC)
         codec_context->codec_tag = MKTAG('h', 'v', 'c', '1');
     switch(video_quality) {
@@ -519,7 +529,7 @@ static AVFrame* open_audio(AVCodecContext *audio_codec_context) {
     return frame;
 }
 
-static void open_video(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu, gpu_vendor vendor) {
+static void open_video(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu, gpu_vendor vendor, PixelFormat pixel_format) {
     AVDictionary *options = nullptr;
     if(vendor == GPU_VENDOR_NVIDIA) {
         bool supports_p4 = false;
@@ -589,8 +599,25 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
         av_dict_set(&options, "tune", "hq", 0);
         av_dict_set(&options, "rc", "constqp", 0);
 
-        if(codec_context->codec_id == AV_CODEC_ID_H264)
-            av_dict_set(&options, "profile", "high", 0);
+        if(codec_context->codec_id == AV_CODEC_ID_H264) {
+            switch(pixel_format) {
+                case PixelFormat::YUV420:
+                    av_dict_set(&options, "profile", "high", 0);
+                    break;
+                case PixelFormat::YUV444:
+                    av_dict_set(&options, "profile", "high444p", 0);
+                    break;
+            }
+        }
+
+        switch(pixel_format) {
+            case PixelFormat::YUV420:
+                av_opt_set(&options, "pixel_format", "yuv420p", 0);
+                break;
+            case PixelFormat::YUV444:
+                av_opt_set(&options, "pixel_format", "yuv444p", 0);
+                break;
+        }
     } else {
         switch(video_quality) {
             case VideoQuality::MEDIUM:
@@ -613,11 +640,14 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 
         if(codec_context->codec_id == AV_CODEC_ID_H264) {
             av_dict_set(&options, "profile", "high", 0);
-            av_dict_set(&options, "coder", "cavlc", 0);// TODO: cavlc is faster than cabac but worse compression. Which to use?
-            av_dict_set_int(&options, "quality", 50, 0);
+            av_dict_set_int(&options, "quality", 32, 0);
         } else {
             av_dict_set(&options, "profile", "main", 0);
         }
+    }
+
+    if(codec_context->codec_id == AV_CODEC_ID_H264) {
+        av_dict_set(&options, "coder", "cabac", 0); // TODO: cavlc is faster than cabac but worse compression. Which to use?
     }
 
     av_dict_set(&options, "strict", "experimental", 0);
@@ -630,27 +660,29 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 }
 
 static void usage() {
-    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>...] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265] [-ac aac|opus|flac] [-oc yes|no] [-o <output_file>]\n");
+    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>...] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265] [-ac aac|opus|flac] [-oc yes|no] [-pixfmt yuv420|yuv444] [-o <output_file>]\n");
     fprintf(stderr, "OPTIONS:\n");
-    fprintf(stderr, "  -w    Window to record, a display, \"screen\", \"screen-direct\", \"screen-direct-force\" or \"focused\". The display is the display (monitor) name in xrandr and if \"screen\" or \"screen-direct\" is selected then all displays are recorded. If this is \"focused\" then the currently focused window is recorded. When recording the focused window then the -s option has to be used as well.\n"
+    fprintf(stderr, "  -w       Window to record, a display, \"screen\", \"screen-direct\", \"screen-direct-force\" or \"focused\". The display is the display (monitor) name in xrandr and if \"screen\" or \"screen-direct\" is selected then all displays are recorded. If this is \"focused\" then the currently focused window is recorded. When recording the focused window then the -s option has to be used as well.\n"
         "        \"screen-direct\"/\"screen-direct-force\" skips one texture copy for fullscreen applications so it may lead to better performance and it works with VRR monitors when recording fullscreen application but may break some applications, such as mpv in fullscreen mode. Direct mode doesn't capture cursor either. \"screen-direct-force\" is not recommended unless you use a VRR monitor because there might be driver issues that cause the video to stutter or record a black screen.\n");
-    fprintf(stderr, "  -c    Container format for output file, for example mp4, or flv. Only required if no output file is specified or if recording in replay buffer mode. If an output file is specified and -c is not used then the container format is determined from the output filename extension.\n");
-    fprintf(stderr, "  -s    The size (area) to record at in the format WxH, for example 1920x1080. This option is only supported (and required) when -w is \"focused\".\n");
-    fprintf(stderr, "  -f    Framerate to record at.\n");
-    fprintf(stderr, "  -a    Audio device to record from (pulse audio device). Can be specified multiple times. Each time this is specified a new audio track is added for the specified audio device. A name can be given to the audio input device by prefixing the audio input with <name>/, for example \"dummy/alsa_output.pci-0000_00_1b.0.analog-stereo.monitor\". Multiple audio devices can be merged into one audio track by using \"|\" as a separator into one -a argument, for example: -a \"alsa_output1|alsa_output2\". Optional, no audio track is added by default.\n");
-    fprintf(stderr, "  -q    Video quality. Should be either 'medium', 'high', 'very_high' or 'ultra'. 'high' is the recommended option when live streaming or when you have a slower harddrive. Optional, set to 'very_high' be default.\n");
-    fprintf(stderr, "  -r    Replay buffer size in seconds. If this is set, then only the last seconds as set by this option will be stored"
+    fprintf(stderr, "  -c       Container format for output file, for example mp4, or flv. Only required if no output file is specified or if recording in replay buffer mode. If an output file is specified and -c is not used then the container format is determined from the output filename extension.\n");
+    fprintf(stderr, "  -s       The size (area) to record at in the format WxH, for example 1920x1080. This option is only supported (and required) when -w is \"focused\".\n");
+    fprintf(stderr, "  -f       Framerate to record at.\n");
+    fprintf(stderr, "  -a       Audio device to record from (pulse audio device). Can be specified multiple times. Each time this is specified a new audio track is added for the specified audio device. A name can be given to the audio input device by prefixing the audio input with <name>/, for example \"dummy/alsa_output.pci-0000_00_1b.0.analog-stereo.monitor\". Multiple audio devices can be merged into one audio track by using \"|\" as a separator into one -a argument, for example: -a \"alsa_output1|alsa_output2\". Optional, no audio track is added by default.\n");
+    fprintf(stderr, "  -q       Video quality. Should be either 'medium', 'high', 'very_high' or 'ultra'. 'high' is the recommended option when live streaming or when you have a slower harddrive. Optional, set to 'very_high' be default.\n");
+    fprintf(stderr, "  -r       Replay buffer size in seconds. If this is set, then only the last seconds as set by this option will be stored"
         " and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature."
         " This option has be between 5 and 1200. Note that the replay buffer size will not always be precise, because of keyframes. Optional, disabled by default.\n");
-    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264' or 'h265'. Defaults to 'auto' which defaults to 'h265' on nvidia unless recording at a higher resolution than 3840x2160. On AMD/Intel this defaults to 'auto' which defaults to 'h264'. Forcefully set to 'h264' if -c is 'flv'.\n");
-    fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'. 'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
-    fprintf(stderr, "  -oc   Overclock memory transfer rate to the maximum performance level. This only applies to NVIDIA and exists to overcome a bug in NVIDIA driver where performance level is dropped when you record a game. Only needed if you are recording a game that is bottlenecked by GPU. Works only if your have \"Coolbits\" set to \"12\" in NVIDIA X settings, see README for more information. Note! use at your own risk! Optional, disabled by default\n");
-    fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r). In replay mode this has to be an existing directory instead of a file.\n");
+    fprintf(stderr, "  -k       Video codec to use. Should be either 'auto', 'h264' or 'h265'. Defaults to 'auto' which defaults to 'h265' on nvidia unless recording at a higher resolution than 3840x2160. On AMD/Intel this defaults to 'auto' which defaults to 'h264'. Forcefully set to 'h264' if -c is 'flv'.\n");
+    fprintf(stderr, "  -ac      Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'. 'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
+    fprintf(stderr, "  -oc      Overclock memory transfer rate to the maximum performance level. This only applies to NVIDIA and exists to overcome a bug in NVIDIA driver where performance level is dropped when you record a game. Only needed if you are recording a game that is bottlenecked by GPU. Works only if your have \"Coolbits\" set to \"12\" in NVIDIA X settings, see README for more information. Note! use at your own risk! Optional, disabled by default\n");
+    fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed outandr certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, defaults to yuv420\n");
+    fprintf(stderr, "  -o       The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r). In replay mode this has to be an existing directory instead of a file.\n");
     fprintf(stderr, "NOTES:\n");
     fprintf(stderr, "  Send signal SIGINT (Ctrl+C) to gpu-screen-recorder to stop and save the recording (when not using replay mode).\n");
     fprintf(stderr, "  Send signal SIGUSR1 (killall -SIGUSR1 gpu-screen-recorder) to gpu-screen-recorder to save a replay.\n");
     fprintf(stderr, "EXAMPLES\n");
     fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -o video.mp4\n");
+    fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -q ultra -pixfmt yuv444 -o video.mp4\n");
     exit(1);
 }
 
@@ -1079,7 +1111,8 @@ int main(int argc, char **argv) {
         { "-r", Arg { {}, true, false } },
         { "-k", Arg { {}, true, false } },
         { "-ac", Arg { {}, true, false } },
-        { "-oc", Arg { {}, true, false } }
+        { "-oc", Arg { {}, true, false } },
+        { "-pixfmt", Arg { {}, true, false } }
     };
 
     for(int i = 1; i < argc; i += 2) {
@@ -1123,7 +1156,7 @@ int main(int argc, char **argv) {
         usage();
     }
 
-    AudioCodec audio_codec = AudioCodec::AAC;
+    AudioCodec audio_codec = AudioCodec::OPUS;
     const char *audio_codec_to_use = args["-ac"].value();
     if(!audio_codec_to_use)
         audio_codec_to_use = "opus";
@@ -1139,10 +1172,33 @@ int main(int argc, char **argv) {
         usage();
     }
 
+    bool overclock = false;
     const char *overclock_str = args["-oc"].value();
     if(!overclock_str)
         overclock_str = "no";
-    const bool overclock = strcmp(overclock_str, "yes") == 0;
+
+    if(strcmp(overclock_str, "yes") == 0) {
+        overclock = true;
+    } else if(strcmp(overclock_str, "no") == 0) {
+        overclock = false;
+    } else {
+        fprintf(stderr, "Error: -oc should either be either 'yes' or 'no', got: '%s'\n", overclock_str);
+        usage();
+    }
+
+    PixelFormat pixel_format = PixelFormat::YUV420;
+    const char *pixfmt = args["-pixfmt"].value();
+    if(!pixfmt)
+        pixfmt = "yuv420";
+
+    if(strcmp(pixfmt, "yuv420") == 0) {
+        pixel_format = PixelFormat::YUV420;
+    } else if(strcmp(pixfmt, "yuv444") == 0) {
+        pixel_format = PixelFormat::YUV444;
+    } else {
+        fprintf(stderr, "Error: -pixfmt should either be either 'yuv420', or 'yuv444', got: '%s'\n", pixfmt);
+        usage();
+    }
 
     const Arg &audio_input_arg = args["-a"];
     const std::vector<AudioInput> audio_inputs = get_pulseaudio_inputs();
@@ -1513,7 +1569,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    open_video(video_codec_context, quality, very_old_gpu, gpu_inf.vendor);
+    open_video(video_codec_context, quality, very_old_gpu, gpu_inf.vendor, pixel_format);
     if(video_stream)
         avcodec_parameters_from_context(video_stream->codecpar, video_codec_context);
 
@@ -1625,7 +1681,10 @@ int main(int argc, char **argv) {
     frame->format = video_codec_context->pix_fmt;
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
-    frame->color_range = AVCOL_RANGE_JPEG;
+    frame->color_range = video_codec_context->color_range;
+    frame->color_primaries = video_codec_context->color_primaries;
+    frame->color_trc = video_codec_context->color_trc;
+    frame->colorspace = video_codec_context->colorspace;
 
     std::mutex write_output_mutex;
     std::mutex audio_filter_mutex;

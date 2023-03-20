@@ -372,7 +372,10 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
         (*frame)->format = video_codec_context->pix_fmt;
         (*frame)->width = video_codec_context->width;
         (*frame)->height = video_codec_context->height;
-        (*frame)->color_range = AVCOL_RANGE_JPEG;
+        (*frame)->color_range = video_codec_context->color_range;
+        (*frame)->color_primaries = video_codec_context->color_primaries;
+        (*frame)->color_trc = video_codec_context->color_trc;
+        (*frame)->colorspace = video_codec_context->colorspace;
 
         int res = av_hwframe_get_buffer(video_codec_context->hw_frames_ctx, *frame, 0);
         if(res < 0) {

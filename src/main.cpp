@@ -1049,6 +1049,22 @@ static int init_filter_graph(AVCodecContext *audio_codec_context, AVFilterGraph 
     return 0;
 }
 
+static void xwayland_check_callback(const XRROutputInfo *output_info, const XRRCrtcInfo*, const XRRModeInfo*, void *userdata) {
+    bool *xwayland_found = (bool*)userdata;
+    if(output_info->nameLen >= 8 && strncmp(output_info->name, "XWAYLAND", 8) == 0)
+        *xwayland_found = true;
+}
+
+static bool is_xwayland(Display *display) {
+    int opcode, event, error;
+    if(XQueryExtension(display, "XWAYLAND", &opcode, &event, &error))
+        return true;
+
+    bool xwayland_found = false;
+    for_each_active_monitor_output(display, xwayland_check_callback, &xwayland_found);
+    return xwayland_found;
+}
+
 int main(int argc, char **argv) {
     signal(SIGINT, int_handler);
     signal(SIGUSR1, save_replay_handler);
@@ -1202,12 +1218,17 @@ int main(int argc, char **argv) {
 
     Display *dpy = XOpenDisplay(nullptr);
     if (!dpy) {
-        fprintf(stderr, "Error: Failed to open display\n");
+        fprintf(stderr, "Error: Failed to open display. Make sure you are running x11\n");
         return 2;
     }
 
     XSetErrorHandler(x11_error_handler);
     XSetIOErrorHandler(x11_io_error_handler);
+
+    if(is_xwayland(dpy)) {
+        fprintf(stderr, "Error: GPU Screen Recorder only works in a pure X11 session. Xwayland is not supported\n");
+        return 2;
+    }
 
     gpu_info gpu_inf;
     bool very_old_gpu = false;

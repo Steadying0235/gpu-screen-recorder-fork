@@ -162,7 +162,7 @@ static int x11_io_error_handler(Display *dpy) {
 }
 
 // |stream| is only required for non-replay mode
-static void receive_frames(AVCodecContext *av_codec_context, int stream_index, AVStream *stream, AVFrame *frame,
+static void receive_frames(AVCodecContext *av_codec_context, int stream_index, AVStream *stream, int64_t pts,
                            AVFormatContext *av_format_context,
                            double replay_start_time,
                            std::deque<AVPacket> &frame_data_queue,
@@ -178,10 +178,8 @@ static void receive_frames(AVCodecContext *av_codec_context, int stream_index, A
         int res = avcodec_receive_packet(av_codec_context, &av_packet);
         if (res == 0) { // we have a packet, send the packet to the muxer
             av_packet.stream_index = stream_index;
-            av_packet.pts = av_packet.dts = frame->pts;
-
-            if(frame->flags & AV_FRAME_FLAG_DISCARD)
-                av_packet.flags |= AV_PKT_FLAG_DISCARD;
+            av_packet.pts = pts;
+            av_packet.dts = pts;
 
             std::lock_guard<std::mutex> lock(write_output_mutex);
             if(replay_buffer_size_secs != -1) {
@@ -608,15 +606,6 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
                     av_dict_set(&options, "profile", "high444p", 0);
                     break;
             }
-        }
-
-        switch(pixel_format) {
-            case PixelFormat::YUV420:
-                av_opt_set(&options, "pixel_format", "yuv420p", 0);
-                break;
-            case PixelFormat::YUV444:
-                av_opt_set(&options, "pixel_format", "yuv444p", 0);
-                break;
         }
     } else {
         switch(video_quality) {
@@ -1753,6 +1742,10 @@ int main(int argc, char **argv) {
                     // Jesus is there a better way to do this? I JUST WANT TO KEEP VIDEO AND AUDIO SYNCED HOLY FUCK I WANT TO KILL MYSELF NOW.
                     // THIS PIECE OF SHIT WANTS EMPTY FRAMES OTHERWISE VIDEO PLAYS TOO FAST TO KEEP UP WITH AUDIO OR THE AUDIO PLAYS TOO EARLY.
                     // BUT WE CANT USE DELAYS TO GIVE DUMMY DATA BECAUSE PULSEAUDIO MIGHT GIVE AUDIO A BIG DELAYED!!!
+                    // This garbage is needed because we want to produce constant frame rate videos instead of variable frame rate
+                    // videos because bad software such as video editing software and VLC do not support variable frame rate software,
+                    // despite nvidia shadowplay and xbox game bar producing variable frame rate videos.
+                    // So we have to make sure we produce frames at the same relative rate as the video.
                     if(num_missing_frames >= 5 || !audio_device.sound_device.handle) {
                         // TODO:
                         //audio_track.frame->data[0] = empty_audio;
@@ -1774,8 +1767,9 @@ int main(int argc, char **argv) {
                                 audio_track.frame->pts = audio_track.pts;
                                 audio_track.pts += audio_track.frame->nb_samples;
                                 ret = avcodec_send_frame(audio_track.codec_context, audio_track.frame);
-                                if(ret >= 0){
-                                    receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_track.frame, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+                                if(ret >= 0) {
+                                    // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                                    receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_track.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
                                 } else {
                                     fprintf(stderr, "Failed to encode audio!\n");
                                 }
@@ -1803,8 +1797,9 @@ int main(int argc, char **argv) {
                             audio_track.frame->pts = audio_track.pts;
                             audio_track.pts += audio_track.frame->nb_samples;
                             ret = avcodec_send_frame(audio_track.codec_context, audio_track.frame);
-                            if(ret >= 0){
-                                receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_track.frame, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+                            if(ret >= 0) {
+                                // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                                receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_track.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
                             } else {
                                 fprintf(stderr, "Failed to encode audio!\n");
                             }
@@ -1820,12 +1815,62 @@ int main(int argc, char **argv) {
 
     // Set update_fps to 24 to test if duplicate/delayed frames cause video/audio desync or too fast/slow video.
     const double update_fps = fps + 190;
-    int64_t video_pts_counter = 0;
     bool should_stop_error = false;
 
     AVFrame *aframe = av_frame_alloc();
 
-    while (running) {
+    // Separate video encoding from frame capture because on amd/intel the frame capture can be very very slow
+    // if we are hitting the graphical processing limit, in which case all applications will run at the same framerate
+    // as the game framerate. This performance seems to be artificially limited.
+    // This garbage is needed because we want to produce constant frame rate videos instead of variable frame rate
+    // videos because bad software such as video editing software and VLC do not support variable frame rate software,
+    // despite nvidia shadowplay and xbox game bar producing variable frame rate videos.
+    // So we have to encode a frame multiple times (duplicate) if we dont produce exactly 1000/fps frames a second.
+    AVFrame *latest_video_frame = nullptr;
+    std::condition_variable video_frame_cv;
+    std::mutex video_frame_mutex;
+    std::thread video_send_encode_thread([&]() {
+        int64_t video_pts_counter = 0;
+        AVFrame *video_frame = nullptr;
+        while(running) {
+            {
+                std::unique_lock<std::mutex> lock(video_frame_mutex);
+                video_frame_cv.wait(lock, [&]{ return latest_video_frame || !running; });
+                if(!running)
+                    break;
+
+                if(!latest_video_frame)
+                    continue;
+
+                video_frame = latest_video_frame;
+                latest_video_frame = nullptr;
+            }
+
+            const double this_video_frame_time = clock_get_monotonic_seconds();
+            const int64_t expected_frames = std::round((this_video_frame_time - start_time_pts) / target_fps);
+
+            const int num_frames = std::max(0L, expected_frames - video_pts_counter);
+
+            // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
+            for(int i = 0; i < num_frames; ++i) {
+                video_frame->pts = video_pts_counter + i;
+                int ret = avcodec_send_frame(video_codec_context, video_frame);
+                if(ret == 0) {
+                    // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                    receive_frames(video_codec_context, VIDEO_STREAM_INDEX, video_stream, video_frame->pts, av_format_context,
+                           record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+                } else {
+                    fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
+                }
+            }
+            video_pts_counter += num_frames;
+
+            av_frame_free(&video_frame);
+            video_frame = nullptr;
+        }
+    });
+
+    while(running) {
         double frame_start = clock_get_monotonic_seconds();
 
         gsr_capture_tick(capture, video_codec_context, &frame);
@@ -1848,7 +1893,8 @@ int main(int argc, char **argv) {
                     audio_track.pts += audio_track.codec_context->frame_size;
                     err = avcodec_send_frame(audio_track.codec_context, aframe);
                     if(err >= 0){
-                        receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, aframe, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+                        // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                        receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, aframe->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
                     } else {
                         fprintf(stderr, "Failed to encode audio!\n");
                     }
@@ -1870,28 +1916,13 @@ int main(int argc, char **argv) {
         if (frame_time_overflow >= 0.0) {
             frame_timer_start = time_now - frame_time_overflow;
             gsr_capture_capture(capture, frame);
-
-            const double this_video_frame_time = clock_get_monotonic_seconds();
-            const int64_t expected_frames = std::round((this_video_frame_time - start_time_pts) / target_fps);
-
-            const int num_frames = std::max(0L, expected_frames - video_pts_counter);
-
-            frame->flags &= ~AV_FRAME_FLAG_DISCARD;
-            // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
-            for(int i = 0; i < num_frames; ++i) {
-                if(i > 0)
-                    frame->flags |= AV_FRAME_FLAG_DISCARD;
-
-                frame->pts = video_pts_counter + i;
-                int ret = avcodec_send_frame(video_codec_context, frame);
-                if (ret >= 0) {
-                    receive_frames(video_codec_context, VIDEO_STREAM_INDEX, video_stream, frame, av_format_context,
-                                record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
-                } else {
-                    fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
-                }
+            std::lock_guard<std::mutex> lock(video_frame_mutex);
+            if(latest_video_frame) {
+                av_frame_free(&latest_video_frame);
+                latest_video_frame = nullptr;
             }
-            video_pts_counter += num_frames;
+            latest_video_frame = av_frame_clone(frame);
+            video_frame_cv.notify_one();
         }
 
         if(save_replay_thread.valid() && save_replay_thread.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -1905,7 +1936,6 @@ int main(int argc, char **argv) {
             save_replay_async(video_codec_context, VIDEO_STREAM_INDEX, audio_tracks, frame_data_queue, frames_erased, filename, container_format, file_extension, write_output_mutex);
         }
 
-        // av_frame_free(&frame);
         double frame_end = clock_get_monotonic_seconds();
         double frame_sleep_fps = 1.0 / update_fps;
         double sleep_time = frame_sleep_fps - (frame_end - frame_start);
@@ -1926,6 +1956,18 @@ int main(int argc, char **argv) {
             audio_device.thread.join();
             sound_device_close(&audio_device.sound_device);
         }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(video_frame_mutex);
+        video_frame_cv.notify_one();
+    }
+    video_send_encode_thread.join();
+    //video_packet_save_thread.join();
+
+    if(latest_video_frame) {
+        av_frame_free(&latest_video_frame);
+        latest_video_frame = nullptr;
     }
 
     if (replay_buffer_size_secs == -1 && av_write_trailer(av_format_context) != 0) {

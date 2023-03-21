@@ -372,12 +372,6 @@ static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *v
         cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, cap_xcomp->texture_size.x & ~1));
         cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, cap_xcomp->texture_size.y & ~1));
 
-        if(!cap_xcomp->params.follow_focused) {
-            cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, cap_xcomp->target_texture_id);
-            cap_xcomp->egl.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, cap_xcomp->texture_size.x, cap_xcomp->texture_size.y, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-            cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
-        }
-
         av_frame_free(frame);
         *frame = av_frame_alloc();
         if(!frame) {

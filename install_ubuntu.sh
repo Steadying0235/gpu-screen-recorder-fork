@@ -8,7 +8,7 @@ cd "$script_dir"
 set -e
 apt-get -y install build-essential\
 	libswresample-dev libavformat-dev libavcodec-dev libavutil-dev libavfilter-dev\
-	libgl-dev libx11-dev libxcomposite-dev libxrandr-dev\
-	libpulse-dev libva-dev
+	libglvnd-dev libx11-dev libxcomposite-dev libxrandr-dev\
+	libpulse-dev libva-dev libxnvctrl0
 
 ./install.sh

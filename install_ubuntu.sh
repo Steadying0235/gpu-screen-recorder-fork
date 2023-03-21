@@ -9,6 +9,6 @@ set -e
 apt-get -y install build-essential\
 	libswresample-dev libavformat-dev libavcodec-dev libavutil-dev libavfilter-dev\
 	libglvnd-dev libx11-dev libxcomposite-dev libxrandr-dev\
-	libpulse-dev libva-dev libxnvctrl0
+	libpulse-dev libva-dev libxnvctrl0 libnvidia-compute libnvidia-encode libnvidia-fbc1
 
 ./install.sh

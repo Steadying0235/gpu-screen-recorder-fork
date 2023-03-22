@@ -32,9 +32,9 @@ You can also install gpu screen recorder ([the gtk gui version](https://git.dec0
 
 # Dependencies
 ## AMD/Intel
-`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libpulse, libva.so`.
+`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libpulse, libva`.
 ## NVIDIA
-`libglvnd (which provides libgl and libegl), ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libpulse, libcuda.so`. Additionally, you need to have `libnvidia-fbc.so.1` installed when using nvfbc and `libXNVCtrl.so.0` when using the `-oc` option.
+`libglvnd (which provides libgl and libegl), ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libpulse, libnvidia-compute libnvidia-encode`. Additionally, you need to have `libnvidia-fbc1` installed when using nvfbc and `libxnvctrl0` when using the `-oc` option.
 
 # How to use
 Run `scripts/interactive.sh` or run gpu-screen-recorder directly, for example: `gpu-screen-recorder -w $(xdotool selectwindow) -c mp4 -f 60 -a "$(pactl get-default-sink).monitor" -o test_video.mp4` then stop the screen recorder with Ctrl+C, which will also save the recording. You can change -w to -w screen if you want to record all monitors or if you want to record a specific monitor then you can use -w monitor-name, for example -w HDMI-0 (use xrandr command to find the name of your monitor. The name can also be found in your desktop environments display settings).\

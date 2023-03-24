@@ -9,5 +9,4 @@ cd "$script_dir"
 install -Dm755 "gpu-screen-recorder" "/usr/local/bin/gpu-screen-recorder"
 install -Dm755 "gpu-screen-recorder" "/usr/bin/gpu-screen-recorder"
 
-./install_coolbits.sh
 echo "Successfully installed gpu-screen-recorder"

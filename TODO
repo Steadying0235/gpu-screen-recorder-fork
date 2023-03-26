@@ -21,4 +21,10 @@ Reverse engineer nvapi so we can disable "force p2 state" on linux too (nvapi pr
 Support yuv444p on amd/intel.
 fix yuv444 for hevc.
 Do not allow streaming if yuv444.
-Support 10 bit output because of better gradients. May even be smaller file size.
+Re-enable yuv444.
+Support 10 bit output because of better gradients. May even be smaller file size. Better supported on hevc (not supported at all on h264 on my gpu).
+Add nvidia/(amd/intel) specific install script for ubuntu. User should run install_ubuntu.sh but it should run different install dep script depending on if /proc/driver/nvidia/version exists or not. But what about switchable graphics setup?
+Test different combinations of switchable graphics. Intel hybrid mode (running intel but possible to run specific applications with prime-run), running pure intel. Detect switchable graphics.
+
+https://web.archive.org/web/20210306020203/https://forums.developer.nvidia.com/t/performance-power-management-problem-on-shared-vgpu/161986
+https://djdallmann.github.io/GamingPCSetup/CONTENT/RESEARCH/FINDINGS/registrykeys_displayadapter_class_4d36e968-e325-11ce-bfc1-08002be10318.txt

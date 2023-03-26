@@ -117,7 +117,7 @@ static bool cuda_create_codec_context(gsr_capture_xcomposite_cuda *cap_xcomp, AV
         (AVHWFramesContext *)frame_context->data;
     hw_frame_context->width = video_codec_context->width;
     hw_frame_context->height = video_codec_context->height;
-    hw_frame_context->sw_format = AV_PIX_FMT_0RGB32;
+    hw_frame_context->sw_format = AV_PIX_FMT_BGR0;
     hw_frame_context->format = video_codec_context->pix_fmt;
     hw_frame_context->device_ref = device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
@@ -387,6 +387,7 @@ static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *v
         (*frame)->color_primaries = video_codec_context->color_primaries;
         (*frame)->color_trc = video_codec_context->color_trc;
         (*frame)->colorspace = video_codec_context->colorspace;
+        (*frame)->chroma_location = video_codec_context->chroma_sample_location;
 
         if(av_hwframe_get_buffer(video_codec_context->hw_frames_ctx, *frame, 0) < 0) {
             fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_tick: av_hwframe_get_buffer failed\n");
@@ -439,6 +440,9 @@ static int gsr_capture_xcomposite_cuda_capture(gsr_capture *cap, AVFrame *frame)
     cap_xcomp->egl.eglSwapBuffers(cap_xcomp->egl.egl_display, cap_xcomp->egl.egl_surface);
 
     frame->linesize[0] = frame->width * 4;
+    //frame->linesize[0] = frame->width * 1;
+    //frame->linesize[1] = frame->width * 1;
+    //frame->linesize[2] = frame->width * 1;
 
     CUDA_MEMCPY2D memcpy_struct;
     memcpy_struct.srcXInBytes = 0;
@@ -452,9 +456,12 @@ static int gsr_capture_xcomposite_cuda_capture(gsr_capture *cap, AVFrame *frame)
     memcpy_struct.srcArray = cap_xcomp->mapped_array;
     memcpy_struct.dstDevice = (CUdeviceptr)frame->data[0];
     memcpy_struct.dstPitch = frame->linesize[0];
-    memcpy_struct.WidthInBytes = frame->width * 4;
+    memcpy_struct.WidthInBytes = frame->width * 4;//frame->width * 1;
     memcpy_struct.Height = frame->height;
     cap_xcomp->cuda.cuMemcpy2D_v2(&memcpy_struct);
+
+    //frame->data[1] = frame->data[0];
+    //frame->data[2] = frame->data[0];
 
     return 0;
 }

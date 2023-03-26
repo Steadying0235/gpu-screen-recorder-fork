@@ -160,7 +160,7 @@ static bool ffmpeg_create_cuda_contexts(gsr_capture_nvfbc *cap_nvfbc, AVCodecCon
     AVHWFramesContext *hw_frame_context = (AVHWFramesContext*)frame_context->data;
     hw_frame_context->width = video_codec_context->width;
     hw_frame_context->height = video_codec_context->height;
-    hw_frame_context->sw_format = AV_PIX_FMT_0RGB32;
+    hw_frame_context->sw_format = AV_PIX_FMT_BGR0;
     hw_frame_context->format = video_codec_context->pix_fmt;
     hw_frame_context->device_ref = device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
@@ -381,6 +381,7 @@ static void gsr_capture_nvfbc_tick(gsr_capture *cap, AVCodecContext *video_codec
         (*frame)->color_primaries = video_codec_context->color_primaries;
         (*frame)->color_trc = video_codec_context->color_trc;
         (*frame)->colorspace = video_codec_context->colorspace;
+        (*frame)->chroma_location = video_codec_context->chroma_sample_location;
     }
 }
 
@@ -414,7 +415,12 @@ static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame) {
     */
 
     frame->data[0] = (uint8_t*)cu_device_ptr;
+    //frame->data[1] = (uint8_t*)cu_device_ptr;
+    //frame->data[2] = (uint8_t*)cu_device_ptr;
     frame->linesize[0] = frame->width * 4;
+    // TODO: Use these when outputting yuv444 by changing nvfbc color to YUV444P and sw_format to YUV444P
+    //frame->linesize[1] = frame->width * 1;
+    //frame->linesize[2] = frame->width * 1;
     return 0;
 }
 

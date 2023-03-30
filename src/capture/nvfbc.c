@@ -20,6 +20,7 @@ typedef struct {
     PNVFBCCREATEINSTANCE nv_fbc_create_instance;
     NVFBC_API_FUNCTION_LIST nv_fbc_function_list;
     bool fbc_handle_created;
+    bool capture_session_created;
 
     gsr_cuda cuda;
     bool frame_initialized;
@@ -225,9 +226,9 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
 
     NVFBCSTATUS status;
     NVFBC_TRACKING_TYPE tracking_type;
-    bool capture_session_created = false;
     uint32_t output_id = 0;
     cap_nvfbc->fbc_handle_created = false;
+    cap_nvfbc->capture_session_created = false;
 
     NVFBC_CREATE_HANDLE_PARAMS create_params;
     memset(&create_params, 0, sizeof(create_params));
@@ -295,6 +296,7 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     create_capture_params.dwSamplingRateMs = 1000u / ((uint32_t)cap_nvfbc->params.fps + 1);
     create_capture_params.bAllowDirectCapture = direct_capture ? NVFBC_TRUE : NVFBC_FALSE;
     create_capture_params.bPushModel = direct_capture ? NVFBC_TRUE : NVFBC_FALSE;
+    //create_capture_params.bDisableAutoModesetRecovery = true; // TODO:
     if(tracking_type == NVFBC_TRACKING_OUTPUT)
         create_capture_params.dwOutputId = output_id;
 
@@ -303,7 +305,7 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
         fprintf(stderr, "gsr error: gsr_capture_nvfbc_start failed: %s\n", cap_nvfbc->nv_fbc_function_list.nvFBCGetLastErrorStr(cap_nvfbc->nv_fbc_handle));
         goto error_cleanup;
     }
-    capture_session_created = true;
+    cap_nvfbc->capture_session_created = true;
 
     NVFBC_TOCUDA_SETUP_PARAMS setup_params;
     memset(&setup_params, 0, sizeof(setup_params));
@@ -331,11 +333,12 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
 
     error_cleanup:
     if(cap_nvfbc->fbc_handle_created) {
-        if(capture_session_created) {
+        if(cap_nvfbc->capture_session_created) {
             NVFBC_DESTROY_CAPTURE_SESSION_PARAMS destroy_capture_params;
             memset(&destroy_capture_params, 0, sizeof(destroy_capture_params));
             destroy_capture_params.dwVersion = NVFBC_DESTROY_CAPTURE_SESSION_PARAMS_VER;
             cap_nvfbc->nv_fbc_function_list.nvFBCDestroyCaptureSession(cap_nvfbc->nv_fbc_handle, &destroy_capture_params);
+            cap_nvfbc->capture_session_created = false;
         }
 
         NVFBC_DESTROY_HANDLE_PARAMS destroy_params;
@@ -357,15 +360,21 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
 static void gsr_capture_nvfbc_destroy_session(gsr_capture *cap) {
     gsr_capture_nvfbc *cap_nvfbc = cap->priv;
 
-    NVFBC_DESTROY_CAPTURE_SESSION_PARAMS destroy_capture_params;
-    memset(&destroy_capture_params, 0, sizeof(destroy_capture_params));
-    destroy_capture_params.dwVersion = NVFBC_DESTROY_CAPTURE_SESSION_PARAMS_VER;
-    cap_nvfbc->nv_fbc_function_list.nvFBCDestroyCaptureSession(cap_nvfbc->nv_fbc_handle, &destroy_capture_params);
+    if(cap_nvfbc->fbc_handle_created) {
+        if(cap_nvfbc->capture_session_created) {
+            NVFBC_DESTROY_CAPTURE_SESSION_PARAMS destroy_capture_params;
+            memset(&destroy_capture_params, 0, sizeof(destroy_capture_params));
+            destroy_capture_params.dwVersion = NVFBC_DESTROY_CAPTURE_SESSION_PARAMS_VER;
+            cap_nvfbc->nv_fbc_function_list.nvFBCDestroyCaptureSession(cap_nvfbc->nv_fbc_handle, &destroy_capture_params);
+            cap_nvfbc->capture_session_created = false;
+        }
 
-    NVFBC_DESTROY_HANDLE_PARAMS destroy_params;
-    memset(&destroy_params, 0, sizeof(destroy_params));
-    destroy_params.dwVersion = NVFBC_DESTROY_HANDLE_PARAMS_VER;
-    cap_nvfbc->nv_fbc_function_list.nvFBCDestroyHandle(cap_nvfbc->nv_fbc_handle, &destroy_params);
+        NVFBC_DESTROY_HANDLE_PARAMS destroy_params;
+        memset(&destroy_params, 0, sizeof(destroy_params));
+        destroy_params.dwVersion = NVFBC_DESTROY_HANDLE_PARAMS_VER;
+        cap_nvfbc->nv_fbc_function_list.nvFBCDestroyHandle(cap_nvfbc->nv_fbc_handle, &destroy_params);
+        cap_nvfbc->fbc_handle_created = false;
+    }
 
     cap_nvfbc->nv_fbc_handle = 0;
 }

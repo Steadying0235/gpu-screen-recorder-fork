@@ -94,17 +94,17 @@ bool gsr_cuda_load(gsr_cuda *self, Display *display, bool do_overclock) {
 }
 
 void gsr_cuda_unload(gsr_cuda *self) {
+    if(self->do_overclock && self->overclock.xnvctrl.library) {
+        gsr_overclock_stop(&self->overclock);
+        gsr_overclock_unload(&self->overclock);
+    }
+
     if(self->library) {
         if(self->cu_ctx) {
             self->cuCtxDestroy_v2(self->cu_ctx);
             self->cu_ctx = 0;
         }
         dlclose(self->library);
-    }
-
-    if(self->do_overclock && self->overclock.xnvctrl.library) {
-        gsr_overclock_stop(&self->overclock);
-        gsr_overclock_unload(&self->overclock);
     }
 
     memset(self, 0, sizeof(gsr_cuda));

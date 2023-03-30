@@ -4,7 +4,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define NV_CTRL_GPU_NVCLOCK_OFFSET                                      409
 #define NV_CTRL_GPU_MEM_TRANSFER_RATE_OFFSET                            410
+#define NV_CTRL_GPU_NVCLOCK_OFFSET_ALL_PERFORMANCE_LEVELS               424
 #define NV_CTRL_GPU_MEM_TRANSFER_RATE_OFFSET_ALL_PERFORMANCE_LEVELS     425
 
 #define NV_CTRL_TARGET_TYPE_GPU                                         1

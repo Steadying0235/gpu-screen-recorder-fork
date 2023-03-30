@@ -659,7 +659,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 }
 
 static void usage() {
-    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>...] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265] [-ac aac|opus|flac] [-oc yes|no] [-o <output_file>]\n");
+    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265] [-ac aac|opus|flac] [-oc yes|no] [-o <output_file>]\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "OPTIONS:\n");
     fprintf(stderr, "  -w    Window to record, a display, \"screen\", \"screen-direct\", \"screen-direct-force\" or \"focused\".\n");
@@ -2005,6 +2005,7 @@ int main(int argc, char **argv) {
             frame_time_overflow = std::min(frame_time_overflow, target_fps);
             frame_timer_start = time_now - frame_time_overflow;
             gsr_capture_capture(capture, frame);
+
             std::lock_guard<std::mutex> lock(video_frame_mutex);
             if(latest_video_frame) {
                 av_frame_free(&latest_video_frame);

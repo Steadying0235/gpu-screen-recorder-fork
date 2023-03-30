@@ -28,3 +28,8 @@ Test different combinations of switchable graphics. Intel hybrid mode (running i
 
 https://web.archive.org/web/20210306020203/https://forums.developer.nvidia.com/t/performance-power-management-problem-on-shared-vgpu/161986
 https://djdallmann.github.io/GamingPCSetup/CONTENT/RESEARCH/FINDINGS/registrykeys_displayadapter_class_4d36e968-e325-11ce-bfc1-08002be10318.txt
+
+The video output will be black if if the system is suspended on nvidia and NVreg_PreserveVideoMemoryAllocations is not set to 1. This happens because I think that the driver invalidates textures/cuda buffers? To fix this we could try and recreate gsr capture when gsr_capture_capture fails (with timeout to retry again).
+
+NVreg_RegistryDwords.
+Restore nvfbc screen recording on monitor reconfiguration.

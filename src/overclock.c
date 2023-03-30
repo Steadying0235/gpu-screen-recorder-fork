@@ -8,10 +8,12 @@
 // So to get around this we overclock memory transfer rate (maybe this should also be done for graphics clock?) to the best performance level while GPU Screen Recorder is running.
 
 // TODO: Does it always drop to performance level 2?
-// TODO: Also do the same for graphics clock and graphics memory?
+
+static int min_int(int a, int b) {
+    return a < b ? a : b;
+}
 
 // Fields are 0 if not set
-
 typedef struct {
     int perf;
 
@@ -48,31 +50,56 @@ static void split_by_delimiter(const char *str, size_t size, char delimiter, spl
     }
 }
 
+typedef enum {
+    NVCTRL_GPU_NVCLOCK,
+    NVCTRL_ATTRIB_GPU_MEM_TRANSFER_RATE,
+} NvCTRLAttributeType;
+
+static unsigned int attribute_type_to_attribute_param(NvCTRLAttributeType attribute_type) {
+    switch(attribute_type) {
+        case NVCTRL_GPU_NVCLOCK:
+            return NV_CTRL_GPU_NVCLOCK_OFFSET;
+        case NVCTRL_ATTRIB_GPU_MEM_TRANSFER_RATE:
+            return NV_CTRL_GPU_MEM_TRANSFER_RATE_OFFSET;
+    }
+    return 0;
+}
+
+static unsigned int attribute_type_to_attribute_param_all_levels(NvCTRLAttributeType attribute_type) {
+    switch(attribute_type) {
+        case NVCTRL_GPU_NVCLOCK:
+            return NV_CTRL_GPU_NVCLOCK_OFFSET_ALL_PERFORMANCE_LEVELS;
+        case NVCTRL_ATTRIB_GPU_MEM_TRANSFER_RATE:
+            return NV_CTRL_GPU_MEM_TRANSFER_RATE_OFFSET_ALL_PERFORMANCE_LEVELS;
+    }
+    return 0;
+}
+
 // Returns 0 on error
-static int xnvctrl_get_memory_transfer_rate_max(gsr_xnvctrl *xnvctrl, const NVCTRLPerformanceLevelQuery *query) {
+static int xnvctrl_get_attribute_max_value(gsr_xnvctrl *xnvctrl, const NVCTRLPerformanceLevelQuery *query, NvCTRLAttributeType attribute_type) {
     NVCTRLAttributeValidValuesRec valid;
-    if(xnvctrl->XNVCTRLQueryValidTargetAttributeValues(xnvctrl->display, NV_CTRL_TARGET_TYPE_GPU, 0, 0, NV_CTRL_GPU_MEM_TRANSFER_RATE_OFFSET_ALL_PERFORMANCE_LEVELS, &valid)) {
+    if(xnvctrl->XNVCTRLQueryValidTargetAttributeValues(xnvctrl->display, NV_CTRL_TARGET_TYPE_GPU, 0, 0, attribute_type_to_attribute_param_all_levels(attribute_type), &valid)) {
         return valid.u.range.max;
     }
 
-    if(query->num_performance_levels > 0 && xnvctrl->XNVCTRLQueryValidTargetAttributeValues(xnvctrl->display, NV_CTRL_TARGET_TYPE_GPU, 0, query->num_performance_levels - 1, NV_CTRL_GPU_MEM_TRANSFER_RATE_OFFSET, &valid)) {
+    if(query->num_performance_levels > 0 && xnvctrl->XNVCTRLQueryValidTargetAttributeValues(xnvctrl->display, NV_CTRL_TARGET_TYPE_GPU, 0, query->num_performance_levels - 1, attribute_type_to_attribute_param(attribute_type), &valid)) {
         return valid.u.range.max;
     }
     
     return 0;
 }
 
-static bool xnvctrl_set_memory_transfer_rate_offset(gsr_xnvctrl *xnvctrl, int num_performance_levels, int offset) {
+static bool xnvctrl_set_attribute_offset(gsr_xnvctrl *xnvctrl, int num_performance_levels, int offset, NvCTRLAttributeType attribute_type) {
     bool success = false;
 
     // NV_CTRL_GPU_MEM_TRANSFER_RATE_OFFSET_ALL_PERFORMANCE_LEVELS works (or at least used to?) without Xorg running as root
     // so we try that first. NV_CTRL_GPU_MEM_TRANSFER_RATE_OFFSET_ALL_PERFORMANCE_LEVELS also only works with GTX 1000+.
     // TODO: Reverse engineer NVIDIA Xorg driver so we can set this always without root access.
-    if(xnvctrl->XNVCTRLSetTargetAttributeAndGetStatus(xnvctrl->display, NV_CTRL_TARGET_TYPE_GPU, 0, 0, NV_CTRL_GPU_MEM_TRANSFER_RATE_OFFSET_ALL_PERFORMANCE_LEVELS, offset))
+    if(xnvctrl->XNVCTRLSetTargetAttributeAndGetStatus(xnvctrl->display, NV_CTRL_TARGET_TYPE_GPU, 0, 0, attribute_type_to_attribute_param_all_levels(attribute_type), offset))
         success = true;
 
     for(int i = 0; i < num_performance_levels; ++i) {
-        success |= xnvctrl->XNVCTRLSetTargetAttributeAndGetStatus(xnvctrl->display, NV_CTRL_TARGET_TYPE_GPU, 0, i, NV_CTRL_GPU_MEM_TRANSFER_RATE_OFFSET, offset);
+        success |= xnvctrl->XNVCTRLSetTargetAttributeAndGetStatus(xnvctrl->display, NV_CTRL_TARGET_TYPE_GPU, 0, i, attribute_type_to_attribute_param(attribute_type), offset);
     }
 
     return success;
@@ -207,21 +234,38 @@ bool gsr_overclock_start(gsr_overclock *self) {
     }
     self->num_performance_levels = query.num_performance_levels;
 
-    int target_transfer_rate_offset = xnvctrl_get_memory_transfer_rate_max(&self->xnvctrl, &query) / 2;
-    if(query.num_performance_levels > 3) {
+    int target_transfer_rate_offset = xnvctrl_get_attribute_max_value(&self->xnvctrl, &query, NVCTRL_ATTRIB_GPU_MEM_TRANSFER_RATE) / 2; // Divide by 2 just to be safe that we dont set it too high
+    if(query.num_performance_levels > 2) {
         const int transfer_rate_max_diff = query.performance_level[query.num_performance_levels - 1].mem_transfer_rate_max - query.performance_level[2].mem_transfer_rate_max;
-        if(transfer_rate_max_diff > 0 && transfer_rate_max_diff < target_transfer_rate_offset)
-            target_transfer_rate_offset = transfer_rate_max_diff;
+        target_transfer_rate_offset = min_int(target_transfer_rate_offset, transfer_rate_max_diff);
     }
 
-    if(xnvctrl_set_memory_transfer_rate_offset(&self->xnvctrl, self->num_performance_levels, target_transfer_rate_offset)) {
+    if(xnvctrl_set_attribute_offset(&self->xnvctrl, self->num_performance_levels, target_transfer_rate_offset, NVCTRL_ATTRIB_GPU_MEM_TRANSFER_RATE)) {
         fprintf(stderr, "gsr info: gsr_overclock_start: sucessfully set memory transfer rate offset to %d\n", target_transfer_rate_offset);
     } else {
         fprintf(stderr, "gsr info: gsr_overclock_start: failed to overclock memory transfer rate offset to %d\n", target_transfer_rate_offset);
     }
+
+
+    // TODO: Enable. Crashes on my system (gtx 1080) so it's disabled for now. Seems to crash even if graphics clock is increasd by 1, let alone 1200
+    /*
+    int target_nv_clock_offset = xnvctrl_get_attribute_max_value(&self->xnvctrl, &query, NVCTRL_GPU_NVCLOCK) / 2; // Divide by 2 just to be safe that we dont set it too high
+    if(query.num_performance_levels > 2) {
+        const int nv_clock_max_diff = query.performance_level[query.num_performance_levels - 1].nv_clock_max - query.performance_level[2].nv_clock_max;
+        target_nv_clock_offset = min_int(target_nv_clock_offset, nv_clock_max_diff);
+    }
+
+    if(xnvctrl_set_attribute_offset(&self->xnvctrl, self->num_performance_levels, target_nv_clock_offset, NVCTRL_GPU_NVCLOCK)) {
+        fprintf(stderr, "gsr info: gsr_overclock_start: sucessfully set nv clock offset to %d\n", target_nv_clock_offset);
+    } else {
+        fprintf(stderr, "gsr info: gsr_overclock_start: failed to overclock nv clock offset to %d\n", target_nv_clock_offset);
+    }
+    */
+
     return true;
 }
 
 void gsr_overclock_stop(gsr_overclock *self) {
-    xnvctrl_set_memory_transfer_rate_offset(&self->xnvctrl, self->num_performance_levels, 0);
+    xnvctrl_set_attribute_offset(&self->xnvctrl, self->num_performance_levels, 0, NVCTRL_ATTRIB_GPU_MEM_TRANSFER_RATE);
+    //xnvctrl_set_attribute_offset(&self->xnvctrl, self->num_performance_levels, 0, NVCTRL_GPU_NVCLOCK);
 }

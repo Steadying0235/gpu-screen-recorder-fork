@@ -33,3 +33,4 @@ The video output will be black if if the system is suspended on nvidia and NVreg
 
 NVreg_RegistryDwords.
 Restore nvfbc screen recording on monitor reconfiguration.
+Window capture doesn't work properly in _control_ game after going from pause menu to in-game (and back to pause menu). There might be some x11 event we need to catch. Same for vr-video-player.

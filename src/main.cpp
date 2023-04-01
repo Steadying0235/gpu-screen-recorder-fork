@@ -375,7 +375,7 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     }
     codec_context->max_b_frames = 0;
     codec_context->pix_fmt = pix_fmt;
-    //codec_context->color_range = AVCOL_RANGE_MPEG;
+    //codec_context->color_range = AVCOL_RANGE_JPEG;
     //codec_context->color_primaries = AVCOL_PRI_BT709;
     //codec_context->color_trc = AVCOL_TRC_BT709;
     //codec_context->colorspace = AVCOL_SPC_BT709;
@@ -637,7 +637,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
         //    //av_dict_set(&options, "preset", "llhq", 0);
         //}
 
-        // Fuck nvidia and ffmpeg, I want to use a good preset for the gpu but all gpus prefer different
+        // I want to use a good preset for the gpu but all gpus prefer different
         // presets. Nvidia and ffmpeg used to support "hq" preset that chose the best preset for the gpu
         // with pretty good performance but you now have to choose p1-p7, which are gpu agnostic and on
         // older gpus p5-p7 slow the gpu down to a crawl...
@@ -686,7 +686,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 
         if(codec_context->codec_id == AV_CODEC_ID_H264) {
             av_dict_set(&options, "profile", "high", 0);
-            av_dict_set_int(&options, "quality", 4, 0);
+            av_dict_set_int(&options, "quality", 14, 0);
         } else {
             av_dict_set(&options, "profile", "main", 0);
         }

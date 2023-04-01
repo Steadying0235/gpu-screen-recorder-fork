@@ -43,17 +43,17 @@ static int min_int(int a, int b) {
 }
 
 static Window get_focused_window(Display *display, Atom net_active_window_atom) {
-	Atom type;
-	int format = 0;
-	unsigned long num_items = 0;
-	unsigned long bytes_after = 0;
-	unsigned char *properties = NULL;
-	if(XGetWindowProperty(display, DefaultRootWindow(display), net_active_window_atom, 0, 1024, False, AnyPropertyType, &type, &format, &num_items, &bytes_after, &properties) == Success && properties) {
-		Window focused_window = *(unsigned long*)properties;
-		XFree(properties);
-		return focused_window;
-	}
-	return None;
+    Atom type;
+    int format = 0;
+    unsigned long num_items = 0;
+    unsigned long bytes_after = 0;
+    unsigned char *properties = NULL;
+    if(XGetWindowProperty(display, DefaultRootWindow(display), net_active_window_atom, 0, 1024, False, AnyPropertyType, &type, &format, &num_items, &bytes_after, &properties) == Success && properties) {
+        Window focused_window = *(unsigned long*)properties;
+        XFree(properties);
+        return focused_window;
+    }
+    return None;
 }
 
 static void gsr_capture_xcomposite_cuda_stop(gsr_capture *cap, AVCodecContext *video_codec_context);
@@ -209,7 +209,7 @@ static int gsr_capture_xcomposite_cuda_start(gsr_capture *cap, AVCodecContext *v
     video_codec_context->width = cap_xcomp->texture_size.x;
     video_codec_context->height = cap_xcomp->texture_size.y;
 
-    if(cap_xcomp->params.region_size.x > 0 && cap_xcomp->params.region_size.y) {
+    if(cap_xcomp->params.region_size.x > 0 && cap_xcomp->params.region_size.y > 0) {
         video_codec_context->width = max_int(2, cap_xcomp->params.region_size.x & ~1);
         video_codec_context->height = max_int(2, cap_xcomp->params.region_size.y & ~1);
     }
@@ -278,22 +278,6 @@ static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *v
 
     cap_xcomp->egl.glClear(GL_COLOR_BUFFER_BIT);
 
-    if(!cap_xcomp->created_hw_frame) {
-        cap_xcomp->created_hw_frame = true;
-        CUcontext old_ctx;
-        cap_xcomp->cuda.cuCtxPushCurrent_v2(cap_xcomp->cuda.cu_ctx);
-
-        if(av_hwframe_get_buffer(video_codec_context->hw_frames_ctx, *frame, 0) < 0) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_tick: av_hwframe_get_buffer failed\n");
-            cap_xcomp->should_stop = true;
-            cap_xcomp->stop_is_error = true;
-            cap_xcomp->cuda.cuCtxPopCurrent_v2(&old_ctx);
-            return;
-        }
-
-        cap_xcomp->cuda.cuCtxPopCurrent_v2(&old_ctx);
-    }
-
     if(!cap_xcomp->params.follow_focused && XCheckTypedWindowEvent(cap_xcomp->dpy, cap_xcomp->window, DestroyNotify, &cap_xcomp->xev)) {
         cap_xcomp->should_stop = true;
         cap_xcomp->stop_is_error = false;
@@ -351,7 +335,7 @@ static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *v
     }
 
     const double window_resize_timeout = 1.0; // 1 second
-    if(cap_xcomp->window_resized && clock_get_monotonic_seconds() - cap_xcomp->window_resize_timer >= window_resize_timeout) {
+    if(!cap_xcomp->created_hw_frame || (cap_xcomp->window_resized && clock_get_monotonic_seconds() - cap_xcomp->window_resize_timer >= window_resize_timeout)) {
         cap_xcomp->window_resized = false;
         if(window_texture_on_resize(&cap_xcomp->window_texture) != 0) {
             fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_tick: window_texture_on_resize failed\n");
@@ -371,28 +355,31 @@ static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *v
         cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, cap_xcomp->texture_size.x & ~1));
         cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, cap_xcomp->texture_size.y & ~1));
 
-        av_frame_free(frame);
-        *frame = av_frame_alloc();
-        if(!frame) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_tick: failed to allocate frame\n");
-            cap_xcomp->should_stop = true;
-            cap_xcomp->stop_is_error = true;
-            return;
-        }
-        (*frame)->format = video_codec_context->pix_fmt;
-        (*frame)->width = video_codec_context->width;
-        (*frame)->height = video_codec_context->height;
-        (*frame)->color_range = video_codec_context->color_range;
-        (*frame)->color_primaries = video_codec_context->color_primaries;
-        (*frame)->color_trc = video_codec_context->color_trc;
-        (*frame)->colorspace = video_codec_context->colorspace;
-        (*frame)->chroma_location = video_codec_context->chroma_sample_location;
+        if(!cap_xcomp->created_hw_frame) {
+            cap_xcomp->created_hw_frame = true;
+            av_frame_free(frame);
+            *frame = av_frame_alloc();
+            if(!frame) {
+                fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_tick: failed to allocate frame\n");
+                cap_xcomp->should_stop = true;
+                cap_xcomp->stop_is_error = true;
+                return;
+            }
+            (*frame)->format = video_codec_context->pix_fmt;
+            (*frame)->width = video_codec_context->width;
+            (*frame)->height = video_codec_context->height;
+            (*frame)->color_range = video_codec_context->color_range;
+            (*frame)->color_primaries = video_codec_context->color_primaries;
+            (*frame)->color_trc = video_codec_context->color_trc;
+            (*frame)->colorspace = video_codec_context->colorspace;
+            (*frame)->chroma_location = video_codec_context->chroma_sample_location;
 
-        if(av_hwframe_get_buffer(video_codec_context->hw_frames_ctx, *frame, 0) < 0) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_tick: av_hwframe_get_buffer failed\n");
-            cap_xcomp->should_stop = true;
-            cap_xcomp->stop_is_error = true;
-            return;
+            if(av_hwframe_get_buffer(video_codec_context->hw_frames_ctx, *frame, 0) < 0) {
+                fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_tick: av_hwframe_get_buffer failed\n");
+                cap_xcomp->should_stop = true;
+                cap_xcomp->stop_is_error = true;
+                return;
+            }
         }
 
         // Clear texture with black background because the source texture (window_texture_get_opengl_texture_id(&cap_xcomp->window_texture))
@@ -432,7 +419,7 @@ static int gsr_capture_xcomposite_cuda_capture(gsr_capture *cap, AVFrame *frame)
             static bool error_shown = false;
             if(!error_shown) {
                 error_shown = true;
-                fprintf(stderr, "Error: glCopyImageSubData failed, gl error: %d\n", err);
+                fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_capture: glCopyImageSubData failed, gl error: %d\n", err);
             }
         }
     }
@@ -466,10 +453,16 @@ static int gsr_capture_xcomposite_cuda_capture(gsr_capture *cap, AVFrame *frame)
 }
 
 static void gsr_capture_xcomposite_cuda_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
+    gsr_capture_xcomposite_cuda *cap_xcomp = cap->priv;
     if(cap->priv) {
         gsr_capture_xcomposite_cuda_stop(cap, video_codec_context);
         free(cap->priv);
         cap->priv = NULL;
+    }
+    if(cap_xcomp->dpy) {
+        // TODO: This causes a crash, why? maybe some other library dlclose xlib and that also happened to unload this???
+        //XCloseDisplay(cap_xcomp->dpy);
+        cap_xcomp->dpy = NULL;
     }
     free(cap);
 }

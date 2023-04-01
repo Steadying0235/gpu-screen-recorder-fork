@@ -131,8 +131,8 @@ static bool cuda_create_codec_context(gsr_capture_xcomposite_cuda *cap_xcomp, AV
         return false;
     }
 
-    video_codec_context->hw_device_ctx = device_ctx;
-    video_codec_context->hw_frames_ctx = frame_context;
+    video_codec_context->hw_device_ctx = av_buffer_ref(device_ctx);
+    video_codec_context->hw_frames_ctx = av_buffer_ref(frame_context);
     return true;
 }
 
@@ -252,9 +252,8 @@ static void gsr_capture_xcomposite_cuda_stop(gsr_capture *cap, AVCodecContext *v
 
     if(video_codec_context->hw_device_ctx)
         av_buffer_unref(&video_codec_context->hw_device_ctx);
-    // Not needed because the above call to unref device ctx also frees this?
-    //if(video_codec_context->hw_frames_ctx)
-    //    av_buffer_unref(&video_codec_context->hw_frames_ctx);
+    if(video_codec_context->hw_frames_ctx)
+        av_buffer_unref(&video_codec_context->hw_frames_ctx);
 
     if(cap_xcomp->cuda.cu_ctx) {
         CUcontext old_ctx;

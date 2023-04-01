@@ -177,8 +177,8 @@ static bool ffmpeg_create_cuda_contexts(gsr_capture_nvfbc *cap_nvfbc, AVCodecCon
         return false;
     }
 
-    video_codec_context->hw_device_ctx = device_ctx;
-    video_codec_context->hw_frames_ctx = frame_context;
+    video_codec_context->hw_device_ctx = av_buffer_ref(device_ctx);
+    video_codec_context->hw_frames_ctx = av_buffer_ref(frame_context);
     return true;
 }
 
@@ -350,9 +350,9 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
 
     if(video_codec_context->hw_device_ctx)
         av_buffer_unref(&video_codec_context->hw_device_ctx);
-    // Not needed because the above call to unref device ctx also frees this?
-    //if(video_codec_context->hw_frames_ctx)
-    //    av_buffer_unref(&video_codec_context->hw_frames_ctx);
+    if(video_codec_context->hw_frames_ctx)
+        av_buffer_unref(&video_codec_context->hw_frames_ctx);
+
     gsr_cuda_unload(&cap_nvfbc->cuda);
     return -1;
 }
@@ -438,9 +438,8 @@ static void gsr_capture_nvfbc_destroy(gsr_capture *cap, AVCodecContext *video_co
     gsr_capture_nvfbc_destroy_session(cap);
     if(video_codec_context->hw_device_ctx)
         av_buffer_unref(&video_codec_context->hw_device_ctx);
-    // Not needed because the above call to unref device ctx also frees this?
-    //if(video_codec_context->hw_frames_ctx)
-    //    av_buffer_unref(&video_codec_context->hw_frames_ctx);
+    if(video_codec_context->hw_frames_ctx)
+        av_buffer_unref(&video_codec_context->hw_frames_ctx);
     if(cap_nvfbc) {
         gsr_cuda_unload(&cap_nvfbc->cuda);
         dlclose(cap_nvfbc->library);

@@ -39,6 +39,10 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define EGL_OPENGL_ES2_BIT                      0x0004
 #define EGL_NONE                                0x3038
 #define EGL_CONTEXT_CLIENT_VERSION              0x3098
+#define EGL_BACK_BUFFER                         0x3084
+#define EGL_GL_TEXTURE_2D                       0x30B1
+#define EGL_TRUE                                1
+#define EGL_IMAGE_PRESERVED_KHR                 0x30D2
 
 #define GL_TEXTURE_2D                           0x0DE1
 #define GL_RGB                                  0x1907
@@ -87,6 +91,8 @@ typedef struct {
     unsigned int (*eglSwapBuffers)(EGLDisplay dpy, EGLSurface surface);
     __eglMustCastToProperFunctionPointerType (*eglGetProcAddress)(const char *procname);
 
+    unsigned int (*eglExportDMABUFImageQueryMESA)(EGLDisplay dpy, EGLImageKHR image, int *fourcc, int *num_planes, uint64_t *modifiers);
+    unsigned int (*eglExportDMABUFImageMESA)(EGLDisplay dpy, EGLImageKHR image, int *fds, int32_t *strides, int32_t *offsets);
     void (*glEGLImageTargetTexture2DOES)(unsigned int target, GLeglImageOES image);
 
     unsigned int (*glGetError)(void);
@@ -101,35 +107,6 @@ typedef struct {
     void (*glTexImage2D)(unsigned int target, int level, int internalFormat, int width, int height, int border, unsigned int format, unsigned int type, const void *pixels);
     void (*glCopyImageSubData)(unsigned int srcName, unsigned int srcTarget, int srcLevel, int srcX, int srcY, int srcZ, unsigned int dstName, unsigned int dstTarget, int dstLevel, int dstX, int dstY, int dstZ, int srcWidth, int srcHeight, int srcDepth);
     void (*glClearTexImage)(unsigned int texture, unsigned int level, unsigned int format, unsigned int type, const void *data);
-    void (*glGenFramebuffers)(int n, unsigned int *framebuffers);
-    void (*glBindFramebuffer)(unsigned int target, unsigned int framebuffer);
-    void (*glViewport)(int x, int y, int width, int height);
-    void (*glFramebufferTexture2D)(unsigned int target, unsigned int attachment, unsigned int textarget, unsigned int texture, int level);
-    void (*glDrawBuffers)(int n, const unsigned int *bufs);
-    unsigned int (*glCheckFramebufferStatus)(unsigned int target);
-    void (*glBindBuffer)(unsigned int target, unsigned int buffer);
-    void (*glGenBuffers)(int n, unsigned int *buffers);
-    void (*glBufferData)(unsigned int target, khronos_ssize_t size, const void *data, unsigned int usage);
-    void (*glGenVertexArrays)(int n, unsigned int *arrays);
-    void (*glBindVertexArray)(unsigned int array);
-
-    unsigned int (*glCreateProgram)(void);
-    unsigned int (*glCreateShader)(unsigned int type);
-    void (*glAttachShader)(unsigned int program, unsigned int shader);
-    void (*glBindAttribLocation)(unsigned int program, unsigned int index, const char *name);
-    void (*glCompileShader)(unsigned int shader);
-    void (*glLinkProgram)(unsigned int program);
-    void (*glShaderSource)(unsigned int shader, int count, const char *const*string, const int *length);
-    void (*glUseProgram)(unsigned int program);
-    void (*glGetProgramInfoLog)(unsigned int program, int bufSize, int *length, char *infoLog);
-    void (*glGetShaderiv)(unsigned int shader, unsigned int pname, int *params);
-    void (*glGetShaderInfoLog)(unsigned int shader, int bufSize, int *length, char *infoLog);
-    void (*glDeleteProgram)(unsigned int program);
-    void (*glDeleteShader)(unsigned int shader);
-    void (*glGetProgramiv)(unsigned int program, unsigned int pname, int *params);
-    void (*glVertexAttribPointer)(unsigned int index, int size, unsigned int type, unsigned char normalized, int stride, const void *pointer);
-    void (*glEnableVertexAttribArray)(unsigned int index);
-    void (*glDrawArrays)(unsigned int mode, int first, int count );
 } gsr_egl;
 
 bool gsr_egl_load(gsr_egl *self, Display *dpy);

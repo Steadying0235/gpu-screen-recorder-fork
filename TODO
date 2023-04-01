@@ -34,3 +34,9 @@ The video output will be black if if the system is suspended on nvidia and NVreg
 NVreg_RegistryDwords.
 Restore nvfbc screen recording on monitor reconfiguration.
 Window capture doesn't work properly in _control_ game after going from pause menu to in-game (and back to pause menu). There might be some x11 event we need to catch. Same for vr-video-player.
+
+Fix constant framerate not working properly on amd/intel because capture framerate gets locked to the same framerate as game framerate, which doesn't work well when you need to encode multiple duplicate frames. We can skip multiple encode if we duplicate frame once and then use that same frame data as the difference between frames will be exactly the same, but hevc complains about that. Is there a way to make hevc shut up?
+
+JPEG color range on amd seems to produce too bright video with h264 but not hevc, why?
+
+Support recording screen/monitor on amd/intel.

@@ -446,20 +446,65 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     return codec_context;
 }
 
+static bool vaapi_create_codec_context(AVCodecContext *video_codec_context) {
+    AVBufferRef *device_ctx;
+    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, "/dev/dri/renderD128", NULL, 0) < 0) {
+        fprintf(stderr, "Error: Failed to create hardware device context\n");
+        return false;
+    }
+
+    AVBufferRef *frame_context = av_hwframe_ctx_alloc(device_ctx);
+    if(!frame_context) {
+        fprintf(stderr, "Error: Failed to create hwframe context\n");
+        av_buffer_unref(&device_ctx);
+        return false;
+    }
+
+    AVHWFramesContext *hw_frame_context =
+        (AVHWFramesContext *)frame_context->data;
+    hw_frame_context->width = video_codec_context->width;
+    hw_frame_context->height = video_codec_context->height;
+    hw_frame_context->sw_format = AV_PIX_FMT_NV12;
+    hw_frame_context->format = video_codec_context->pix_fmt;
+    hw_frame_context->device_ref = device_ctx;
+    hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
+
+    hw_frame_context->initial_pool_size = 1;
+
+    if (av_hwframe_ctx_init(frame_context) < 0) {
+        fprintf(stderr, "Error: Failed to initialize hardware frame context "
+                        "(note: ffmpeg version needs to be > 4.0)\n");
+        av_buffer_unref(&device_ctx);
+        //av_buffer_unref(&frame_context);
+        return false;
+    }
+
+    video_codec_context->hw_device_ctx = av_buffer_ref(device_ctx);
+    video_codec_context->hw_frames_ctx = av_buffer_ref(frame_context);
+    return true;
+}
+
 static bool check_if_codec_valid_for_hardware(const AVCodec *codec, gpu_vendor vendor) {
-    // TODO: For now we assume that amd and intel always support h264 and hevc, but we default to h264
-    if(vendor != GPU_VENDOR_NVIDIA)
-        return true;
+    // Do not use AV_PIX_FMT_CUDA because we dont want to do full check with hardware context
+    AVCodecContext *codec_context = create_video_codec_context(vendor == GPU_VENDOR_NVIDIA ? AV_PIX_FMT_YUV420P : AV_PIX_FMT_VAAPI, VideoQuality::VERY_HIGH, 60, codec, false, vendor, FramerateMode::CONSTANT);
+    if(!codec_context)
+        return false;
+
+    codec_context->width = 32;
+    codec_context->height = 32;
+
+    if(!vaapi_create_codec_context(codec_context)) {
+        avcodec_free_context(&codec_context);
+        return false;
+    }
 
     bool success = false;
-    // Do not use AV_PIX_FMT_CUDA because we dont want to do full check with hardware context
-    AVCodecContext *codec_context = create_video_codec_context(AV_PIX_FMT_YUV420P, VideoQuality::VERY_HIGH, 60, codec, false, vendor, FramerateMode::CONSTANT);
-    codec_context->width = 1920;
-    codec_context->height = 1080;
-    if(codec_context) {
-        success = avcodec_open2(codec_context, codec_context->codec, NULL) == 0;
-        avcodec_free_context(&codec_context);
-    }
+    success = avcodec_open2(codec_context, codec_context->codec, NULL) == 0;
+    if(codec_context->hw_device_ctx)
+        av_buffer_unref(&codec_context->hw_device_ctx);
+    if(codec_context->hw_frames_ctx)
+        av_buffer_unref(&codec_context->hw_frames_ctx);
+    avcodec_free_context(&codec_context);
     return success;
 }
 
@@ -467,6 +512,9 @@ static const AVCodec* find_h264_encoder(gpu_vendor vendor) {
     const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GPU_VENDOR_NVIDIA ? "h264_nvenc" : "h264_vaapi");
     if(!codec)
         codec = avcodec_find_encoder_by_name(vendor == GPU_VENDOR_NVIDIA ? "nvenc_h264" : "vaapi_h264");
+
+    if(!codec)
+        return nullptr;
 
     static bool checked = false;
     static bool checked_success = true;
@@ -478,7 +526,6 @@ static const AVCodec* find_h264_encoder(gpu_vendor vendor) {
     return checked_success ? codec : nullptr;
 }
 
-// TODO: Disable under intel/amd?
 
 static const AVCodec* find_h265_encoder(gpu_vendor vendor) {
     const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GPU_VENDOR_NVIDIA ? "hevc_nvenc" : "hevc_vaapi");
@@ -620,16 +667,16 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
     } else {
         switch(video_quality) {
             case VideoQuality::MEDIUM:
-                av_dict_set_int(&options, "qp", 40, 0);
+                av_dict_set_int(&options, "qp", 37, 0);
                 break;
             case VideoQuality::HIGH:
-                av_dict_set_int(&options, "qp", 35, 0);
+                av_dict_set_int(&options, "qp", 32, 0);
                 break;
             case VideoQuality::VERY_HIGH:
-                av_dict_set_int(&options, "qp", 30, 0);
+                av_dict_set_int(&options, "qp", 27, 0);
                 break;
             case VideoQuality::ULTRA:
-                av_dict_set_int(&options, "qp", 24, 0);
+                av_dict_set_int(&options, "qp", 21, 0);
                 break;
         }
 
@@ -639,7 +686,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 
         if(codec_context->codec_id == AV_CODEC_ID_H264) {
             av_dict_set(&options, "profile", "high", 0);
-            av_dict_set_int(&options, "quality", 32, 0);
+            av_dict_set_int(&options, "quality", 4, 0);
         } else {
             av_dict_set(&options, "profile", "main", 0);
         }
@@ -1228,8 +1275,6 @@ int main(int argc, char **argv) {
         usage();
     }
 
-    FramerateMode framerate_mode = FramerateMode::CONSTANT;
-
     const Arg &audio_input_arg = args["-a"];
     const std::vector<AudioInput> audio_inputs = get_pulseaudio_inputs();
     std::vector<MergedAudioInputs> requested_audio_inputs;
@@ -1323,11 +1368,13 @@ int main(int argc, char **argv) {
         very_old_gpu = true;
     }
 
-    // TODO: Remove once gpu screen recorder supports amd and intel properly
-    if(gpu_inf.vendor != GPU_VENDOR_NVIDIA) {
-        fprintf(stderr, "Error: gpu-screen-recorder does currently only support nvidia gpus\n");
-        return 2;
+    if(gpu_inf.vendor != GPU_VENDOR_NVIDIA && overclock) {
+        fprintf(stderr, "Info: overclock option has no effect on amd/intel, ignoring option...\n");
     }
+
+    // TODO: Fix constant framerate not working properly on amd/intel because capture framerate gets locked to the same framerate as
+    // game framerate, which doesn't work well when you need to encode multiple duplicate frames.
+    const FramerateMode framerate_mode = gpu_inf.vendor == GPU_VENDOR_NVIDIA ? FramerateMode::CONSTANT : FramerateMode::VARIABLE;
 
     const char *screen_region = args["-s"].value();
     const char *window_str = args["-w"].value();
@@ -1517,41 +1564,23 @@ int main(int argc, char **argv) {
     const double target_fps = 1.0 / (double)fps;
 
     if(strcmp(video_codec_to_use, "auto") == 0) {
-        if(gpu_inf.vendor == GPU_VENDOR_NVIDIA) {
-            const AVCodec *h265_codec = find_h265_encoder(gpu_inf.vendor);
+        const AVCodec *h265_codec = find_h265_encoder(gpu_inf.vendor);
 
-            // h265 generally allows recording at a higher resolution than h264 on nvidia cards. On a gtx 1080 4k is the max resolution for h264 but for h265 it's 8k.
-            // Another important info is that when recording at a higher fps than.. 60? h265 has very bad performance. For example when recording at 144 fps the fps drops to 1
-            // while with h264 the fps doesn't drop.
-            if(!h265_codec) {
-                fprintf(stderr, "Info: using h264 encoder because a codec was not specified and your gpu does not support h265\n");
-                video_codec_to_use = "h264";
-                video_codec = VideoCodec::H264;
-            } else if(fps > 60) {
-                fprintf(stderr, "Info: using h264 encoder because a codec was not specified and fps is more than 60\n");
-                video_codec_to_use = "h264";
-                video_codec = VideoCodec::H264;
-            } else {
-                fprintf(stderr, "Info: using h265 encoder because a codec was not specified\n");
-                video_codec_to_use = "h265";
-                video_codec = VideoCodec::H265;
-            }
+        // h265 generally allows recording at a higher resolution than h264 on nvidia cards. On a gtx 1080 4k is the max resolution for h264 but for h265 it's 8k.
+        // Another important info is that when recording at a higher fps than.. 60? h265 has very bad performance. For example when recording at 144 fps the fps drops to 1
+        // while with h264 the fps doesn't drop.
+        if(!h265_codec) {
+            fprintf(stderr, "Info: using h264 encoder because a codec was not specified and your gpu does not support h265\n");
+            video_codec_to_use = "h264";
+            video_codec = VideoCodec::H264;
+        } else if(fps > 60) {
+            fprintf(stderr, "Info: using h264 encoder because a codec was not specified and fps is more than 60\n");
+            video_codec_to_use = "h264";
+            video_codec = VideoCodec::H264;
         } else {
-            const AVCodec *h264_codec = find_h264_encoder(gpu_inf.vendor);
-
-            if(!h264_codec) {
-                fprintf(stderr, "Info: using h265 encoder because a codec was not specified and your gpu does not support h264\n");
-                video_codec_to_use = "h265";
-                video_codec = VideoCodec::H265;
-            //} else if(fps > 60) {
-            //    fprintf(stderr, "Info: using h264 encoder because a codec was not specified and fps is more than 60\n");
-            //    video_codec_to_use = "h264";
-            //    video_codec = VideoCodec::H264;
-            } else {
-                fprintf(stderr, "Info: using h264 encoder because a codec was not specified\n");
-                video_codec_to_use = "h264";
-                video_codec = VideoCodec::H264;
-            }
+            fprintf(stderr, "Info: using h265 encoder because a codec was not specified\n");
+            video_codec_to_use = "h265";
+            video_codec = VideoCodec::H265;
         }
     }
 

@@ -110,6 +110,8 @@ static bool gsr_egl_load_egl(gsr_egl *self, void *library) {
 }
 
 static bool gsr_egl_proc_load_egl(gsr_egl *self) {
+    self->eglExportDMABUFImageQueryMESA = self->eglGetProcAddress("eglExportDMABUFImageQueryMESA");
+    self->eglExportDMABUFImageMESA = self->eglGetProcAddress("eglExportDMABUFImageMESA");
     self->glEGLImageTargetTexture2DOES = self->eglGetProcAddress("glEGLImageTargetTexture2DOES");
 
     if(!self->glEGLImageTargetTexture2DOES) {
@@ -134,34 +136,6 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
         { (void**)&self->glTexImage2D, "glTexImage2D" },
         { (void**)&self->glCopyImageSubData, "glCopyImageSubData" },
         { (void**)&self->glClearTexImage, "glClearTexImage" },
-        { (void**)&self->glGenFramebuffers, "glGenFramebuffers" },
-        { (void**)&self->glBindFramebuffer, "glBindFramebuffer" },
-        { (void**)&self->glViewport, "glViewport" },
-        { (void**)&self->glFramebufferTexture2D, "glFramebufferTexture2D" },
-        { (void**)&self->glDrawBuffers, "glDrawBuffers" },
-        { (void**)&self->glCheckFramebufferStatus, "glCheckFramebufferStatus" },
-        { (void**)&self->glBindBuffer, "glBindBuffer" },
-        { (void**)&self->glGenBuffers, "glGenBuffers" },
-        { (void**)&self->glBufferData, "glBufferData" },
-        { (void**)&self->glGenVertexArrays, "glGenVertexArrays" },
-        { (void**)&self->glBindVertexArray, "glBindVertexArray" },
-        { (void**)&self->glCreateProgram, "glCreateProgram" },
-        { (void**)&self->glCreateShader, "glCreateShader" },
-        { (void**)&self->glAttachShader, "glAttachShader" },
-        { (void**)&self->glBindAttribLocation, "glBindAttribLocation" },
-        { (void**)&self->glCompileShader, "glCompileShader" },
-        { (void**)&self->glLinkProgram, "glLinkProgram" },
-        { (void**)&self->glShaderSource, "glShaderSource" },
-        { (void**)&self->glUseProgram, "glUseProgram" },
-        { (void**)&self->glGetProgramInfoLog, "glGetProgramInfoLog" },
-        { (void**)&self->glGetShaderiv, "glGetShaderiv" },
-        { (void**)&self->glGetShaderInfoLog, "glGetShaderInfoLog" },
-        { (void**)&self->glDeleteProgram, "glDeleteProgram" },
-        { (void**)&self->glDeleteShader, "glDeleteShader" },
-        { (void**)&self->glGetProgramiv, "glGetProgramiv" },
-        { (void**)&self->glVertexAttribPointer, "glVertexAttribPointer" },
-        { (void**)&self->glEnableVertexAttribArray, "glEnableVertexAttribArray" },
-        { (void**)&self->glDrawArrays, "glDrawArrays" },
 
         { NULL, NULL }
     };

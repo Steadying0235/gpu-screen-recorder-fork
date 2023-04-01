@@ -262,10 +262,12 @@ bool gsr_overclock_start(gsr_overclock *self) {
     }
     */
 
+    XSync(self->xnvctrl.display, False);
     return true;
 }
 
 void gsr_overclock_stop(gsr_overclock *self) {
     xnvctrl_set_attribute_offset(&self->xnvctrl, self->num_performance_levels, 0, NVCTRL_ATTRIB_GPU_MEM_TRANSFER_RATE);
     //xnvctrl_set_attribute_offset(&self->xnvctrl, self->num_performance_levels, 0, NVCTRL_GPU_NVCLOCK);
+    XSync(self->xnvctrl.display, False);
 }

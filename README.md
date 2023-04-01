@@ -22,14 +22,15 @@ It is recommended to save the video to a SSD because of the large file size, whi
 Note that if you have a very powerful CPU and a not so powerful GPU and play a game that is bottlenecked by your GPU and barely uses your CPU then a CPU based screen recording (such as OBS with libx264 instead of nvenc) might perform slightly better than GPU Screen Recorder. At least on NVIDIA.
 ## Note about optimal performance on NVIDIA
 NVIDIA driver has a "feature" (read: bug) where it will downclock memory transfer rate when a program uses cuda, such as GPU Screen Recorder. To work around this bug, GPU Screen Recorder can overclock your GPU memory transfer rate to it's normal optimal level.\
-To enable overclocking for optimal performance use the `-oc` option when running GPU Screen Recorder. You also need to have "Coolbits" NVIDIA X setting set to "12" to enable overclocking. You can automatically add this option if you run `install_coolbits.sh` and then reboot your computer. This script is automatically run if you are using NVIDIA and run `install.sh`.\
+To enable overclocking for optimal performance use the `-oc` option when running GPU Screen Recorder. You also need to have "Coolbits" NVIDIA X setting set to "12" to enable overclocking. You can automatically add this option if you run `sudo install_coolbits.sh` and then reboot your computer. This script is automatically run if you are using NVIDIA and run `install.sh`.\
 Note that this only works when Xorg server is running as root, and using this option will only give you a performance boost if the game you are recording is bottlenecked by your GPU.\
 Note! use at your own risk!
 
 # Installation
 If you are running an Arch Linux based distro, then you can find gpu screen recorder on aur under the name gpu-screen-recorder-git (`yay -S gpu-screen-recorder-git`).\
-If you are running an Ubuntu based distro then run `install_ubuntu.sh` as root: `sudo ./install_ubuntu.sh`. But it's recommended that you use the flatpak version of gpu-screen-recorder if you use an older version of ubuntu as the ffmpeg version will be old and wont support the best quality options.\
-If you are running another distro then you can run `install.sh` as root: `sudo ./install.sh`, but you need to manually install the dependencies, as described below.\
+If you are running an Ubuntu based distro then if you are using NVIDIA then run `sudo ./install_ubuntu_nvidia.sh`, if you are using AMD then run `sudo ./install_ubuntu_amd.sh` and if you are running intel then run `sudo ./install_ubuntu_intel.sh`.\
+But it's recommended that you use the flatpak version of gpu-screen-recorder if you use an older version of ubuntu as the ffmpeg version will be old and wont support the best quality options.\
+If you are running another distro then you can run `sudo ./install.sh`, but you need to manually install the dependencies, as described below.\
 You can also install gpu screen recorder ([the gtk gui version](https://git.dec05eba.com/gpu-screen-recorder-gtk/)) from [flathub](https://flathub.org/apps/details/com.dec05eba.gpu_screen_recorder).
 
 # Dependencies

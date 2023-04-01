@@ -1,4 +1,4 @@
-#include "../../include/capture/xcomposite_drm.h"
+#include "../../include/capture/xcomposite_vaapi.h"
 #include "../../include/egl.h"
 #include "../../include/window_texture.h"
 #include "../../include/time.h"
@@ -14,7 +14,7 @@
 #include <libavcodec/avcodec.h>
 
 typedef struct {
-    gsr_capture_xcomposite_drm_params params;
+    gsr_capture_xcomposite_vaapi_params params;
     Display *dpy;
     XEvent xev;
     bool should_stop;
@@ -47,7 +47,7 @@ typedef struct {
     VARectangle output_region;
 
     Atom net_active_window_atom;
-} gsr_capture_xcomposite_drm;
+} gsr_capture_xcomposite_vaapi;
 
 static int max_int(int a, int b) {
     return a > b ? a : b;
@@ -57,7 +57,7 @@ static int min_int(int a, int b) {
     return a < b ? a : b;
 }
 
-static void gsr_capture_xcomposite_drm_stop(gsr_capture *cap, AVCodecContext *video_codec_context);
+static void gsr_capture_xcomposite_vaapi_stop(gsr_capture *cap, AVCodecContext *video_codec_context);
 
 static Window get_focused_window(Display *display, Atom net_active_window_atom) {
     Atom type;
@@ -73,7 +73,7 @@ static Window get_focused_window(Display *display, Atom net_active_window_atom) 
     return None;
 }
 
-static bool drm_create_codec_context(gsr_capture_xcomposite_drm *cap_xcomp, AVCodecContext *video_codec_context) {
+static bool drm_create_codec_context(gsr_capture_xcomposite_vaapi *cap_xcomp, AVCodecContext *video_codec_context) {
     AVBufferRef *device_ctx;
     if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, "/dev/dri/renderD128", NULL, 0) < 0) {
         fprintf(stderr, "Error: Failed to create hardware device context\n");
@@ -116,13 +116,13 @@ static bool drm_create_codec_context(gsr_capture_xcomposite_drm *cap_xcomp, AVCo
 
 #define DRM_FORMAT_MOD_INVALID 72057594037927935
 
-static int gsr_capture_xcomposite_drm_start(gsr_capture *cap, AVCodecContext *video_codec_context) {
-    gsr_capture_xcomposite_drm *cap_xcomp = cap->priv;
+static int gsr_capture_xcomposite_vaapi_start(gsr_capture *cap, AVCodecContext *video_codec_context) {
+    gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
 
     if(cap_xcomp->params.follow_focused) {
         cap_xcomp->net_active_window_atom = XInternAtom(cap_xcomp->dpy, "_NET_ACTIVE_WINDOW", False);
         if(!cap_xcomp->net_active_window_atom) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_start failed: failed to get _NET_ACTIVE_WINDOW atom\n");
+            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start failed: failed to get _NET_ACTIVE_WINDOW atom\n");
             return -1;
         }
         cap_xcomp->window = get_focused_window(cap_xcomp->dpy, cap_xcomp->net_active_window_atom);
@@ -134,7 +134,7 @@ static int gsr_capture_xcomposite_drm_start(gsr_capture *cap, AVCodecContext *vi
 
     XWindowAttributes attr;
     if(!XGetWindowAttributes(cap_xcomp->dpy, cap_xcomp->params.window, &attr) && !cap_xcomp->params.follow_focused) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_start failed: invalid window id: %lu\n", cap_xcomp->params.window);
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start failed: invalid window id: %lu\n", cap_xcomp->params.window);
         return -1;
     }
 
@@ -148,18 +148,18 @@ static int gsr_capture_xcomposite_drm_start(gsr_capture *cap, AVCodecContext *vi
     XSelectInput(cap_xcomp->dpy, cap_xcomp->params.window, StructureNotifyMask | ExposureMask);
 
     if(!gsr_egl_load(&cap_xcomp->egl, cap_xcomp->dpy)) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_start: failed to load opengl\n");
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start: failed to load opengl\n");
         return -1;
     }
 
     if(!cap_xcomp->egl.eglExportDMABUFImageQueryMESA) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_start: could not find eglExportDMABUFImageQueryMESA\n");
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start: could not find eglExportDMABUFImageQueryMESA\n");
         gsr_egl_unload(&cap_xcomp->egl);
         return -1;
     }
 
     if(!cap_xcomp->egl.eglExportDMABUFImageMESA) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_start: could not find eglExportDMABUFImageMESA\n");
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start: could not find eglExportDMABUFImageMESA\n");
         gsr_egl_unload(&cap_xcomp->egl);
         return -1;
     }
@@ -167,7 +167,7 @@ static int gsr_capture_xcomposite_drm_start(gsr_capture *cap, AVCodecContext *vi
     /* Disable vsync */
     cap_xcomp->egl.eglSwapInterval(cap_xcomp->egl.egl_display, 0);
     if(window_texture_init(&cap_xcomp->window_texture, cap_xcomp->dpy, cap_xcomp->params.window, &cap_xcomp->egl) != 0 && !cap_xcomp->params.follow_focused) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_start: failed get window texture for window %ld\n", cap_xcomp->params.window);
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start: failed get window texture for window %ld\n", cap_xcomp->params.window);
         gsr_egl_unload(&cap_xcomp->egl);
         return -1;
     }
@@ -194,7 +194,7 @@ static int gsr_capture_xcomposite_drm_start(gsr_capture *cap, AVCodecContext *vi
     }
 
     if(!drm_create_codec_context(cap_xcomp, video_codec_context)) {
-        gsr_capture_xcomposite_drm_stop(cap, video_codec_context);
+        gsr_capture_xcomposite_vaapi_stop(cap, video_codec_context);
         return -1;
     }
 
@@ -202,8 +202,8 @@ static int gsr_capture_xcomposite_drm_start(gsr_capture *cap, AVCodecContext *vi
     return 0;
 }
 
-static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame **frame) {
-    gsr_capture_xcomposite_drm *cap_xcomp = cap->priv;
+static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame **frame) {
+    gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
 
     // TODO:
     //cap_xcomp->egl.glClear(GL_COLOR_BUFFER_BIT);
@@ -242,7 +242,7 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
             attr.width = 0;
             attr.height = 0;
             if(!XGetWindowAttributes(cap_xcomp->dpy, cap_xcomp->window, &attr))
-                fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick failed: invalid window id: %lu\n", cap_xcomp->window);
+                fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick failed: invalid window id: %lu\n", cap_xcomp->window);
 
             cap_xcomp->window_size.x = max_int(attr.width, 0);
             cap_xcomp->window_size.y = max_int(attr.height, 0);
@@ -269,7 +269,7 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
         cap_xcomp->window_resized = false;
 
         if(window_texture_on_resize(&cap_xcomp->window_texture) != 0) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick: window_texture_on_resize failed\n");
+            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: window_texture_on_resize failed\n");
             //cap_xcomp->should_stop = true;
             //cap_xcomp->stop_is_error = true;
             //return;
@@ -316,7 +316,7 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
             av_frame_free(frame);
             *frame = av_frame_alloc();
             if(!frame) {
-                fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick: failed to allocate frame\n");
+                fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: failed to allocate frame\n");
                 cap_xcomp->should_stop = true;
                 cap_xcomp->stop_is_error = true;
                 return;
@@ -332,7 +332,7 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
 
             int res = av_hwframe_get_buffer(video_codec_context->hw_frames_ctx, *frame, 0);
             if(res < 0) {
-                fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick: av_hwframe_get_buffer failed: %d\n", res);
+                fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: av_hwframe_get_buffer failed: %d\n", res);
                 cap_xcomp->should_stop = true;
                 cap_xcomp->stop_is_error = true;
                 return;
@@ -352,14 +352,14 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
 
         EGLImage img = cap_xcomp->egl.eglCreateImage(cap_xcomp->egl.egl_display, cap_xcomp->egl.egl_context, EGL_GL_TEXTURE_2D, (EGLClientBuffer)(uint64_t)window_texture_get_opengl_texture_id(&cap_xcomp->window_texture), pixmap_attrs);
         if(!img) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick: eglCreateImage failed\n");
+            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: eglCreateImage failed\n");
             cap_xcomp->should_stop = true;
             cap_xcomp->stop_is_error = true;
             return;
         }
 
         if(!cap_xcomp->egl.eglExportDMABUFImageQueryMESA(cap_xcomp->egl.egl_display, img, &cap_xcomp->fourcc, &cap_xcomp->num_planes, &cap_xcomp->modifiers)) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick: eglExportDMABUFImageQueryMESA failed\n");
+            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: eglExportDMABUFImageQueryMESA failed\n");
             cap_xcomp->should_stop = true;
             cap_xcomp->stop_is_error = true;
             cap_xcomp->egl.eglDestroyImage(cap_xcomp->egl.egl_display, img);
@@ -367,7 +367,7 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
         }
 
         if(cap_xcomp->num_planes != 1) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick: expected 1 plane for drm buf, got %d planes\n", cap_xcomp->num_planes);
+            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: expected 1 plane for drm buf, got %d planes\n", cap_xcomp->num_planes);
             cap_xcomp->should_stop = true;
             cap_xcomp->stop_is_error = true;
             cap_xcomp->egl.eglDestroyImage(cap_xcomp->egl.egl_display, img);
@@ -375,7 +375,7 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
         }
 
         if(!cap_xcomp->egl.eglExportDMABUFImageMESA(cap_xcomp->egl.egl_display, img, &cap_xcomp->dmabuf_fd, &cap_xcomp->pitch, &cap_xcomp->offset)) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick: eglExportDMABUFImageMESA failed\n");
+            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: eglExportDMABUFImageMESA failed\n");
             cap_xcomp->should_stop = true;
             cap_xcomp->stop_is_error = true;
             cap_xcomp->egl.eglDestroyImage(cap_xcomp->egl.egl_display, img);
@@ -413,7 +413,7 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
         
         VAStatus va_status = vaCreateSurfaces(cap_xcomp->va_dpy, VA_RT_FORMAT_RGB32, xx, yy, &cap_xcomp->input_surface, 1, attribs, 2);
         if(va_status != VA_STATUS_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick: vaCreateSurfaces failed: %d\n", va_status);
+            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaCreateSurfaces failed: %d\n", va_status);
             cap_xcomp->should_stop = true;
             cap_xcomp->stop_is_error = true;
             return;
@@ -423,7 +423,7 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
 
         va_status = vaCreateConfig(cap_xcomp->va_dpy, VAProfileNone, VAEntrypointVideoProc, NULL, 0, &cap_xcomp->config_id);
         if(va_status != VA_STATUS_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick: vaCreateConfig failed: %d\n", va_status);
+            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaCreateConfig failed: %d\n", va_status);
             cap_xcomp->should_stop = true;
             cap_xcomp->stop_is_error = true;
             return;
@@ -432,7 +432,7 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
         VASurfaceID target_surface_id = (uintptr_t)(*frame)->data[3];
         va_status = vaCreateContext(cap_xcomp->va_dpy, cap_xcomp->config_id, xx, yy, VA_PROGRESSIVE, &target_surface_id, 1, &cap_xcomp->context_id);
         if(va_status != VA_STATUS_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick: vaCreateContext failed: %d\n", va_status);
+            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaCreateContext failed: %d\n", va_status);
             cap_xcomp->should_stop = true;
             cap_xcomp->stop_is_error = true;
             return;
@@ -458,7 +458,7 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
 
         va_status = vaCreateBuffer(cap_xcomp->va_dpy, cap_xcomp->context_id, VAProcPipelineParameterBufferType, sizeof(params), 1, &params, &cap_xcomp->buffer_id);
         if(va_status != VA_STATUS_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick: vaCreateBuffer failed: %d\n", va_status);
+            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaCreateBuffer failed: %d\n", va_status);
             cap_xcomp->should_stop = true;
             cap_xcomp->stop_is_error = true;
             return;
@@ -471,8 +471,8 @@ static void gsr_capture_xcomposite_drm_tick(gsr_capture *cap, AVCodecContext *vi
     }
 }
 
-static bool gsr_capture_xcomposite_drm_should_stop(gsr_capture *cap, bool *err) {
-    gsr_capture_xcomposite_drm *cap_xcomp = cap->priv;
+static bool gsr_capture_xcomposite_vaapi_should_stop(gsr_capture *cap, bool *err) {
+    gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
     if(cap_xcomp->should_stop) {
         if(err)
             *err = cap_xcomp->stop_is_error;
@@ -484,8 +484,8 @@ static bool gsr_capture_xcomposite_drm_should_stop(gsr_capture *cap, bool *err) 
     return false;
 }
 
-static int gsr_capture_xcomposite_drm_capture(gsr_capture *cap, AVFrame *frame) {
-    gsr_capture_xcomposite_drm *cap_xcomp = cap->priv;
+static int gsr_capture_xcomposite_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
+    gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
 
     VASurfaceID target_surface_id = (uintptr_t)frame->data[3];
 
@@ -494,7 +494,7 @@ static int gsr_capture_xcomposite_drm_capture(gsr_capture *cap, AVFrame *frame) 
         static bool error_printed = false;
         if(!error_printed) {
             error_printed = true;
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick: vaBeginPicture failed: %d\n", va_status);
+            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaBeginPicture failed: %d\n", va_status);
         }
         return -1;
     }
@@ -505,7 +505,7 @@ static int gsr_capture_xcomposite_drm_capture(gsr_capture *cap, AVFrame *frame) 
         static bool error_printed = false;
         if(!error_printed) {
             error_printed = true;
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick: vaRenderPicture failed: %d\n", va_status);
+            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaRenderPicture failed: %d\n", va_status);
         }
         return -1;
     }
@@ -515,7 +515,7 @@ static int gsr_capture_xcomposite_drm_capture(gsr_capture *cap, AVFrame *frame) 
         static bool error_printed = false;
         if(!error_printed) {
             error_printed = true;
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_tick: vaEndPicture failed: %d\n", va_status);
+            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaEndPicture failed: %d\n", va_status);
         }
         return -1;
     }
@@ -529,8 +529,8 @@ static int gsr_capture_xcomposite_drm_capture(gsr_capture *cap, AVFrame *frame) 
     return 0;
 }
 
-static void gsr_capture_xcomposite_drm_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {
-    gsr_capture_xcomposite_drm *cap_xcomp = cap->priv;
+static void gsr_capture_xcomposite_vaapi_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {
+    gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
 
     if(cap_xcomp->buffer_id) {
         vaDestroyBuffer(cap_xcomp->va_dpy, cap_xcomp->buffer_id);
@@ -572,11 +572,11 @@ static void gsr_capture_xcomposite_drm_stop(gsr_capture *cap, AVCodecContext *vi
     }
 }
 
-static void gsr_capture_xcomposite_drm_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
+static void gsr_capture_xcomposite_vaapi_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
     (void)video_codec_context;
-    gsr_capture_xcomposite_drm *cap_xcomp = cap->priv;
+    gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
     if(cap->priv) {
-        gsr_capture_xcomposite_drm_stop(cap, video_codec_context);
+        gsr_capture_xcomposite_vaapi_stop(cap, video_codec_context);
         free(cap->priv);
         cap->priv = NULL;
     }
@@ -588,9 +588,9 @@ static void gsr_capture_xcomposite_drm_destroy(gsr_capture *cap, AVCodecContext 
     free(cap);
 }
 
-gsr_capture* gsr_capture_xcomposite_drm_create(const gsr_capture_xcomposite_drm_params *params) {
+gsr_capture* gsr_capture_xcomposite_vaapi_create(const gsr_capture_xcomposite_vaapi_params *params) {
     if(!params) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_create params is NULL\n");
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_create params is NULL\n");
         return NULL;
     }
 
@@ -598,7 +598,7 @@ gsr_capture* gsr_capture_xcomposite_drm_create(const gsr_capture_xcomposite_drm_
     if(!cap)
         return NULL;
 
-    gsr_capture_xcomposite_drm *cap_xcomp = calloc(1, sizeof(gsr_capture_xcomposite_drm));
+    gsr_capture_xcomposite_vaapi *cap_xcomp = calloc(1, sizeof(gsr_capture_xcomposite_vaapi));
     if(!cap_xcomp) {
         free(cap);
         return NULL;
@@ -606,7 +606,7 @@ gsr_capture* gsr_capture_xcomposite_drm_create(const gsr_capture_xcomposite_drm_
 
     Display *display = XOpenDisplay(NULL);
     if(!display) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_drm_create failed: XOpenDisplay failed\n");
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_create failed: XOpenDisplay failed\n");
         free(cap);
         free(cap_xcomp);
         return NULL;
@@ -616,11 +616,11 @@ gsr_capture* gsr_capture_xcomposite_drm_create(const gsr_capture_xcomposite_drm_
     cap_xcomp->params = *params;
     
     *cap = (gsr_capture) {
-        .start = gsr_capture_xcomposite_drm_start,
-        .tick = gsr_capture_xcomposite_drm_tick,
-        .should_stop = gsr_capture_xcomposite_drm_should_stop,
-        .capture = gsr_capture_xcomposite_drm_capture,
-        .destroy = gsr_capture_xcomposite_drm_destroy,
+        .start = gsr_capture_xcomposite_vaapi_start,
+        .tick = gsr_capture_xcomposite_vaapi_tick,
+        .should_stop = gsr_capture_xcomposite_vaapi_should_stop,
+        .capture = gsr_capture_xcomposite_vaapi_capture,
+        .destroy = gsr_capture_xcomposite_vaapi_destroy,
         .priv = cap_xcomp
     };
 

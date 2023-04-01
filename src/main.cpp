@@ -1,7 +1,7 @@
 extern "C" {
 #include "../include/capture/nvfbc.h"
 #include "../include/capture/xcomposite_cuda.h"
-#include "../include/capture/xcomposite_drm.h"
+#include "../include/capture/xcomposite_vaapi.h"
 #include "../include/egl.h"
 #include "../include/time.h"
 }
@@ -1461,21 +1461,21 @@ int main(int argc, char **argv) {
     if(!capture) {
         switch(gpu_inf.vendor) {
             case GPU_VENDOR_AMD: {
-                gsr_capture_xcomposite_drm_params xcomposite_params;
+                gsr_capture_xcomposite_vaapi_params xcomposite_params;
                 xcomposite_params.window = src_window_id;
                 xcomposite_params.follow_focused = follow_focused;
                 xcomposite_params.region_size = region_size;
-                capture = gsr_capture_xcomposite_drm_create(&xcomposite_params);
+                capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
                 if(!capture)
                     return 1;
                 break;
             }
             case GPU_VENDOR_INTEL: {
-                gsr_capture_xcomposite_drm_params xcomposite_params;
+                gsr_capture_xcomposite_vaapi_params xcomposite_params;
                 xcomposite_params.window = src_window_id;
                 xcomposite_params.follow_focused = follow_focused;
                 xcomposite_params.region_size = region_size;
-                capture = gsr_capture_xcomposite_drm_create(&xcomposite_params);
+                capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
                 if(!capture)
                     return 1;
                 break;

@@ -42,3 +42,5 @@ JPEG color range on amd seems to produce too bright video with h264 but not hevc
 Support recording screen/monitor on amd/intel.
 Better configure vaapi. The file size is too large.
 Better colors for vaapi. It looks a bit off when recording vscode for example.
+
+Clear vaapi surface (for focused window).

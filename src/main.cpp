@@ -490,12 +490,14 @@ static bool check_if_codec_valid_for_hardware(const AVCodec *codec, gpu_vendor v
     if(!codec_context)
         return false;
 
-    codec_context->width = 32;
-    codec_context->height = 32;
+    codec_context->width = 512;
+    codec_context->height = 512;
 
-    if(!vaapi_create_codec_context(codec_context)) {
-        avcodec_free_context(&codec_context);
-        return false;
+    if(vendor != GPU_VENDOR_NVIDIA) {
+        if(!vaapi_create_codec_context(codec_context)) {
+            avcodec_free_context(&codec_context);
+            return false;
+        }
     }
 
     bool success = false;
@@ -525,7 +527,6 @@ static const AVCodec* find_h264_encoder(gpu_vendor vendor) {
     }
     return checked_success ? codec : nullptr;
 }
-
 
 static const AVCodec* find_h265_encoder(gpu_vendor vendor) {
     const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GPU_VENDOR_NVIDIA ? "hevc_nvenc" : "hevc_vaapi");

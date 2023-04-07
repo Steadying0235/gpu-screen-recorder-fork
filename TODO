@@ -44,3 +44,4 @@ Better configure vaapi. The file size is too large.
 Better colors for vaapi. It looks a bit off when recording vscode for example.
 
 Clear vaapi surface (for focused window).
+Support -h and --help. -h should only show the first line and --help the full help. On error, only show that -h.

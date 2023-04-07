@@ -2,8 +2,9 @@ extern "C" {
 #include "../include/capture/nvfbc.h"
 #include "../include/capture/xcomposite_cuda.h"
 #include "../include/capture/xcomposite_vaapi.h"
+#include "../include/capture/kms_vaapi.h"
 #include "../include/egl.h"
-#include "../include/time.h"
+#include "../include/utils.h"
 }
 
 #include <assert.h>
@@ -18,12 +19,9 @@ extern "C" {
 #include <signal.h>
 #include <sys/stat.h>
 
-#include <unistd.h>
-#include <fcntl.h>
+#include <libgen.h>
 
 #include "../include/sound.hpp"
-
-#include <X11/extensions/Xrandr.h>
 
 extern "C" {
 #include <libavutil/pixfmt.h>
@@ -54,71 +52,6 @@ typedef enum {
 static const int VIDEO_STREAM_INDEX = 0;
 
 static thread_local char av_error_buffer[AV_ERROR_MAX_STRING_SIZE];
-
-static const XRRModeInfo* get_mode_info(const XRRScreenResources *sr, RRMode id) {
-    for(int i = 0; i < sr->nmode; ++i) {
-        if(sr->modes[i].id == id)
-            return &sr->modes[i];
-    }    
-    return nullptr;
-}
-
-typedef void (*active_monitor_callback)(const XRROutputInfo *output_info, const XRRCrtcInfo *crt_info, const XRRModeInfo *mode_info, void *userdata);
-
-static void for_each_active_monitor_output(Display *display, active_monitor_callback callback, void *userdata) {
-    XRRScreenResources *screen_res = XRRGetScreenResources(display, DefaultRootWindow(display));
-    if(!screen_res)
-        return;
-
-    for(int i = 0; i < screen_res->noutput; ++i) {
-        XRROutputInfo *out_info = XRRGetOutputInfo(display, screen_res, screen_res->outputs[i]);
-        if(out_info && out_info->crtc && out_info->connection == RR_Connected) {
-            XRRCrtcInfo *crt_info = XRRGetCrtcInfo(display, screen_res, out_info->crtc);
-            if(crt_info && crt_info->mode) {
-                const XRRModeInfo *mode_info = get_mode_info(screen_res, crt_info->mode);
-                if(mode_info)
-                    callback(out_info, crt_info, mode_info, userdata);
-            }
-            if(crt_info)
-                XRRFreeCrtcInfo(crt_info);
-        }
-        if(out_info)
-            XRRFreeOutputInfo(out_info);
-    }    
-
-    XRRFreeScreenResources(screen_res);
-}
-
-typedef struct {
-    vec2i pos;
-    vec2i size;
-} gsr_monitor;
-
-typedef struct {
-    const char *name;
-    int name_len;
-    gsr_monitor *monitor;
-    bool found_monitor;
-} get_monitor_by_name_userdata;
-
-static void get_monitor_by_name_callback(const XRROutputInfo *output_info, const XRRCrtcInfo *crt_info, const XRRModeInfo *mode_info, void *userdata) {
-    get_monitor_by_name_userdata *data = (get_monitor_by_name_userdata*)userdata;
-    if(!data->found_monitor && data->name_len == output_info->nameLen && memcmp(data->name, output_info->name, data->name_len) == 0) {
-        data->monitor->pos = { crt_info->x, crt_info->y };
-        data->monitor->size = { (int)crt_info->width, (int)crt_info->height };
-        data->found_monitor = true;
-    }
-}
-
-static bool get_monitor_by_name(Display *display, const char *name, gsr_monitor *monitor) {
-    get_monitor_by_name_userdata userdata;
-    userdata.name = name;
-    userdata.name_len = strlen(name);
-    userdata.monitor = monitor;
-    userdata.found_monitor = false;
-    for_each_active_monitor_output(display, get_monitor_by_name_callback, &userdata);
-    return userdata.found_monitor;
-}
 
 static void monitor_output_callback_print(const XRROutputInfo *output_info, const XRRCrtcInfo *crt_info, const XRRModeInfo *mode_info, void *userdata) {
     fprintf(stderr, "    \"%.*s\"    (%dx%d+%d+%d)\n", output_info->nameLen, output_info->name, (int)crt_info->width, (int)crt_info->height, crt_info->x, crt_info->y);
@@ -375,7 +308,7 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     }
     codec_context->max_b_frames = 0;
     codec_context->pix_fmt = pix_fmt;
-    //codec_context->color_range = AVCOL_RANGE_JPEG;
+    codec_context->color_range = AVCOL_RANGE_JPEG; // TODO: Amd/nvidia?
     //codec_context->color_primaries = AVCOL_PRI_BT709;
     //codec_context->color_trc = AVCOL_TRC_BT709;
     //codec_context->colorspace = AVCOL_SPC_BT709;
@@ -434,7 +367,8 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
         // TODO: More options, better options
         //codec_context->bit_rate = codec_context->width * codec_context->height;
         av_opt_set(codec_context->priv_data, "rc_mode", "CQP", 0);
-        codec_context->global_quality = 4;
+        //codec_context->global_quality = 4;
+        codec_context->compression_level = 2;
     }
 
     //codec_context->rc_max_rate = codec_context->bit_rate;
@@ -687,7 +621,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 
         if(codec_context->codec_id == AV_CODEC_ID_H264) {
             av_dict_set(&options, "profile", "high", 0);
-            av_dict_set_int(&options, "quality", 14, 0);
+            av_dict_set_int(&options, "quality", 7, 0);
         } else {
             av_dict_set(&options, "profile", "main", 0);
         }
@@ -736,7 +670,7 @@ static void usage() {
     fprintf(stderr, "        and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature.\n");
     fprintf(stderr, "        This option has be between 5 and 1200. Note that the replay buffer size will not always be precise, because of keyframes. Optional, disabled by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264' or 'h265'. Defaults to 'auto' which defaults to 'h265' unless recording at fps higher than 60.\n");
+    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264' or 'h265'. Defaults to 'auto' which defaults to 'h265' unless recording at fps higher than 60. Defaults to 'h264' on intel.\n");
     fprintf(stderr, "        Forcefully set to 'h264' if -c is 'flv'.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'.\n");
@@ -1174,6 +1108,14 @@ int main(int argc, char **argv) {
     signal(SIGINT, int_handler);
     signal(SIGUSR1, save_replay_handler);
 
+    if(argc == 0)
+        usage();
+
+    char *program_dir = dirname(argv[0]);
+    char program_dir_full[PATH_MAX];
+    program_dir_full[0] = '\0';
+    realpath(program_dir, program_dir_full);
+
     //av_log_set_level(AV_LOG_TRACE);
 
     std::map<std::string, Arg> args = {
@@ -1408,11 +1350,6 @@ int main(int argc, char **argv) {
 
         follow_focused = true;
     } else if(contains_non_hex_number(window_str)) {
-        if(gpu_inf.vendor != GPU_VENDOR_NVIDIA) {
-            fprintf(stderr, "Error: recording a monitor is only supported on NVIDIA right now. Record \"focused\" instead for convenient fullscreen window recording\n");
-            return 2;
-        }
-
         if(strcmp(window_str, "screen") != 0 && strcmp(window_str, "screen-direct") != 0 && strcmp(window_str, "screen-direct-force") != 0) {
             gsr_monitor gmon;
             if(!get_monitor_by_name(dpy, window_str, &gmon)) {
@@ -1425,31 +1362,46 @@ int main(int argc, char **argv) {
             }
         }
 
-        const char *capture_target = window_str;
-        bool direct_capture = strcmp(window_str, "screen-direct") == 0;
-        if(direct_capture) {
-            capture_target = "screen";
-            // TODO: Temporary disable direct capture because push model causes stuttering when it's direct capturing. This might be a nvfbc bug. This does not happen when using a compositor.
-            direct_capture = false;
-            fprintf(stderr, "Warning: screen-direct has temporary been disabled as it causes stuttering. This is likely a NvFBC bug. Falling back to \"screen\".\n");
-        }
+        if(gpu_inf.vendor == GPU_VENDOR_NVIDIA) {
+            const char *capture_target = window_str;
+            bool direct_capture = strcmp(window_str, "screen-direct") == 0;
+            if(direct_capture) {
+                capture_target = "screen";
+                // TODO: Temporary disable direct capture because push model causes stuttering when it's direct capturing. This might be a nvfbc bug. This does not happen when using a compositor.
+                direct_capture = false;
+                fprintf(stderr, "Warning: screen-direct has temporary been disabled as it causes stuttering. This is likely a NvFBC bug. Falling back to \"screen\".\n");
+            }
 
-        if(strcmp(window_str, "screen-direct-force") == 0) {
-            direct_capture = true;
-            capture_target = "screen";
-        }
+            if(strcmp(window_str, "screen-direct-force") == 0) {
+                direct_capture = true;
+                capture_target = "screen";
+            }
 
-        gsr_capture_nvfbc_params nvfbc_params;
-        nvfbc_params.dpy = dpy;
-        nvfbc_params.display_to_capture = capture_target;
-        nvfbc_params.fps = fps;
-        nvfbc_params.pos = { 0, 0 };
-        nvfbc_params.size = { 0, 0 };
-        nvfbc_params.direct_capture = direct_capture;
-        nvfbc_params.overclock = overclock;
-        capture = gsr_capture_nvfbc_create(&nvfbc_params);
-        if(!capture)
-            return 1;
+            gsr_capture_nvfbc_params nvfbc_params;
+            nvfbc_params.dpy = dpy;
+            nvfbc_params.display_to_capture = capture_target;
+            nvfbc_params.fps = fps;
+            nvfbc_params.pos = { 0, 0 };
+            nvfbc_params.size = { 0, 0 };
+            nvfbc_params.direct_capture = direct_capture;
+            nvfbc_params.overclock = overclock;
+            capture = gsr_capture_nvfbc_create(&nvfbc_params);
+            if(!capture)
+                return 1;
+        } else {
+            const char *capture_target = window_str;
+            if(strcmp(window_str, "screen-direct") == 0 || strcmp(window_str, "screen-direct-force") == 0) {
+                capture_target = "screen";
+            }
+
+            gsr_capture_kms_vaapi_params kms_params;
+            kms_params.dpy = dpy;
+            kms_params.display_to_capture = capture_target;
+            kms_params.program_dir = program_dir_full;
+            capture = gsr_capture_kms_vaapi_create(&kms_params);
+            if(!capture)
+                return 1;
+        }
     } else {
         errno = 0;
         src_window_id = strtol(window_str, nullptr, 0);
@@ -1565,23 +1517,36 @@ int main(int argc, char **argv) {
     const double target_fps = 1.0 / (double)fps;
 
     if(strcmp(video_codec_to_use, "auto") == 0) {
-        const AVCodec *h265_codec = find_h265_encoder(gpu_inf.vendor);
-
-        // h265 generally allows recording at a higher resolution than h264 on nvidia cards. On a gtx 1080 4k is the max resolution for h264 but for h265 it's 8k.
-        // Another important info is that when recording at a higher fps than.. 60? h265 has very bad performance. For example when recording at 144 fps the fps drops to 1
-        // while with h264 the fps doesn't drop.
-        if(!h265_codec) {
-            fprintf(stderr, "Info: using h264 encoder because a codec was not specified and your gpu does not support h265\n");
-            video_codec_to_use = "h264";
-            video_codec = VideoCodec::H264;
-        } else if(fps > 60) {
-            fprintf(stderr, "Info: using h264 encoder because a codec was not specified and fps is more than 60\n");
-            video_codec_to_use = "h264";
-            video_codec = VideoCodec::H264;
+        if(gpu_inf.vendor == GPU_VENDOR_INTEL) {
+            const AVCodec *h264_codec = find_h264_encoder(gpu_inf.vendor);
+            if(!h264_codec) {
+                fprintf(stderr, "Info: using h265 encoder because a codec was not specified and your gpu does not support h264\n");
+                video_codec_to_use = "h265";
+                video_codec = VideoCodec::H265;
+            } else {
+                fprintf(stderr, "Info: using h264 encoder because a codec was not specified\n");
+                video_codec_to_use = "h264";
+                video_codec = VideoCodec::H264;
+            }
         } else {
-            fprintf(stderr, "Info: using h265 encoder because a codec was not specified\n");
-            video_codec_to_use = "h265";
-            video_codec = VideoCodec::H265;
+            const AVCodec *h265_codec = find_h265_encoder(gpu_inf.vendor);
+
+            // h265 generally allows recording at a higher resolution than h264 on nvidia cards. On a gtx 1080 4k is the max resolution for h264 but for h265 it's 8k.
+            // Another important info is that when recording at a higher fps than.. 60? h265 has very bad performance. For example when recording at 144 fps the fps drops to 1
+            // while with h264 the fps doesn't drop.
+            if(!h265_codec) {
+                fprintf(stderr, "Info: using h264 encoder because a codec was not specified and your gpu does not support h265\n");
+                video_codec_to_use = "h264";
+                video_codec = VideoCodec::H264;
+            } else if(fps > 60) {
+                fprintf(stderr, "Info: using h264 encoder because a codec was not specified and fps is more than 60\n");
+                video_codec_to_use = "h264";
+                video_codec = VideoCodec::H264;
+            } else {
+                fprintf(stderr, "Info: using h265 encoder because a codec was not specified\n");
+                video_codec_to_use = "h265";
+                video_codec = VideoCodec::H265;
+            }
         }
     }
 
@@ -1730,7 +1695,7 @@ int main(int argc, char **argv) {
 
     const double start_time_pts = clock_get_monotonic_seconds();
 
-    double start_time = clock_get_monotonic_seconds();
+    double start_time = clock_get_monotonic_seconds(); // todo - target_fps to make first frame start immediately?
     double frame_timer_start = start_time;
     int fps_counter = 0;
 

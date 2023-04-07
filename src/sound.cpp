@@ -1,6 +1,6 @@
 #include "../include/sound.hpp"
 extern "C" {
-#include "../include/time.h"
+#include "../include/utils.h"
 }
 
 #include <stdlib.h>

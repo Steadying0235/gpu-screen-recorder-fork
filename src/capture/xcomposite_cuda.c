@@ -2,7 +2,7 @@
 #include "../../include/egl.h"
 #include "../../include/cuda.h"
 #include "../../include/window_texture.h"
-#include "../../include/time.h"
+#include "../../include/utils.h"
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_cuda.h>
 #include <libavutil/frame.h>

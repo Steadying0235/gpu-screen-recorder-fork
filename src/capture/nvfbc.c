@@ -444,6 +444,7 @@ static void gsr_capture_nvfbc_destroy(gsr_capture *cap, AVCodecContext *video_co
         gsr_cuda_unload(&cap_nvfbc->cuda);
         dlclose(cap_nvfbc->library);
         free((void*)cap_nvfbc->params.display_to_capture);
+        cap_nvfbc->params.display_to_capture = NULL;
         free(cap->priv);
         cap->priv = NULL;
     }

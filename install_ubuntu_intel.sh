@@ -9,6 +9,6 @@ set -e
 apt-get -y install build-essential\
 	libswresample-dev libavformat-dev libavcodec-dev libavutil-dev libavfilter-dev\
 	libglvnd-dev libx11-dev libxcomposite-dev libxrandr-dev\
-	libpulse-dev libva2 libegl-mesa0 intel-media-va-driver
+	libpulse-dev libva2 libegl-mesa0 intel-media-va-driver libdrm-dev libcap-dev
 
 ./install.sh

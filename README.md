@@ -6,7 +6,7 @@ This screen recorder can be used for recording your desktop offline, for live st
 where only the last few seconds are saved.
 
 ## Note
-This software works only on x11 and with an nvidia gpu.\
+This software works only on x11.\
 If you are using a variable refresh rate monitor then choose to record "screen-direct". This will allow variable refresh rate to work when recording fullscreen applications. Note that some applications such as mpv will not work in fullscreen mode. A fix is being developed for this.\
 For screen capture to work with PRIME (laptops with a nvidia gpu), you must set the primary GPU to use your dedicated nvidia graphics card. You can do this by selecting "NVIDIA (Performance Mode) in nvidia settings:\
 ![](https://dec05eba.com/images/nvidia-settings-prime.png)\
@@ -35,11 +35,11 @@ You can also install gpu screen recorder ([the gtk gui version](https://git.dec0
 
 # Dependencies
 ## AMD
-`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libpulse, libva, libva-mesa-driver`.
+`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libpulse, libva, libva-mesa-driver, libdrm, libcap`.
 ## Intel
-`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libpulse, libva, libva-intel-driver`.
+`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libpulse, libva, libva-intel-driver, libdrm, libcap`.
 ## NVIDIA
-`libglvnd (which provides libgl and libegl), ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libpulse, cuda (libnvidia-compute), nvenc (libnvidia-encode), libva`. Additionally, you need to have `nvfbc (libnvidia-fbc1)` installed when using nvfbc and `xnvctrl (libxnvctrl0)` when using the `-oc` option.
+`libglvnd (which provides libgl and libegl), ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libpulse, cuda (libnvidia-compute), nvenc (libnvidia-encode), libva, libdrm, libcap`. Additionally, you need to have `nvfbc (libnvidia-fbc1)` installed when using nvfbc and `xnvctrl (libxnvctrl0)` when using the `-oc` option.
 
 # How to use
 Run `scripts/interactive.sh` or run gpu-screen-recorder directly, for example: `gpu-screen-recorder -w $(xdotool selectwindow) -c mp4 -f 60 -a "$(pactl get-default-sink).monitor" -o test_video.mp4` then stop the screen recorder with Ctrl+C, which will also save the recording. You can change -w to -w screen if you want to record all monitors or if you want to record a specific monitor then you can use -w monitor-name, for example -w HDMI-0 (use xrandr command to find the name of your monitor. The name can also be found in your desktop environments display settings).\

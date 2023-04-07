@@ -1,13 +1,12 @@
 #include "../../include/capture/xcomposite_vaapi.h"
 #include "../../include/egl.h"
 #include "../../include/window_texture.h"
-#include "../../include/time.h"
+#include "../../include/utils.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <assert.h>
 #include <X11/Xlib.h>
-#include <X11/extensions/Xcomposite.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_vaapi.h>
 #include <libavutil/frame.h>
@@ -399,6 +398,8 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
         buf.flags = 0;
         buf.private_data = 0;
 
+        // TODO: Use VASurfaceAttribDRMFormatModifiers to set modifier if modifier is not INVALID
+
         #define VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME        0x20000000
 
         VASurfaceAttrib attribs[2] = {0};
@@ -448,10 +449,13 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
         // Copying a surface to another surface will automatically perform the color conversion. Thanks vaapi!
         VAProcPipelineParameterBuffer params = {0};
         params.surface = cap_xcomp->input_surface;
-        params.surface_region = NULL; // TODO: Use when using kmsgrab to restrict region to captured monitor
-        params.output_region = &cap_xcomp->output_region;
+        params.surface_region = NULL;
+        if(cap_xcomp->params.follow_focused)
+            params.output_region = &cap_xcomp->output_region;
+        else
+            params.output_region = NULL;
         params.output_background_color = 0;
-        //params.filter_flags = VA_FRAME_PICTURE;
+        params.filter_flags = VA_FRAME_PICTURE;
         // TODO: Colors
         params.input_color_properties.color_range = (*frame)->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;
         params.output_color_properties.color_range = (*frame)->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;

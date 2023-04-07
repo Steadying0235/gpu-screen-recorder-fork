@@ -1,6 +1,8 @@
 #include "../include/cuda.h"
 #include "../include/library_loader.h"
 #include <string.h>
+#include <stdio.h>
+#include <dlfcn.h>
 
 bool gsr_cuda_load(gsr_cuda *self, Display *display, bool do_overclock) {
     memset(self, 0, sizeof(gsr_cuda));

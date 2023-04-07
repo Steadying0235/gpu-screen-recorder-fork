@@ -1,6 +1,8 @@
 #include "../include/xnvctrl.h"
 #include "../include/library_loader.h"
 #include <string.h>
+#include <stdio.h>
+#include <dlfcn.h>
 
 bool gsr_xnvctrl_load(gsr_xnvctrl *self, Display *display) {
     memset(self, 0, sizeof(gsr_xnvctrl));

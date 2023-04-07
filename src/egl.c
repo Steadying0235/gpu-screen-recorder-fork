@@ -1,6 +1,8 @@
 #include "../include/egl.h"
 #include "../include/library_loader.h"
 #include <string.h>
+#include <stdio.h>
+#include <dlfcn.h>
 
 static bool gsr_egl_create_window(gsr_egl *self) {
     EGLConfig  ecfg;

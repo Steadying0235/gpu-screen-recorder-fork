@@ -73,6 +73,7 @@ static int get_kms(const char *card_path, gsr_kms_response *response) {
     if (0 != drmSetClientCap(drmfd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1)) {
         response->result = KMS_RESULT_INSUFFICIENT_PERMISSIONS;
         snprintf(response->data.err_msg, sizeof(response->data.err_msg), "drmSetClientCap failed, error: %s", strerror(errno));
+        close(drmfd);
         return -1;
     }
 
@@ -80,6 +81,7 @@ static int get_kms(const char *card_path, gsr_kms_response *response) {
     if (!planes) {
         response->result = KMS_RESULT_FAILED_TO_GET_KMS;
         snprintf(response->data.err_msg, sizeof(response->data.err_msg), "failed to access planes, error: %s", strerror(errno));
+        close(drmfd);
         return -1;
     }
 
@@ -134,7 +136,7 @@ static int get_kms(const char *card_path, gsr_kms_response *response) {
     }
 
     drmModeFreePlaneResources(planes);
-    close(drmfd); // TODO?
+    close(drmfd);
 
     if(response->data.fd.fd == 0) {
         response->result = KMS_RESULT_NO_KMS_AVAILABLE;

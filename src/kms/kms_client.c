@@ -6,10 +6,15 @@
 #include <unistd.h>
 #include <signal.h>
 #include <limits.h>
+#include <stdbool.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <sys/capability.h>
+
+static bool is_inside_flatpak(void) {
+    return getenv("FLATPAK_ID") != NULL;
+}
 
 static int send_msg_to_server(int server_fd, gsr_kms_request *request) {
     struct iovec iov;
@@ -67,12 +72,15 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path, const char 
     struct sockaddr_un local_addr = {0};
     struct sockaddr_un remote_addr = {0};
 
+    bool inside_flatpak = is_inside_flatpak();
     char server_filepath[PATH_MAX];
     snprintf(server_filepath, sizeof(server_filepath), "%s/%s", program_dir, "gsr-kms-server");
+    if(access(server_filepath, F_OK) != 0 || inside_flatpak)
+        snprintf(server_filepath, sizeof(server_filepath), "gsr-kms-server"); // Assume gsr-kms-server is in $PATH
 
-    int has_perm = 0;
+    bool has_perm = 0;
     if(geteuid() == 0) {
-        has_perm = 1;
+        has_perm = true;
     } else {
         cap_t kms_server_cap = cap_get_file(server_filepath);
         if(kms_server_cap) {
@@ -80,7 +88,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path, const char 
             cap_get_flag(kms_server_cap, CAP_SYS_ADMIN, CAP_PERMITTED, &res);
             if(res == CAP_SET) {
                 //fprintf(stderr, "has permission!\n");
-                has_perm = 1;
+                has_perm = true;
             } else {
                 //fprintf(stderr, "No permission:(\n");
             }
@@ -89,7 +97,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path, const char 
             if(errno == ENODATA)
                 fprintf(stderr, "gsr info: gsr_kms_client_init: gsr-kms-server is missing sys_admin cap and will require root authentication. To bypass this automatically, run: sudo setcap cap_sys_admin+ep '%s'\n", server_filepath);
             else
-                fprintf(stderr, "failed to get cap\n");
+                fprintf(stderr, "gsr info: gsr_kms_client_init: failed to get cap\n");
         }
     }
 
@@ -132,6 +140,9 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path, const char 
     } else if(pid == 0) { /* child */
         if(has_perm) {
             const char *args[] = { server_filepath, self->socket_path, NULL };
+            execvp(args[0], (char *const*)args);
+        } else if(inside_flatpak) {
+            const char *args[] = { "pkexec", server_filepath, self->socket_path, NULL };
             execvp(args[0], (char *const*)args);
         } else {
             const char *args[] = { "flatpak-spawn", "--host", "pkexec", server_filepath, self->socket_path, NULL };

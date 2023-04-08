@@ -132,7 +132,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path, const char 
             const char *args[] = { server_filepath, self->socket_path, NULL };
             execvp(args[0], (char *const*)args);
         } else {
-            const char *args[] = { "pkexec", server_filepath, self->socket_path, NULL };
+            const char *args[] = { "flatpak-spawn", "--host", "pkexec", server_filepath, self->socket_path, NULL };
             execvp(args[0], (char *const*)args);
         }
         perror("execvp");

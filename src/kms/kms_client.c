@@ -93,6 +93,8 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path, const char 
         }
     }
 
+    fprintf(stderr, "gsr info: gsr server path: %s, exists: %s\n", server_filepath, access(server_filepath, F_OK) == 0 ? "yes" : "no");
+
     self->card_path = strdup(card_path);
     if(!self->card_path) {
         fprintf(stderr, "gsr error: gsr_kms_client_init: failed to duplicate card_path\n");
@@ -163,11 +165,8 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path, const char 
         } else {
             int status;
             int wait_result = waitpid(self->kms_server_pid, &status, WNOHANG);
-            if(wait_result > 0) {
-                fprintf(stderr, "gsr error: gsr_kms_client_init: waitpid failed on kms server, error: %s\n", strerror(errno));
-                goto err;
-            } else if(wait_result > 0) {
-                fprintf(stderr, "gsr error: gsr_kms_client_init: kms server died\n");
+            if(wait_result != 0) {
+                fprintf(stderr, "gsr error: gsr_kms_client_init: kms server died or never started, error: %s\n", strerror(errno));
                 goto err;
             }
         }

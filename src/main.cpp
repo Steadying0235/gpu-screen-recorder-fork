@@ -602,16 +602,16 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
     } else {
         switch(video_quality) {
             case VideoQuality::MEDIUM:
-                av_dict_set_int(&options, "qp", 37, 0);
-                break;
-            case VideoQuality::HIGH:
                 av_dict_set_int(&options, "qp", 32, 0);
                 break;
+            case VideoQuality::HIGH:
+                av_dict_set_int(&options, "qp", 28, 0);
+                break;
             case VideoQuality::VERY_HIGH:
-                av_dict_set_int(&options, "qp", 27, 0);
+                av_dict_set_int(&options, "qp", 24, 0);
                 break;
             case VideoQuality::ULTRA:
-                av_dict_set_int(&options, "qp", 21, 0);
+                av_dict_set_int(&options, "qp", 18, 0);
                 break;
         }
 

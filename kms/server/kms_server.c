@@ -1,4 +1,4 @@
-#include "../../include/kms/kms_shared.h"
+#include "../kms_shared.h"
 
 #include <asm-generic/socket.h>
 #include <stdio.h>

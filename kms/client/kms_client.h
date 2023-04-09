@@ -1,7 +1,7 @@
 #ifndef GSR_KMS_CLIENT_H
 #define GSR_KMS_CLIENT_H
 
-#include "kms_shared.h"
+#include "../kms_shared.h"
 #include <sys/types.h>
 
 typedef struct {

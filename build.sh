@@ -5,7 +5,7 @@ build_gsr_kms_server() {
     includes="$(pkg-config --cflags $dependencies)"
     libs="$(pkg-config --libs $dependencies) -ldl"
     opts="-O2 -g0 -DNDEBUG"
-    gcc -c src/kms/kms_server.c $opts $includes
+    gcc -c kms/server/kms_server.c $opts $includes
     gcc -o gsr-kms-server -O2 kms_server.o -s $libs
 }
 
@@ -19,7 +19,7 @@ build_gsr() {
     gcc -c src/capture/xcomposite_cuda.c $opts $includes
     gcc -c src/capture/xcomposite_vaapi.c $opts $includes
     gcc -c src/capture/kms_vaapi.c $opts $includes
-    gcc -c src/kms/kms_client.c $opts $includes
+    gcc -c kms/client/kms_client.c $opts $includes
     gcc -c src/egl.c $opts $includes
     gcc -c src/cuda.c $opts $includes
     gcc -c src/xnvctrl.c $opts $includes

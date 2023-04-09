@@ -1,5 +1,5 @@
 #include "../../include/capture/kms_vaapi.h"
-#include "../../include/kms/kms_client.h"
+#include "../../kms/client/kms_client.h"
 #include "../../include/egl.h"
 #include "../../include/utils.h"
 #include <stdlib.h>

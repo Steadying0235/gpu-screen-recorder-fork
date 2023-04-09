@@ -13,7 +13,7 @@ typedef struct {
 } gsr_kms_client;
 
 /* |card_path| should be a path to card, for example /dev/dri/card0 */
-int gsr_kms_client_init(gsr_kms_client *self, const char *card_path, const char *program_dir);
+int gsr_kms_client_init(gsr_kms_client *self, const char *card_path);
 void gsr_kms_client_deinit(gsr_kms_client *self);
 
 int gsr_kms_client_get_kms(gsr_kms_client *self, gsr_kms_response *response);

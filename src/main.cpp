@@ -19,8 +19,6 @@ extern "C" {
 #include <signal.h>
 #include <sys/stat.h>
 
-#include <libgen.h>
-
 #include "../include/sound.hpp"
 
 extern "C" {
@@ -1111,11 +1109,6 @@ int main(int argc, char **argv) {
     if(argc == 0)
         usage();
 
-    char *program_dir = dirname(argv[0]);
-    char program_dir_full[PATH_MAX];
-    program_dir_full[0] = '\0';
-    realpath(program_dir, program_dir_full);
-
     //av_log_set_level(AV_LOG_TRACE);
 
     std::map<std::string, Arg> args = {
@@ -1397,7 +1390,6 @@ int main(int argc, char **argv) {
             gsr_capture_kms_vaapi_params kms_params;
             kms_params.dpy = dpy;
             kms_params.display_to_capture = capture_target;
-            kms_params.program_dir = program_dir_full;
             capture = gsr_capture_kms_vaapi_create(&kms_params);
             if(!capture)
                 return 1;

@@ -63,7 +63,7 @@ static int recv_msg_from_server(int server_fd, gsr_kms_response *response) {
     return res;
 }
 
-int gsr_kms_client_init(gsr_kms_client *self, const char *card_path, const char *program_dir) {
+int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     self->kms_server_pid = -1;
     self->card_path = NULL;
     self->socket_fd = -1;
@@ -72,36 +72,41 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path, const char 
     struct sockaddr_un local_addr = {0};
     struct sockaddr_un remote_addr = {0};
 
-    bool inside_flatpak = is_inside_flatpak();
-    char server_filepath[PATH_MAX];
-    snprintf(server_filepath, sizeof(server_filepath), "%s/%s", program_dir, "gsr-kms-server");
-    if(access(server_filepath, F_OK) != 0 || inside_flatpak)
-        snprintf(server_filepath, sizeof(server_filepath), "gsr-kms-server"); // Assume gsr-kms-server is in $PATH
-
+    // This doesn't work on nixos, but we dont want to use $PATH because we want to make this as safe as possible by running pkexec
+    // on a path that only root can modify. If we use "gsr-kms-server" instead then $PATH can be modified in ~/.bashrc for example
+    // which will overwrite the path to gsr-kms-server and the user can end up running a malicious program that pretends to be gsr-kms-server.
+    // If there is a safe way to do this on nixos, then please tell me; or use gpu-screen-recorder flatpak instead.
+    const char *server_filepath = "/usr/bin/gsr-kms-server";
     bool has_perm = 0;
-    if(geteuid() == 0) {
-        has_perm = true;
-    } else {
-        cap_t kms_server_cap = cap_get_file(server_filepath);
-        if(kms_server_cap) {
-            cap_flag_value_t res = 0;
-            cap_get_flag(kms_server_cap, CAP_SYS_ADMIN, CAP_PERMITTED, &res);
-            if(res == CAP_SET) {
-                //fprintf(stderr, "has permission!\n");
-                has_perm = true;
-            } else {
-                //fprintf(stderr, "No permission:(\n");
-            }
-            cap_free(kms_server_cap);
+    bool inside_flatpak = is_inside_flatpak();
+    if(!inside_flatpak) {
+        if(access("/usr/bin/gsr-kms-server", F_OK) != 0) {
+            fprintf(stderr, "gsr error: gsr_kms_client_init: /usr/bin/gsr-kms-server not found, please install gpu-screen-recorder first\n");
+            return -1;
+        }
+
+        if(geteuid() == 0) {
+            has_perm = true;
         } else {
-            if(errno == ENODATA)
-                fprintf(stderr, "gsr info: gsr_kms_client_init: gsr-kms-server is missing sys_admin cap and will require root authentication. To bypass this automatically, run: sudo setcap cap_sys_admin+ep '%s'\n", server_filepath);
-            else
-                fprintf(stderr, "gsr info: gsr_kms_client_init: failed to get cap\n");
+            cap_t kms_server_cap = cap_get_file(server_filepath);
+            if(kms_server_cap) {
+                cap_flag_value_t res = 0;
+                cap_get_flag(kms_server_cap, CAP_SYS_ADMIN, CAP_PERMITTED, &res);
+                if(res == CAP_SET) {
+                    //fprintf(stderr, "has permission!\n");
+                    has_perm = true;
+                } else {
+                    //fprintf(stderr, "No permission:(\n");
+                }
+                cap_free(kms_server_cap);
+            } else {
+                if(errno == ENODATA)
+                    fprintf(stderr, "gsr info: gsr_kms_client_init: gsr-kms-server is missing sys_admin cap and will require root authentication. To bypass this automatically, run: sudo setcap cap_sys_admin+ep '%s'\n", server_filepath);
+                else
+                    fprintf(stderr, "gsr info: gsr_kms_client_init: failed to get cap\n");
+            }
         }
     }
-
-    fprintf(stderr, "gsr info: gsr server path: %s, exists: %s\n", server_filepath, access(server_filepath, F_OK) == 0 ? "yes" : "no");
 
     self->card_path = strdup(card_path);
     if(!self->card_path) {
@@ -138,17 +143,17 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path, const char 
         fprintf(stderr, "gsr error: gsr_kms_client_init: fork failed, error: %s\n", strerror(errno));
         goto err;
     } else if(pid == 0) { /* child */
-        if(has_perm) {
-            const char *args[] = { server_filepath, self->socket_path, NULL };
+        if(inside_flatpak) {
+            const char *args[] = { "flatpak-spawn", "--host", "pkexec", "flatpak", "run", "--command=gsr-kms-server", "com.dec05eba.gpu_screen_recorder", self->socket_path, NULL };
             execvp(args[0], (char *const*)args);
-        } else if(inside_flatpak) {
-            const char *args[] = { "flatpak-spawn", "--host", "pkexec", server_filepath, self->socket_path, NULL };
+        } else if(has_perm) {
+            const char *args[] = { server_filepath, self->socket_path, NULL };
             execvp(args[0], (char *const*)args);
         } else {
             const char *args[] = { "pkexec", server_filepath, self->socket_path, NULL };
             execvp(args[0], (char *const*)args);
         }
-        perror("execvp");
+        fprintf(stderr, "gsr error: gsr_kms_client_init: execvp failed, error: %s\n", strerror(errno));
         _exit(127);
     } else { /* parent */
         self->kms_server_pid = pid;

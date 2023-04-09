@@ -8,7 +8,7 @@ typedef struct {
     pid_t kms_server_pid;
     int socket_fd;
     int client_fd;
-    char socket_path[27];
+    char socket_path[255];
     char *card_path;
 } gsr_kms_client;
 

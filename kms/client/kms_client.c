@@ -7,6 +7,7 @@
 #include <signal.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/wait.h>
@@ -14,6 +15,28 @@
 
 static bool is_inside_flatpak(void) {
     return getenv("FLATPAK_ID") != NULL;
+}
+
+static bool generate_random_characters(char *buffer, int buffer_size, const char *alphabet, size_t alphabet_size) {
+    int fd = open("/dev/urandom", O_RDONLY);
+    if(fd == -1) {
+        perror("/dev/urandom");
+        return false;
+    }
+
+    if(read(fd, buffer, buffer_size) < buffer_size) {
+        fprintf(stderr, "Failed to read %d bytes from /dev/urandom\n", buffer_size);
+        close(fd);
+        return false;
+    }
+
+    for(int i = 0; i < buffer_size; ++i) {
+        unsigned char c = *(unsigned char*)&buffer[i];
+        buffer[i] = alphabet[c % alphabet_size];
+    }
+
+    close(fd);
+    return true;
 }
 
 static int send_msg_to_server(int server_fd, gsr_kms_request *request) {
@@ -72,6 +95,19 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     struct sockaddr_un local_addr = {0};
     struct sockaddr_un remote_addr = {0};
 
+    // Can't use /tmp because of flatpak
+    const char *home_path = getenv("HOME");
+    if(!home_path)
+        home_path = "/tmp";
+
+    char random_characters[11];
+    random_characters[10] = '\0';
+    if(!generate_random_characters(random_characters, 10, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 62)) {
+        fprintf(stderr, "gsr error: gsr_kms_client_init: failed to create path to kms socket\n");
+        return -1;
+    }
+    snprintf(self->socket_path, sizeof(self->socket_path), "%s/.gsr-kms-socket-%s", home_path, random_characters);
+
     // This doesn't work on nixos, but we dont want to use $PATH because we want to make this as safe as possible by running pkexec
     // on a path that only root can modify. If we use "gsr-kms-server" instead then $PATH can be modified in ~/.bashrc for example
     // which will overwrite the path to gsr-kms-server and the user can end up running a malicious program that pretends to be gsr-kms-server.
@@ -111,12 +147,6 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     self->card_path = strdup(card_path);
     if(!self->card_path) {
         fprintf(stderr, "gsr error: gsr_kms_client_init: failed to duplicate card_path\n");
-        goto err;
-    }
-
-    strcpy(self->socket_path, "/tmp/gsr-kms-socket-XXXXXX");
-    if(!tmpnam(self->socket_path)) {
-        fprintf(stderr, "gsr error: gsr_kms_client_init: mkstemp failed, error: %s\n", strerror(errno));
         goto err;
     }
 

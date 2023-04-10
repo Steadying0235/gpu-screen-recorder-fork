@@ -174,19 +174,9 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
             return;
         }
 
-        VASurfaceID target_surface_id = (uintptr_t)(*frame)->data[3];
-
         VAStatus va_status = vaCreateConfig(cap_kms->va_dpy, VAProfileNone, VAEntrypointVideoProc, NULL, 0, &cap_kms->config_id);
         if(va_status != VA_STATUS_SUCCESS) {
             fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: vaCreateConfig failed: %d\n", va_status);
-            cap_kms->should_stop = true;
-            cap_kms->stop_is_error = true;
-            return;
-        }
-
-        va_status = vaCreateContext(cap_kms->va_dpy, cap_kms->config_id, cap_kms->kms_size.x, cap_kms->kms_size.y, VA_PROGRESSIVE, &target_surface_id, 1, &cap_kms->context_id);
-        if(va_status != VA_STATUS_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: vaCreateContext failed: %d\n", va_status);
             cap_kms->should_stop = true;
             cap_kms->stop_is_error = true;
             return;
@@ -234,6 +224,19 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         cap_kms->modifiers = kms_response.data.fd.modifier;
         cap_kms->kms_size.x = kms_response.data.fd.width;
         cap_kms->kms_size.y = kms_response.data.fd.height;
+
+        static bool cc = false;
+        if(!cc) {
+            cc = true;
+
+            VAStatus va_status = vaCreateContext(cap_kms->va_dpy, cap_kms->config_id, cap_kms->kms_size.x, cap_kms->kms_size.y, VA_PROGRESSIVE, &target_surface_id, 1, &cap_kms->context_id);
+            if(va_status != VA_STATUS_SUCCESS) {
+                fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateContext failed: %d\n", va_status);
+                cap_kms->should_stop = true;
+                cap_kms->stop_is_error = true;
+                return -1;
+            }
+        }
 
         if(cap_kms->buffer_id) {
             vaDestroyBuffer(cap_kms->va_dpy, cap_kms->buffer_id);

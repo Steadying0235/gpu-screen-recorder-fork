@@ -12,6 +12,7 @@
 #include <libavutil/frame.h>
 #include <libavcodec/avcodec.h>
 #include <va/va.h>
+#include <va/va_drmcommon.h>
 
 typedef struct {
     gsr_capture_kms_vaapi_params params;
@@ -259,6 +260,10 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     buf.flags = 0;
     buf.private_data = 0;
 
+    VADRMFormatModifierList modifier_list = {0};
+    modifier_list.modifiers = &cap_kms->modifiers;
+    modifier_list.num_modifiers = 1;
+
     #define VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME        0x20000000
 
     VASurfaceAttrib attribs[3] = {0};
@@ -271,7 +276,14 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     attribs[1].value.type = VAGenericValueTypePointer;
     attribs[1].value.value.p = &buf;
 
-    const int num_attribs = 2;
+    int num_attribs = 2;
+    if(cap_kms->modifiers != DRM_FORMAT_MOD_INVALID) {
+        attribs[2].type = VASurfaceAttribDRMFormatModifiers;
+        attribs[2].flags = VA_SURFACE_ATTRIB_SETTABLE;
+        attribs[2].value.type = VAGenericValueTypePointer;
+        attribs[2].value.value.p = &modifier_list;
+        ++num_attribs;
+    }
     
     // TODO: Do we really need to create a new surface every frame?
     VAStatus va_status = vaCreateSurfaces(cap_kms->va_dpy, VA_RT_FORMAT_RGB32, cap_kms->kms_size.x, cap_kms->kms_size.y, &cap_kms->input_surface, 1, attribs, num_attribs);
@@ -303,14 +315,6 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     params.input_color_properties.color_range = frame->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;
     params.output_color_properties.color_range = frame->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;
 
-    va_status = vaCreateBuffer(cap_kms->va_dpy, cap_kms->context_id, VAProcPipelineParameterBufferType, sizeof(params), 1, &params, &cap_kms->buffer_id);
-    if(va_status != VA_STATUS_SUCCESS) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateBuffer failed: %d\n", va_status);
-        cap_kms->should_stop = true;
-        cap_kms->stop_is_error = true;
-        return -1;
-    }
-
     // Clear texture with black background because the source texture (window_texture_get_opengl_texture_id(&cap_kms->window_texture))
     // might be smaller than cap_kms->target_texture_id
     // TODO:
@@ -323,6 +327,14 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
             error_printed = true;
             fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaBeginPicture failed: %d\n", va_status);
         }
+        return -1;
+    }
+
+    va_status = vaCreateBuffer(cap_kms->va_dpy, cap_kms->context_id, VAProcPipelineParameterBufferType, sizeof(params), 1, &params, &cap_kms->buffer_id);
+    if(va_status != VA_STATUS_SUCCESS) {
+        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateBuffer failed: %d\n", va_status);
+        cap_kms->should_stop = true;
+        cap_kms->stop_is_error = true;
         return -1;
     }
 
@@ -348,8 +360,23 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     }
 
     // TODO: Needed?
-    //vaSyncSurface(cap_kms->va_dpy, cap_kms->input_surface);
-    //vaSyncSurface(cap_kms->va_dpy, target_surface_id);
+    vaSyncSurface(cap_kms->va_dpy, cap_kms->input_surface);
+    vaSyncSurface(cap_kms->va_dpy, target_surface_id);
+
+    if(cap_kms->buffer_id) {
+        vaDestroyBuffer(cap_kms->va_dpy, cap_kms->buffer_id);
+        cap_kms->buffer_id = 0;
+    }
+
+    if(cap_kms->input_surface) {
+        vaDestroySurfaces(cap_kms->va_dpy, &cap_kms->input_surface, 1);
+        cap_kms->input_surface = 0;
+    }
+
+    if(cap_kms->dmabuf_fd > 0) {
+        close(cap_kms->dmabuf_fd);
+        cap_kms->dmabuf_fd = 0;
+    }
 
     // TODO: Remove
     //cap_kms->egl.eglSwapBuffers(cap_kms->egl.egl_display, cap_kms->egl.egl_surface);

@@ -40,6 +40,7 @@ typedef struct {
     VASurfaceID input_surface;
     VABufferID buffer_id;
     VARectangle input_region;
+    bool context_created;
 } gsr_capture_kms_vaapi;
 
 static int max_int(int a, int b) {
@@ -173,14 +174,6 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
             cap_kms->stop_is_error = true;
             return;
         }
-
-        VAStatus va_status = vaCreateConfig(cap_kms->va_dpy, VAProfileNone, VAEntrypointVideoProc, NULL, 0, &cap_kms->config_id);
-        if(va_status != VA_STATUS_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: vaCreateConfig failed: %d\n", va_status);
-            cap_kms->should_stop = true;
-            cap_kms->stop_is_error = true;
-            return;
-        }
     }
 }
 
@@ -202,118 +195,120 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
 
     VASurfaceID target_surface_id = (uintptr_t)frame->data[3];
 
-    static bool dd = false;
-    if(!dd) {
-        dd = true;
+    if(cap_kms->dmabuf_fd > 0) {
+        close(cap_kms->dmabuf_fd);
+        cap_kms->dmabuf_fd = 0;
+    }
 
-        if(cap_kms->dmabuf_fd > 0) {
-            close(cap_kms->dmabuf_fd);
-            cap_kms->dmabuf_fd = 0;
-        }
+    gsr_kms_response kms_response;
+    if(gsr_kms_client_get_kms(&cap_kms->kms_client, &kms_response) != 0) {
+        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: failed to get kms, error: %d (%s)\n", kms_response.result, kms_response.data.err_msg);
+        return -1;
+    }
 
-        gsr_kms_response kms_response;
-        if(gsr_kms_client_get_kms(&cap_kms->kms_client, &kms_response) != 0) {
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: failed to get kms, error: %d (%s)\n", kms_response.result, kms_response.data.err_msg);
-            return -1;
-        }
+    cap_kms->dmabuf_fd = kms_response.data.fd.fd;
+    cap_kms->pitch = kms_response.data.fd.pitch;
+    cap_kms->offset = kms_response.data.fd.offset;
+    cap_kms->fourcc = kms_response.data.fd.pixel_format;
+    cap_kms->modifiers = kms_response.data.fd.modifier;
+    cap_kms->kms_size.x = kms_response.data.fd.width;
+    cap_kms->kms_size.y = kms_response.data.fd.height;
 
-        cap_kms->dmabuf_fd = kms_response.data.fd.fd;
-        cap_kms->pitch = kms_response.data.fd.pitch;
-        cap_kms->offset = kms_response.data.fd.offset;
-        cap_kms->fourcc = kms_response.data.fd.pixel_format;
-        cap_kms->modifiers = kms_response.data.fd.modifier;
-        cap_kms->kms_size.x = kms_response.data.fd.width;
-        cap_kms->kms_size.y = kms_response.data.fd.height;
+    if(!cap_kms->context_created) {
+        cap_kms->context_created = true;
 
-        static bool cc = false;
-        if(!cc) {
-            cc = true;
-
-            VAStatus va_status = vaCreateContext(cap_kms->va_dpy, cap_kms->config_id, cap_kms->kms_size.x, cap_kms->kms_size.y, VA_PROGRESSIVE, &target_surface_id, 1, &cap_kms->context_id);
-            if(va_status != VA_STATUS_SUCCESS) {
-                fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateContext failed: %d\n", va_status);
-                cap_kms->should_stop = true;
-                cap_kms->stop_is_error = true;
-                return -1;
-            }
-        }
-
-        if(cap_kms->buffer_id) {
-            vaDestroyBuffer(cap_kms->va_dpy, cap_kms->buffer_id);
-            cap_kms->buffer_id = 0;
-        }
-
-        if(cap_kms->input_surface) {
-            vaDestroySurfaces(cap_kms->va_dpy, &cap_kms->input_surface, 1);
-            cap_kms->input_surface = 0;
-        }
-
-        uintptr_t dmabuf = cap_kms->dmabuf_fd;
-
-        VASurfaceAttribExternalBuffers buf = {0};
-        buf.pixel_format = VA_FOURCC_BGRX; // VA_FOURCC_XRGB
-        buf.width = cap_kms->kms_size.x;
-        buf.height = cap_kms->kms_size.y;
-        buf.data_size = cap_kms->kms_size.y * cap_kms->pitch;
-        buf.num_planes = 1;
-        buf.pitches[0] = cap_kms->pitch;
-        buf.offsets[0] = cap_kms->offset;
-        buf.buffers = &dmabuf;
-        buf.num_buffers = 1;
-        buf.flags = 0;
-        buf.private_data = 0;
-
-        #define VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME        0x20000000
-
-        VASurfaceAttrib attribs[3] = {0};
-        attribs[0].type = VASurfaceAttribMemoryType;
-        attribs[0].flags = VA_SURFACE_ATTRIB_SETTABLE;
-        attribs[0].value.type = VAGenericValueTypeInteger;
-        attribs[0].value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME; // TODO: prime1 instead?
-        attribs[1].type = VASurfaceAttribExternalBufferDescriptor;
-        attribs[1].flags = VA_SURFACE_ATTRIB_SETTABLE;
-        attribs[1].value.type = VAGenericValueTypePointer;
-        attribs[1].value.value.p = &buf;
-
-        const int num_attribs = 2;
-        
-        // TODO: Do we really need to create a new surface every frame?
-        VAStatus va_status = vaCreateSurfaces(cap_kms->va_dpy, VA_RT_FORMAT_RGB32, cap_kms->kms_size.x, cap_kms->kms_size.y, &cap_kms->input_surface, 1, attribs, num_attribs);
+        VAStatus va_status = vaCreateConfig(cap_kms->va_dpy, VAProfileNone, VAEntrypointVideoProc, NULL, 0, &cap_kms->config_id);
         if(va_status != VA_STATUS_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateSurfaces failed: %d\n", va_status);
+            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: vaCreateConfig failed: %d\n", va_status);
             cap_kms->should_stop = true;
             cap_kms->stop_is_error = true;
             return -1;
         }
 
-        cap_kms->input_region = (VARectangle) {
-            .x = cap_kms->capture_pos.x,
-            .y = cap_kms->capture_pos.y,
-            .width = cap_kms->capture_size.x,
-            .height = cap_kms->capture_size.y
-        };
-
-        // Copying a surface to another surface will automatically perform the color conversion. Thanks vaapi!
-        VAProcPipelineParameterBuffer params = {0};
-        params.surface = cap_kms->input_surface;
-        if(cap_kms->screen_capture)
-            params.surface_region = NULL;
-        else
-            params.surface_region = &cap_kms->input_region;
-        params.output_region = NULL;
-        params.output_background_color = 0;
-        params.filter_flags = VA_FRAME_PICTURE;
-        // TODO: Colors
-        params.input_color_properties.color_range = frame->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;
-        params.output_color_properties.color_range = frame->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;
-
-        va_status = vaCreateBuffer(cap_kms->va_dpy, cap_kms->context_id, VAProcPipelineParameterBufferType, sizeof(params), 1, &params, &cap_kms->buffer_id);
+        va_status = vaCreateContext(cap_kms->va_dpy, cap_kms->config_id, cap_kms->kms_size.x, cap_kms->kms_size.y, VA_PROGRESSIVE, &target_surface_id, 1, &cap_kms->context_id);
         if(va_status != VA_STATUS_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateBuffer failed: %d\n", va_status);
+            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateContext failed: %d\n", va_status);
             cap_kms->should_stop = true;
             cap_kms->stop_is_error = true;
             return -1;
         }
+    }
+
+    if(cap_kms->buffer_id) {
+        vaDestroyBuffer(cap_kms->va_dpy, cap_kms->buffer_id);
+        cap_kms->buffer_id = 0;
+    }
+
+    if(cap_kms->input_surface) {
+        vaDestroySurfaces(cap_kms->va_dpy, &cap_kms->input_surface, 1);
+        cap_kms->input_surface = 0;
+    }
+
+    uintptr_t dmabuf = cap_kms->dmabuf_fd;
+
+    VASurfaceAttribExternalBuffers buf = {0};
+    buf.pixel_format = VA_FOURCC_BGRX; // VA_FOURCC_XRGB
+    buf.width = cap_kms->kms_size.x;
+    buf.height = cap_kms->kms_size.y;
+    buf.data_size = cap_kms->kms_size.y * cap_kms->pitch;
+    buf.num_planes = 1;
+    buf.pitches[0] = cap_kms->pitch;
+    buf.offsets[0] = cap_kms->offset;
+    buf.buffers = &dmabuf;
+    buf.num_buffers = 1;
+    buf.flags = 0;
+    buf.private_data = 0;
+
+    #define VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME        0x20000000
+
+    VASurfaceAttrib attribs[3] = {0};
+    attribs[0].type = VASurfaceAttribMemoryType;
+    attribs[0].flags = VA_SURFACE_ATTRIB_SETTABLE;
+    attribs[0].value.type = VAGenericValueTypeInteger;
+    attribs[0].value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME; // TODO: prime1 instead?
+    attribs[1].type = VASurfaceAttribExternalBufferDescriptor;
+    attribs[1].flags = VA_SURFACE_ATTRIB_SETTABLE;
+    attribs[1].value.type = VAGenericValueTypePointer;
+    attribs[1].value.value.p = &buf;
+
+    const int num_attribs = 2;
+    
+    // TODO: Do we really need to create a new surface every frame?
+    VAStatus va_status = vaCreateSurfaces(cap_kms->va_dpy, VA_RT_FORMAT_RGB32, cap_kms->kms_size.x, cap_kms->kms_size.y, &cap_kms->input_surface, 1, attribs, num_attribs);
+    if(va_status != VA_STATUS_SUCCESS) {
+        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateSurfaces failed: %d\n", va_status);
+        cap_kms->should_stop = true;
+        cap_kms->stop_is_error = true;
+        return -1;
+    }
+
+    cap_kms->input_region = (VARectangle) {
+        .x = cap_kms->capture_pos.x,
+        .y = cap_kms->capture_pos.y,
+        .width = cap_kms->capture_size.x,
+        .height = cap_kms->capture_size.y
+    };
+
+    // Copying a surface to another surface will automatically perform the color conversion. Thanks vaapi!
+    VAProcPipelineParameterBuffer params = {0};
+    params.surface = cap_kms->input_surface;
+    if(cap_kms->screen_capture)
+        params.surface_region = NULL;
+    else
+        params.surface_region = &cap_kms->input_region;
+    params.output_region = NULL;
+    params.output_background_color = 0;
+    params.filter_flags = VA_FRAME_PICTURE;
+    // TODO: Colors
+    params.input_color_properties.color_range = frame->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;
+    params.output_color_properties.color_range = frame->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;
+
+    va_status = vaCreateBuffer(cap_kms->va_dpy, cap_kms->context_id, VAProcPipelineParameterBufferType, sizeof(params), 1, &params, &cap_kms->buffer_id);
+    if(va_status != VA_STATUS_SUCCESS) {
+        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateBuffer failed: %d\n", va_status);
+        cap_kms->should_stop = true;
+        cap_kms->stop_is_error = true;
+        return -1;
     }
 
     // Clear texture with black background because the source texture (window_texture_get_opengl_texture_id(&cap_kms->window_texture))
@@ -321,7 +316,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     // TODO:
     //cap_kms->egl.glClearTexImage(cap_kms->target_texture_id, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
-    VAStatus va_status = vaBeginPicture(cap_kms->va_dpy, cap_kms->context_id, target_surface_id);
+    va_status = vaBeginPicture(cap_kms->va_dpy, cap_kms->context_id, target_surface_id);
     if(va_status != VA_STATUS_SUCCESS) {
         static bool error_printed = false;
         if(!error_printed) {

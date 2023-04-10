@@ -148,6 +148,7 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
     //const double window_resize_timeout = 1.0; // 1 second
     if(!cap_kms->created_hw_frame) {
         cap_kms->created_hw_frame = true;
+
         av_frame_free(frame);
         *frame = av_frame_alloc();
         if(!frame) {
@@ -173,9 +174,19 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
             return;
         }
 
+        VASurfaceID target_surface_id = (uintptr_t)(*frame)->data[3];
+
         VAStatus va_status = vaCreateConfig(cap_kms->va_dpy, VAProfileNone, VAEntrypointVideoProc, NULL, 0, &cap_kms->config_id);
         if(va_status != VA_STATUS_SUCCESS) {
             fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: vaCreateConfig failed: %d\n", va_status);
+            cap_kms->should_stop = true;
+            cap_kms->stop_is_error = true;
+            return;
+        }
+
+        va_status = vaCreateContext(cap_kms->va_dpy, cap_kms->config_id, cap_kms->kms_size.x, cap_kms->kms_size.y, VA_PROGRESSIVE, &target_surface_id, 1, &cap_kms->context_id);
+        if(va_status != VA_STATUS_SUCCESS) {
+            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: vaCreateContext failed: %d\n", va_status);
             cap_kms->should_stop = true;
             cap_kms->stop_is_error = true;
             return;
@@ -223,11 +234,6 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         cap_kms->buffer_id = 0;
     }
 
-    if(cap_kms->context_id) {
-        vaDestroyContext(cap_kms->va_dpy, cap_kms->context_id);
-        cap_kms->context_id = 0;
-    }
-
     if(cap_kms->input_surface) {
         vaDestroySurfaces(cap_kms->va_dpy, &cap_kms->input_surface, 1);
         cap_kms->input_surface = 0;
@@ -267,14 +273,6 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     VAStatus va_status = vaCreateSurfaces(cap_kms->va_dpy, VA_RT_FORMAT_RGB32, cap_kms->kms_size.x, cap_kms->kms_size.y, &cap_kms->input_surface, 1, attribs, num_attribs);
     if(va_status != VA_STATUS_SUCCESS) {
         fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateSurfaces failed: %d\n", va_status);
-        cap_kms->should_stop = true;
-        cap_kms->stop_is_error = true;
-        return -1;
-    }
-
-    va_status = vaCreateContext(cap_kms->va_dpy, cap_kms->config_id, cap_kms->kms_size.x, cap_kms->kms_size.y, VA_PROGRESSIVE, &target_surface_id, 1, &cap_kms->context_id);
-    if(va_status != VA_STATUS_SUCCESS) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateContext failed: %d\n", va_status);
         cap_kms->should_stop = true;
         cap_kms->stop_is_error = true;
         return -1;

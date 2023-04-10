@@ -44,3 +44,5 @@ Better colors for vaapi. It looks a bit off when recording vscode for example.
 
 Clear vaapi surface (for focused window).
 Support -h and --help. -h should only show the first line and --help the full help. On error, only show that -h.
+
+Rotated display on amd doesn't work correctly (if you only have 1 monitor connected and it's rotated), even with ffmpeg kmsgrab. The drmfd is rotated as well so it needs to be rotated in the surface copy.

@@ -10,18 +10,12 @@ typedef enum {
 typedef enum {
     KMS_RESULT_OK,
     KMS_RESULT_INVALID_REQUEST,
-    KMS_RESULT_FAILED_TO_OPEN_CARD,
-    KMS_RESULT_INSUFFICIENT_PERMISSIONS,
-    KMS_RESULT_FAILED_TO_GET_KMS,
-    KMS_RESULT_NO_KMS_AVAILABLE,
+    KMS_RESULT_FAILED_TO_GET_PLANE,
     KMS_RESULT_FAILED_TO_SEND
 } gsr_kms_result;
 
 typedef struct {
     int type; /* gsr_kms_request_type */
-    union {
-        char card_path[255];
-    } data;
 } gsr_kms_request;
 
 typedef struct {

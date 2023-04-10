@@ -88,7 +88,6 @@ static int recv_msg_from_server(int server_fd, gsr_kms_response *response) {
 
 int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     self->kms_server_pid = -1;
-    self->card_path = NULL;
     self->socket_fd = -1;
     self->client_fd = -1;
     self->socket_path[0] = '\0';
@@ -144,12 +143,6 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
         }
     }
 
-    self->card_path = strdup(card_path);
-    if(!self->card_path) {
-        fprintf(stderr, "gsr error: gsr_kms_client_init: failed to duplicate card_path\n");
-        goto err;
-    }
-
     self->socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if(self->socket_fd == -1) {
         fprintf(stderr, "gsr error: gsr_kms_client_init: socket failed, error: %s\n", strerror(errno));
@@ -174,13 +167,13 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
         goto err;
     } else if(pid == 0) { /* child */
         if(inside_flatpak) {
-            const char *args[] = { "flatpak-spawn", "--host", "pkexec", "flatpak", "run", "--command=gsr-kms-server", "com.dec05eba.gpu_screen_recorder", self->socket_path, NULL };
+            const char *args[] = { "flatpak-spawn", "--host", "pkexec", "flatpak", "run", "--command=gsr-kms-server", "com.dec05eba.gpu_screen_recorder", self->socket_path, card_path, NULL };
             execvp(args[0], (char *const*)args);
         } else if(has_perm) {
-            const char *args[] = { server_filepath, self->socket_path, NULL };
+            const char *args[] = { server_filepath, self->socket_path, card_path, NULL };
             execvp(args[0], (char *const*)args);
         } else {
-            const char *args[] = { "pkexec", server_filepath, self->socket_path, NULL };
+            const char *args[] = { "pkexec", server_filepath, self->socket_path, card_path, NULL };
             execvp(args[0], (char *const*)args);
         }
         fprintf(stderr, "gsr error: gsr_kms_client_init: execvp failed, error: %s\n", strerror(errno));
@@ -189,7 +182,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
         self->kms_server_pid = pid;
     }
 
-    fprintf(stderr, "gsr info: gsr_kms_client_init: waiting for client to connect\n");
+    fprintf(stderr, "gsr info: gsr_kms_client_init: waiting for server to connect\n");
     for(;;) {
         struct timeval tv;
         fd_set rfds;
@@ -217,7 +210,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
             }
         }
     }
-    fprintf(stderr, "gsr info: gsr_kms_client_init: client connected\n");
+    fprintf(stderr, "gsr info: gsr_kms_client_init: server connected\n");
 
     return 0;
 
@@ -227,11 +220,6 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
 }
 
 void gsr_kms_client_deinit(gsr_kms_client *self) {
-    if(self->card_path) {
-        free(self->card_path);
-        self->card_path = NULL;
-    }
-
     if(self->client_fd != -1) {
         close(self->client_fd);
         self->client_fd = -1;
@@ -261,7 +249,6 @@ int gsr_kms_client_get_kms(gsr_kms_client *self, gsr_kms_response *response) {
 
     gsr_kms_request request;
     request.type = KMS_REQUEST_TYPE_GET_KMS;
-    strcpy(request.data.card_path, self->card_path);
     if(send_msg_to_server(self->client_fd, &request) == -1) {
         fprintf(stderr, "gsr error: gsr_kms_client_get_kms: failed to send request message to server\n");
         return -1;

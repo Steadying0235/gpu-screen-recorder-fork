@@ -9,7 +9,6 @@ typedef struct {
     int socket_fd;
     int client_fd;
     char socket_path[255];
-    char *card_path;
 } gsr_kms_client;
 
 /* |card_path| should be a path to card, for example /dev/dri/card0 */

@@ -39,7 +39,6 @@ Fix constant framerate not working properly on amd/intel because capture framera
 
 JPEG color range on amd seems to produce too bright video with h264 but not hevc, why?
 
-Support recording screen/monitor on amd/intel.
 Better configure vaapi. The file size is too large.
 Better colors for vaapi. It looks a bit off when recording vscode for example.
 

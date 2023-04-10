@@ -16,6 +16,11 @@
 
 #define DRM_CLIENT_CAP_UNIVERSAL_PLANES 2
 
+typedef struct {
+    int drmfd;
+    uint32_t plane_id;
+} gsr_drm;
+
 static int max_int(int a, int b) {
     return a > b ? a : b;
 }
@@ -57,99 +62,135 @@ static int send_msg_to_client(int client_fd, gsr_kms_response *response, int *fd
     return sendmsg(client_fd, &response_message, 0);
 }
 
-static int get_kms(const char *card_path, gsr_kms_response *response) {
+static int kms_get_plane_id(gsr_drm *drm) {
+    drmModePlaneResPtr planes = NULL;
+    drmModePlanePtr plane = NULL;
+    drmModeFB2Ptr drmfb = NULL;
+    int result = -1;
+
+    if(drmSetClientCap(drm->drmfd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1) != 0) {
+        fprintf(stderr, "kms server error: drmSetClientCap failed, error: %s\n", strerror(errno));
+        goto error;
+    }
+
+    planes = drmModeGetPlaneResources(drm->drmfd);
+    if(!planes) {
+        fprintf(stderr, "kms server error: failed to access planes, error: %s\n", strerror(errno));
+        goto error;
+    }
+
+    for(uint32_t i = 0; i < planes->count_planes; ++i) {
+        plane = drmModeGetPlane(drm->drmfd, planes->planes[i]);
+        if(!plane) {
+            fprintf(stderr, "kms server warning: failed to get drmModePlanePtr for plane %#x: %s (%d)\n", planes->planes[i], strerror(errno), errno);
+            continue;
+        }
+
+        if(!plane->fb_id) {
+            drmModeFreePlane(plane);
+            continue;
+        }
+
+        break;
+    }
+
+    if(!plane) {
+        fprintf(stderr, "kms server error: failed to find a usable plane\n");
+        goto error;
+    }
+
+    // TODO: Fallback to getfb(1)?
+    drmfb = drmModeGetFB2(drm->drmfd, plane->fb_id);
+    if(!drmfb) {
+        fprintf(stderr, "kms server error: drmModeGetFB2 failed on plane fb id %d, error: %s\n", plane->fb_id, strerror(errno));
+        goto error;
+    }
+
+    if(!drmfb->handles[0]) {
+        fprintf(stderr, "kms server error: drmfb handle is NULL\n");
+        goto error;
+    }
+
+    drm->plane_id = plane->plane_id;
+    result = 0;
+
+    error:
+    if(drmfb)
+        drmModeFreeFB2(drmfb);
+    if(plane)
+        drmModeFreePlane(plane);
+    if(planes)
+        drmModeFreePlaneResources(planes);
+
+    return result;
+}
+
+static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response) {
+    drmModePlanePtr plane = NULL;
+    drmModeFB2 *drmfb = NULL;
+    int result = -1;
+
     response->result = KMS_RESULT_OK;
     response->data.fd.fd = 0;
     response->data.fd.width = 0;
     response->data.fd.height = 0;
 
-    const int drmfd = open(card_path, O_RDONLY);
-    if (drmfd < 0) {
-        response->result = KMS_RESULT_FAILED_TO_OPEN_CARD;
-        snprintf(response->data.err_msg, sizeof(response->data.err_msg), "failed to open %s, error: %s", card_path, strerror(errno));
-        return -1;
+    plane = drmModeGetPlane(drm->drmfd, drm->plane_id);
+    if(!plane) {
+        response->result = KMS_RESULT_FAILED_TO_GET_PLANE;
+        snprintf(response->data.err_msg, sizeof(response->data.err_msg), "failed to get drm plane with id %u, error: %s\n", drm->plane_id, strerror(errno));
+        fprintf(stderr, "kms server error: %s\n", response->data.err_msg);
+        goto error;
     }
 
-    if (0 != drmSetClientCap(drmfd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1)) {
-        response->result = KMS_RESULT_INSUFFICIENT_PERMISSIONS;
-        snprintf(response->data.err_msg, sizeof(response->data.err_msg), "drmSetClientCap failed, error: %s", strerror(errno));
-        close(drmfd);
-        return -1;
+    drmfb = drmModeGetFB2(drm->drmfd, plane->fb_id);
+    if(!drmfb) {
+        response->result = KMS_RESULT_FAILED_TO_GET_PLANE;
+        snprintf(response->data.err_msg, sizeof(response->data.err_msg), "drmModeGetFB2 failed, error: %s", strerror(errno));
+        fprintf(stderr, "kms server error: %s\n", response->data.err_msg);
+        goto error;
     }
 
-    drmModePlaneResPtr planes = drmModeGetPlaneResources(drmfd);
-    if (!planes) {
-        response->result = KMS_RESULT_FAILED_TO_GET_KMS;
-        snprintf(response->data.err_msg, sizeof(response->data.err_msg), "failed to access planes, error: %s", strerror(errno));
-        close(drmfd);
-        return -1;
+    if(!drmfb->handles[0]) {
+        response->result = KMS_RESULT_FAILED_TO_GET_PLANE;
+        snprintf(response->data.err_msg, sizeof(response->data.err_msg), "drmfb handle is NULL");
+        fprintf(stderr, "kms server error: %s\n", response->data.err_msg);
+        goto error;
     }
 
-    fprintf(stderr, "DRM planes %d:\n", planes->count_planes);
-    for (uint32_t i = 0; i < planes->count_planes; ++i) {
-        drmModePlanePtr plane = drmModeGetPlane(drmfd, planes->planes[i]);
-        if (!plane) {
-            fprintf(stderr, "Cannot get drmModePlanePtr for plane %#x: %s (%d)\n", planes->planes[i], strerror(errno), errno);
-            continue;
-        }
+    // TODO: Check if dimensions have changed by comparing width and height to previous time this was called.
+    // TODO: Support other plane formats than rgb (with multiple planes, such as direct YUV420 on wayland).
 
-        fprintf(stderr, "\t%d: fb_id=%#x\n", i, plane->fb_id);
+    int fb_fd = -1;
+    const int ret = drmPrimeHandleToFD(drm->drmfd, drmfb->handles[0], O_RDONLY, &fb_fd);
+    if(ret != 0 || fb_fd == -1) {
+        response->result = KMS_RESULT_FAILED_TO_GET_PLANE;
+        snprintf(response->data.err_msg, sizeof(response->data.err_msg), "failed to get fd from drm handle, error: %s", strerror(errno));
+        fprintf(stderr, "kms server error: %s\n", response->data.err_msg);
+        goto error;
+    }
 
-        if (!plane->fb_id)
-            goto plane_continue;
+    response->data.fd.fd = fb_fd;
+    response->data.fd.width = drmfb->width;
+    response->data.fd.height = drmfb->height;
+    response->data.fd.pitch = drmfb->pitches[0];
+    response->data.fd.offset = drmfb->offsets[0];
+    response->data.fd.pixel_format = drmfb->pixel_format;
+    response->data.fd.modifier = drmfb->modifier;
+    result = 0;
 
-        drmModeFB2Ptr drmfb = drmModeGetFB2(drmfd, plane->fb_id);
-        if (!drmfb) {
-            fprintf(stderr, "Cannot get drmModeFBPtr for fb %#x: %s (%d)\n", plane->fb_id, strerror(errno), errno);
-        } else {
-            if (!drmfb->handles[0]) {
-                fprintf(stderr, "\t\tFB handle for fb %#x is NULL\n", plane->fb_id);
-                fprintf(stderr, "\t\tPossible reason: not permitted to get FB handles. Do `sudo setcap cap_sys_admin+ep`\n");
-            } else {
-                int fb_fd = -1;
-                const int ret = drmPrimeHandleToFD(drmfd, drmfb->handles[0], 0, &fb_fd);
-                if (ret != 0 || fb_fd == -1) {
-                    fprintf(stderr, "Cannot get fd for fb %#x handle %#x: %s (%d)\n", plane->fb_id, drmfb->handles[0], strerror(errno), errno);
-                } else if(drmfb->width * drmfb->height > response->data.fd.width * response->data.fd.height) {
-                    if(response->data.fd.fd != 0) {
-                        close(response->data.fd.fd);
-                        response->data.fd.fd = 0;
-                    }
-
-                    response->data.fd.fd = fb_fd;
-                    response->data.fd.width = drmfb->width;
-                    response->data.fd.height = drmfb->height;
-                    response->data.fd.pitch = drmfb->pitches[0];
-                    response->data.fd.offset = drmfb->offsets[0];
-                    response->data.fd.pixel_format = drmfb->pixel_format;
-                    response->data.fd.modifier = drmfb->modifier;
-                    fprintf(stderr, "kms width: %u, height: %u, pixel format: %u, modifier: %lu\n", response->data.fd.width, response->data.fd.height, response->data.fd.pixel_format, response->data.fd.modifier);
-                } else {
-                    close(fb_fd);
-                }
-            }
-            drmModeFreeFB2(drmfb);
-        }
-
-    plane_continue:
+    error:
+    if(drmfb)
+        drmModeFreeFB2(drmfb);
+    if(plane)
         drmModeFreePlane(plane);
-    }
 
-    drmModeFreePlaneResources(planes);
-    close(drmfd);
-
-    if(response->data.fd.fd == 0) {
-        response->result = KMS_RESULT_NO_KMS_AVAILABLE;
-        snprintf(response->data.err_msg, sizeof(response->data.err_msg), "no kms found");
-        return -1;
-    }
-
-    return 0;
+    return result;
 }
 
 int main(int argc, char **argv) {
-    if(argc != 2) {
-        fprintf(stderr, "usage: kms_server <domain_socket_path>\n");
+    if(argc != 3) {
+        fprintf(stderr, "usage: kms_server <domain_socket_path> <card_path>\n");
         return 1;
     }
 
@@ -160,7 +201,22 @@ int main(int argc, char **argv) {
         return 2;
     }
 
-    fprintf(stderr, "kms server info: connecting to the server\n");
+    const char *card_path = argv[2];
+
+    gsr_drm drm;
+    drm.plane_id = 0;
+    drm.drmfd = open(card_path, O_RDONLY);
+    if(drm.drmfd < 0) {
+        fprintf(stderr, "kms server error: failed to open %s, error: %s", card_path, strerror(errno));
+        return 2;
+    }
+
+    if(kms_get_plane_id(&drm) != 0) {
+        close(drm.drmfd);
+        return 2;
+    }
+
+    fprintf(stderr, "kms server info: connecting to the client\n");
     for(;;) {
         struct sockaddr_un remote_addr = {0};
         remote_addr.sun_family = AF_UNIX;
@@ -171,11 +227,13 @@ int main(int argc, char **argv) {
                 continue; // Host not ready yet? TODO: sleep
             if(errno == EISCONN) // TODO?
                 break;
+
             fprintf(stderr, "kms server error: connect failed, error: %s (%d)\n", strerror(errno), errno);
+            close(drm.drmfd);
             return 2;
         }
     }
-    fprintf(stderr, "kms server info: connected to the server\n");
+    fprintf(stderr, "kms server info: connected to the client\n");
 
     int res = 0;
     for(;;) {
@@ -202,25 +260,19 @@ int main(int argc, char **argv) {
             }
             continue;
         }
-        request.data.card_path[254] = '\0';
 
         switch(request.type) {
             case KMS_REQUEST_TYPE_GET_KMS: {
                 gsr_kms_response response;
-                int kms_fd = 0;
-                if (get_kms(request.data.card_path, &response) == 0) {
-                    kms_fd = response.data.fd.fd;
+                
+                if(kms_get_fb(&drm, &response) == 0) {
+                    if(send_msg_to_client(socket_fd, &response, &response.data.fd.fd, 1) == -1)
+                        fprintf(stderr, "kms server error: failed to respond to client KMS_REQUEST_TYPE_GET_KMS request\n");
+                    close(response.data.fd.fd);
+                } else {
+                    if(send_msg_to_client(socket_fd, &response, NULL, 0) == -1)
+                        fprintf(stderr, "kms server error: failed to respond to client KMS_REQUEST_TYPE_GET_KMS request\n");
                 }
-
-                if(send_msg_to_client(socket_fd, &response, &kms_fd, kms_fd == 0 ? 0 : 1) == -1) {
-                    fprintf(stderr, "kms server error: failed to respond to client KMS_REQUEST_TYPE_GET_KMS request\n");
-                    if(kms_fd != 0)
-                        close(kms_fd);
-                    break;
-                }
-
-                if(kms_fd != 0)
-                    close(kms_fd);
 
                 break;
             }
@@ -228,7 +280,7 @@ int main(int argc, char **argv) {
                 gsr_kms_response response;
                 response.result = KMS_RESULT_INVALID_REQUEST;
                 snprintf(response.data.err_msg, sizeof(response.data.err_msg), "invalid request type %d, expected %d (%s)", request.type, KMS_REQUEST_TYPE_GET_KMS, "KMS_REQUEST_TYPE_GET_KMS");
-                fprintf(stderr, "%s\n", response.data.err_msg);
+                fprintf(stderr, "kms server error: %s\n", response.data.err_msg);
                 if(send_msg_to_client(socket_fd, &response, NULL, 0) == -1) {
                     fprintf(stderr, "kms server error: failed to respond to client request\n");
                     break;
@@ -239,6 +291,7 @@ int main(int argc, char **argv) {
     }
 
     done:
+    close(drm.drmfd);
     close(socket_fd);
     return res;
 }

@@ -398,15 +398,13 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
         buf.flags = 0;
         buf.private_data = 0;
 
-        // TODO: Use VASurfaceAttribDRMFormatModifiers to set modifier if modifier is not INVALID
-
         #define VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME        0x20000000
 
         VASurfaceAttrib attribs[2] = {0};
         attribs[0].type = VASurfaceAttribMemoryType;
         attribs[0].flags = VA_SURFACE_ATTRIB_SETTABLE;
         attribs[0].value.type = VAGenericValueTypeInteger;
-        attribs[0].value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME; // TODO: prime1 instead?
+        attribs[0].value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME;
         attribs[1].type = VASurfaceAttribExternalBufferDescriptor;
         attribs[1].flags = VA_SURFACE_ATTRIB_SETTABLE;
         attribs[1].value.type = VAGenericValueTypePointer;
@@ -419,8 +417,6 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
             cap_xcomp->stop_is_error = true;
             return;
         }
-
-        //vaBeginPicture(cap_xcomp->va_dpy, )
 
         va_status = vaCreateConfig(cap_xcomp->va_dpy, VAProfileNone, VAEntrypointVideoProc, NULL, 0, &cap_xcomp->config_id);
         if(va_status != VA_STATUS_SUCCESS) {

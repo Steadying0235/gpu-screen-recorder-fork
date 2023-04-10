@@ -1951,9 +1951,6 @@ int main(int argc, char **argv) {
 
                 int err = 0;
                 while ((err = av_buffersink_get_frame(audio_track.sink, aframe)) >= 0) {
-                    aframe->pts = audio_track.pts;
-                    audio_track.pts += audio_track.codec_context->frame_size;
-
                     if(framerate_mode == FramerateMode::CONSTANT) {
                         aframe->pts = audio_track.pts;
                         audio_track.pts += audio_track.codec_context->frame_size;

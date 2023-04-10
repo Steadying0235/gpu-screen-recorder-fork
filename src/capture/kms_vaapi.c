@@ -274,13 +274,13 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     attribs[1].value.value.p = &buf;
 
     int num_attribs = 2;
-    if(cap_kms->modifiers != DRM_FORMAT_MOD_INVALID) {
+    /*if(cap_kms->modifiers != DRM_FORMAT_MOD_INVALID) {
         attribs[2].type = VASurfaceAttribDRMFormatModifiers;
         attribs[2].flags = VA_SURFACE_ATTRIB_SETTABLE;
         attribs[2].value.type = VAGenericValueTypePointer;
         attribs[2].value.value.p = &modifier_list;
         ++num_attribs;
-    }
+    }*/
     
     // TODO: Do we really need to create a new surface every frame?
     VAStatus va_status = vaCreateSurfaces(cap_kms->va_dpy, VA_RT_FORMAT_RGB32, cap_kms->kms_size.x, cap_kms->kms_size.y, &cap_kms->input_surface, 1, attribs, num_attribs);

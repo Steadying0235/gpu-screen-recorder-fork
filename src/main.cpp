@@ -1868,68 +1868,8 @@ int main(int argc, char **argv) {
     bool should_stop_error = false;
 
     AVFrame *aframe = av_frame_alloc();
-
-    // Separate video encoding from frame capture because on amd/intel the frame capture can be very very slow
-    // if we are hitting the graphical processing limit, in which case all applications will run at the same framerate
-    // as the game framerate. This performance seems to be artificially limited.
-    // This garbage is needed because we want to produce constant frame rate videos instead of variable frame rate
-    // videos because bad software such as video editing software and VLC do not support variable frame rate software,
-    // despite nvidia shadowplay and xbox game bar producing variable frame rate videos.
-    // So we have to encode a frame multiple times (duplicate) if we dont produce exactly 1000/fps frames a second.
-    AVFrame *latest_video_frame = nullptr;
-    std::condition_variable video_frame_cv;
-    std::mutex video_frame_mutex;
-    std::thread video_send_encode_thread([&]() {
-        int64_t video_pts_counter = 0;
-        int64_t video_prev_pts = 0;
-        AVFrame *video_frame = nullptr;
-
-        while(running) {
-            {
-                std::unique_lock<std::mutex> lock(video_frame_mutex);
-                video_frame_cv.wait(lock, [&]{ return latest_video_frame || !running; });
-                if(!running)
-                    break;
-
-                if(!latest_video_frame)
-                    continue;
-
-                video_frame = latest_video_frame;
-                latest_video_frame = nullptr;
-            }
-
-            const double this_video_frame_time = clock_get_monotonic_seconds();
-            const int64_t expected_frames = std::round((this_video_frame_time - start_time_pts) / target_fps);
-
-            const int num_frames = framerate_mode == FramerateMode::CONSTANT ? std::max(0L, expected_frames - video_pts_counter) : 1;
-
-            // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
-            for(int i = 0; i < num_frames; ++i) {
-                if(framerate_mode == FramerateMode::CONSTANT) {
-                    video_frame->pts = video_pts_counter + i;
-                } else {
-                    video_frame->pts = (this_video_frame_time - record_start_time) * (double)AV_TIME_BASE;
-                    const bool same_pts = video_frame->pts == video_prev_pts;
-                    video_prev_pts = video_frame->pts;
-                    if(same_pts)
-                        continue;
-                }
-
-                int ret = avcodec_send_frame(video_codec_context, video_frame);
-                if(ret == 0) {
-                    // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                    receive_frames(video_codec_context, VIDEO_STREAM_INDEX, video_stream, video_frame->pts, av_format_context,
-                           record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
-                } else {
-                    fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
-                }
-            }
-            video_pts_counter += num_frames;
-
-            av_frame_free(&video_frame);
-            video_frame = nullptr;
-        }
-    });
+    int64_t video_pts_counter = 0;
+    int64_t video_prev_pts = 0;
 
     int64_t audio_prev_pts = 0;
     while(running) {
@@ -1993,13 +1933,33 @@ int main(int argc, char **argv) {
             frame_timer_start = time_now - frame_time_overflow;
             gsr_capture_capture(capture, frame);
 
-            std::lock_guard<std::mutex> lock(video_frame_mutex);
-            if(latest_video_frame) {
-                av_frame_free(&latest_video_frame);
-                latest_video_frame = nullptr;
+            const double this_video_frame_time = clock_get_monotonic_seconds();
+            const int64_t expected_frames = std::round((this_video_frame_time - start_time_pts) / target_fps);
+
+            const int num_frames = framerate_mode == FramerateMode::CONSTANT ? std::max(0L, expected_frames - video_pts_counter) : 1;
+
+            // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
+            for(int i = 0; i < num_frames; ++i) {
+                if(framerate_mode == FramerateMode::CONSTANT) {
+                    frame->pts = video_pts_counter + i;
+                } else {
+                    frame->pts = (this_video_frame_time - record_start_time) * (double)AV_TIME_BASE;
+                    const bool same_pts = frame->pts == video_prev_pts;
+                    video_prev_pts = frame->pts;
+                    if(same_pts)
+                        continue;
+                }
+
+                int ret = avcodec_send_frame(video_codec_context, frame);
+                if(ret == 0) {
+                    // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                    receive_frames(video_codec_context, VIDEO_STREAM_INDEX, video_stream, frame->pts, av_format_context,
+                           record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+                } else {
+                    fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
+                }
             }
-            latest_video_frame = av_frame_clone(frame);
-            video_frame_cv.notify_one();
+            video_pts_counter += num_frames;
         }
 
         if(save_replay_thread.valid() && save_replay_thread.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -2043,18 +2003,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    {
-        std::lock_guard<std::mutex> lock(video_frame_mutex);
-        video_frame_cv.notify_one();
-    }
-    video_send_encode_thread.join();
-
     av_frame_free(&aframe);
-
-    if(latest_video_frame) {
-        av_frame_free(&latest_video_frame);
-        latest_video_frame = nullptr;
-    }
 
     if (replay_buffer_size_secs == -1 && av_write_trailer(av_format_context) != 0) {
         fprintf(stderr, "Failed to write trailer\n");

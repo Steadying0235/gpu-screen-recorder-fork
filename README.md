@@ -11,8 +11,9 @@ If you are using a variable refresh rate monitor then choose to record "screen-d
 For screen capture to work with PRIME (laptops with a nvidia gpu), you must set the primary GPU to use your dedicated nvidia graphics card. You can do this by selecting "NVIDIA (Performance Mode) in nvidia settings:\
 ![](https://dec05eba.com/images/nvidia-settings-prime.png)\
 and then rebooting your laptop.
-### TEMPORARY ISSUE
-screen-direct capture has been temporary disabled as it causes issues with stuttering. This might be a nvfbc bug.
+### TEMPORARY ISSUES
+1) screen-direct capture has been temporary disabled as it causes issues with stuttering. This might be a nvfbc bug.
+2) Recording monitor on AMD/Intel has been temporary disables as issues surrounding it are fixed.
 ### AMD/Intel root permission
 When recording a window under AMD/Intel no special user permission is required, however when recording a monitor the program needs root permission (to access KMS).
 To make this safer, the part that needs root access has been moved to its own executable (to make it as small as possible) and a GUI sudo prompt is shown to run this executable as root. The executable is called "gsr-kms-server".

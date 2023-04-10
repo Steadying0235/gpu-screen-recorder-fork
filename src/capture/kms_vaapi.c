@@ -220,7 +220,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
 
         VAStatus va_status = vaCreateConfig(cap_kms->va_dpy, VAProfileNone, VAEntrypointVideoProc, NULL, 0, &cap_kms->config_id);
         if(va_status != VA_STATUS_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: vaCreateConfig failed: %d\n", va_status);
+            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateConfig failed: %d\n", va_status);
             cap_kms->should_stop = true;
             cap_kms->stop_is_error = true;
             return -1;

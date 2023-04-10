@@ -1382,6 +1382,12 @@ int main(int argc, char **argv) {
             if(!capture)
                 return 1;
         } else {
+            bool broken = true;
+            if(broken) {
+                fprintf(stderr, "Error: recording a monitor on AMD/Intel has been temporary disabled because of issues. Please record a window instead\n");
+                return 1;
+            }
+
             const char *capture_target = window_str;
             if(strcmp(window_str, "screen-direct") == 0 || strcmp(window_str, "screen-direct-force") == 0) {
                 capture_target = "screen";

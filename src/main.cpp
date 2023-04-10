@@ -1959,8 +1959,10 @@ int main(int argc, char **argv) {
                         aframe->pts = (this_audio_frame_time - record_start_time) * (double)AV_TIME_BASE;
                         const bool same_pts = aframe->pts == audio_prev_pts;
                         audio_prev_pts = aframe->pts;
-                        if(same_pts)
+                        if(same_pts) {
+                            av_frame_unref(aframe);
                             continue;
+                        }
                     }
 
                     err = avcodec_send_frame(audio_track.codec_context, aframe);

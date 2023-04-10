@@ -245,35 +245,48 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         cap_kms->input_surface = 0;
     }
 
-    VADRMPRIMESurfaceDescriptor buf = {0};
-    buf.fourcc = VA_FOURCC_XRGB;
+    uintptr_t dmabuf = cap_kms->dmabuf_fd;
+
+    VASurfaceAttribExternalBuffers buf = {0};
+    buf.pixel_format = VA_FOURCC_BGRX; // VA_FOURCC_XRGB
     buf.width = cap_kms->kms_size.x;
     buf.height = cap_kms->kms_size.y;
+    buf.data_size = cap_kms->kms_size.y * cap_kms->pitch;
+    buf.num_planes = 1;
+    buf.pitches[0] = cap_kms->pitch;
+    buf.offsets[0] = cap_kms->offset;
+    buf.buffers = &dmabuf;
+    buf.num_buffers = 1;
+    buf.flags = 0;
+    buf.private_data = 0;
 
-    buf.num_objects = 0;
-    buf.objects[0].fd = cap_kms->dmabuf_fd;
-    buf.objects[0].size = cap_kms->kms_size.y * cap_kms->pitch;
-    buf.objects[0].drm_format_modifier = cap_kms->modifiers;
+    VADRMFormatModifierList modifier_list = {0};
+    modifier_list.modifiers = &cap_kms->modifiers;
+    modifier_list.num_modifiers = 1;
 
-    buf.num_layers = 1;
-    buf.layers[0].drm_format = cap_kms->fourcc;
-    buf.layers[0].num_planes = 1;
-    buf.layers[0].object_index[0] = 0;
-    buf.layers[0].offset[0] = cap_kms->offset;
-    buf.layers[0].pitch[0] = cap_kms->pitch;
+    #define VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME        0x20000000
 
-    VASurfaceAttrib attribs[2] = {0};
+    VASurfaceAttrib attribs[3] = {0};
     attribs[0].type = VASurfaceAttribMemoryType;
     attribs[0].flags = VA_SURFACE_ATTRIB_SETTABLE;
     attribs[0].value.type = VAGenericValueTypeInteger;
-    attribs[0].value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2;
+    attribs[0].value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME; // TODO: prime1 instead?
     attribs[1].type = VASurfaceAttribExternalBufferDescriptor;
     attribs[1].flags = VA_SURFACE_ATTRIB_SETTABLE;
     attribs[1].value.type = VAGenericValueTypePointer;
     attribs[1].value.value.p = &buf;
+
+    int num_attribs = 2;
+    if(cap_kms->modifiers != DRM_FORMAT_MOD_INVALID) {
+        attribs[2].type = VASurfaceAttribDRMFormatModifiers;
+        attribs[2].flags = VA_SURFACE_ATTRIB_SETTABLE;
+        attribs[2].value.type = VAGenericValueTypePointer;
+        attribs[2].value.value.p = &modifier_list;
+        ++num_attribs;
+    }
     
     // TODO: Do we really need to create a new surface every frame?
-    VAStatus va_status = vaCreateSurfaces(cap_kms->va_dpy, VA_RT_FORMAT_RGB32, cap_kms->kms_size.x, cap_kms->kms_size.y, &cap_kms->input_surface, 1, attribs, 2);
+    VAStatus va_status = vaCreateSurfaces(cap_kms->va_dpy, VA_RT_FORMAT_RGB32, cap_kms->kms_size.x, cap_kms->kms_size.y, &cap_kms->input_surface, 1, attribs, num_attribs);
     if(va_status != VA_STATUS_SUCCESS) {
         fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateSurfaces failed: %d\n", va_status);
         cap_kms->should_stop = true;

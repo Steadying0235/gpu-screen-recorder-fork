@@ -11,8 +11,6 @@
 #include <libavutil/hwcontext_vaapi.h>
 #include <libavutil/frame.h>
 #include <libavcodec/avcodec.h>
-#include <va/va.h>
-#include <va/va_drmcommon.h>
 
 typedef struct {
     gsr_capture_xcomposite_vaapi_params params;
@@ -385,28 +383,30 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
 
         cap_xcomp->egl.eglDestroyImage(cap_xcomp->egl.egl_display, img);
 
-        VADRMPRIMESurfaceDescriptor buf = {0};
-        buf.fourcc = VA_FOURCC_XRGB;
+        uintptr_t dmabuf = cap_xcomp->dmabuf_fd;
+
+        VASurfaceAttribExternalBuffers buf = {0};
+        buf.pixel_format = VA_FOURCC_BGRX;
         buf.width = xx;
         buf.height = yy;
+        buf.data_size = yy * cap_xcomp->pitch;
+        buf.num_planes = 1;
+        buf.pitches[0] = cap_xcomp->pitch;
+        buf.offsets[0] = cap_xcomp->offset;
+        buf.buffers = &dmabuf;
+        buf.num_buffers = 1;
+        buf.flags = 0;
+        buf.private_data = 0;
 
-        buf.num_objects = 0;
-        buf.objects[0].fd = cap_xcomp->dmabuf_fd;
-        buf.objects[0].size = yy * cap_xcomp->pitch;
-        buf.objects[0].drm_format_modifier = cap_xcomp->modifiers;
+        // TODO: Use VASurfaceAttribDRMFormatModifiers to set modifier if modifier is not INVALID
 
-        buf.num_layers = 1;
-        buf.layers[0].drm_format = cap_xcomp->fourcc;
-        buf.layers[0].num_planes = 1;
-        buf.layers[0].object_index[0] = 0;
-        buf.layers[0].offset[0] = cap_xcomp->offset;
-        buf.layers[0].pitch[0] = cap_xcomp->pitch;
+        #define VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME        0x20000000
 
         VASurfaceAttrib attribs[2] = {0};
         attribs[0].type = VASurfaceAttribMemoryType;
         attribs[0].flags = VA_SURFACE_ATTRIB_SETTABLE;
         attribs[0].value.type = VAGenericValueTypeInteger;
-        attribs[0].value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2;
+        attribs[0].value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME; // TODO: prime1 instead?
         attribs[1].type = VASurfaceAttribExternalBufferDescriptor;
         attribs[1].flags = VA_SURFACE_ATTRIB_SETTABLE;
         attribs[1].value.type = VAGenericValueTypePointer;

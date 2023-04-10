@@ -306,7 +306,7 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     }
     codec_context->max_b_frames = 0;
     codec_context->pix_fmt = pix_fmt;
-    codec_context->color_range = AVCOL_RANGE_JPEG; // TODO: Amd/nvidia?
+    //codec_context->color_range = AVCOL_RANGE_JPEG; // TODO: Amd/nvidia?
     //codec_context->color_primaries = AVCOL_PRI_BT709;
     //codec_context->color_trc = AVCOL_TRC_BT709;
     //codec_context->colorspace = AVCOL_SPC_BT709;
@@ -366,7 +366,7 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
         //codec_context->bit_rate = codec_context->width * codec_context->height;
         av_opt_set(codec_context->priv_data, "rc_mode", "CQP", 0);
         //codec_context->global_quality = 4;
-        codec_context->compression_level = 2;
+        //codec_context->compression_level = 2;
     }
 
     //codec_context->rc_max_rate = codec_context->bit_rate;

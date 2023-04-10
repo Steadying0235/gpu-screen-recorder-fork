@@ -74,11 +74,9 @@ static int recv_msg_from_server(int server_fd, gsr_kms_response *response) {
 
     struct cmsghdr *cmsg = CMSG_FIRSTHDR(&response_message);
     if(cmsg) {
-        fprintf(stderr, "got cmsg, %d\n", cmsg->cmsg_type);
         if(cmsg->cmsg_type == SCM_RIGHTS) {
             int kms_fd = 0;
             memcpy(&kms_fd, CMSG_DATA(cmsg), sizeof(int));
-            fprintf(stderr, "kms fd: %d\n", kms_fd);
             response->data.fd.fd = kms_fd;
         }
     }

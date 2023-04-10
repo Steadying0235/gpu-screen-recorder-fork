@@ -12,7 +12,6 @@
 #include <libavutil/frame.h>
 #include <libavcodec/avcodec.h>
 #include <va/va.h>
-#include <va/va_drmcommon.h>
 
 typedef struct {
     gsr_capture_kms_vaapi_params params;
@@ -219,13 +218,6 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     cap_kms->kms_size.x = kms_response.data.fd.width;
     cap_kms->kms_size.y = kms_response.data.fd.height;
 
-    static bool dd = false;
-    if(!dd) {
-        dd = true;
-        fprintf(stderr, "kms capture, fd: %d, pitch: %u, offset: %u, fourcc: %u, modifiers: %lu, size x: %u, y: %u\n",
-            cap_kms->dmabuf_fd, cap_kms->pitch, cap_kms->offset, cap_kms->fourcc, cap_kms->modifiers, cap_kms->kms_size.x, cap_kms->kms_size.y);
-    }
-
     if(cap_kms->buffer_id) {
         vaDestroyBuffer(cap_kms->va_dpy, cap_kms->buffer_id);
         cap_kms->buffer_id = 0;
@@ -257,10 +249,6 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     buf.flags = 0;
     buf.private_data = 0;
 
-    VADRMFormatModifierList modifier_list = {0};
-    modifier_list.modifiers = &cap_kms->modifiers;
-    modifier_list.num_modifiers = 1;
-
     #define VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME        0x20000000
 
     VASurfaceAttrib attribs[3] = {0};
@@ -273,14 +261,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     attribs[1].value.type = VAGenericValueTypePointer;
     attribs[1].value.value.p = &buf;
 
-    int num_attribs = 2;
-    /*if(cap_kms->modifiers != DRM_FORMAT_MOD_INVALID) {
-        attribs[2].type = VASurfaceAttribDRMFormatModifiers;
-        attribs[2].flags = VA_SURFACE_ATTRIB_SETTABLE;
-        attribs[2].value.type = VAGenericValueTypePointer;
-        attribs[2].value.value.p = &modifier_list;
-        ++num_attribs;
-    }*/
+    const int num_attribs = 2;
     
     // TODO: Do we really need to create a new surface every frame?
     VAStatus va_status = vaCreateSurfaces(cap_kms->va_dpy, VA_RT_FORMAT_RGB32, cap_kms->kms_size.x, cap_kms->kms_size.y, &cap_kms->input_surface, 1, attribs, num_attribs);

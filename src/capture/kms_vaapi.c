@@ -207,7 +207,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
 
     gsr_kms_response kms_response;
     if(gsr_kms_client_get_kms(&cap_kms->kms_client, &kms_response) != 0) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to get kms, error: %d (%s)\n", kms_response.result, kms_response.data.err_msg);
+        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: failed to get kms, error: %d (%s)\n", kms_response.result, kms_response.data.err_msg);
         return -1;
     }
 
@@ -218,6 +218,13 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     cap_kms->modifiers = kms_response.data.fd.modifier;
     cap_kms->kms_size.x = kms_response.data.fd.width;
     cap_kms->kms_size.y = kms_response.data.fd.height;
+
+    static bool dd = false;
+    if(!dd) {
+        dd = true;
+        fprintf(stderr, "kms capture, fd: %d, pitch: %u, offset: %u, fourcc: %u, modifiers: %lu, size x: %u, y: %u\n",
+            cap_kms->dmabuf_fd, cap_kms->pitch, cap_kms->offset, cap_kms->fourcc, cap_kms->modifiers, cap_kms->kms_size.x, cap_kms->kms_size.y);
+    }
 
     if(cap_kms->buffer_id) {
         vaDestroyBuffer(cap_kms->va_dpy, cap_kms->buffer_id);
@@ -278,7 +285,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     // TODO: Do we really need to create a new surface every frame?
     VAStatus va_status = vaCreateSurfaces(cap_kms->va_dpy, VA_RT_FORMAT_RGB32, cap_kms->kms_size.x, cap_kms->kms_size.y, &cap_kms->input_surface, 1, attribs, num_attribs);
     if(va_status != VA_STATUS_SUCCESS) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: vaCreateSurfaces failed: %d\n", va_status);
+        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateSurfaces failed: %d\n", va_status);
         cap_kms->should_stop = true;
         cap_kms->stop_is_error = true;
         return -1;
@@ -286,7 +293,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
 
     va_status = vaCreateContext(cap_kms->va_dpy, cap_kms->config_id, cap_kms->kms_size.x, cap_kms->kms_size.y, VA_PROGRESSIVE, &target_surface_id, 1, &cap_kms->context_id);
     if(va_status != VA_STATUS_SUCCESS) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: vaCreateContext failed: %d\n", va_status);
+        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateContext failed: %d\n", va_status);
         cap_kms->should_stop = true;
         cap_kms->stop_is_error = true;
         return -1;
@@ -315,7 +322,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
 
     va_status = vaCreateBuffer(cap_kms->va_dpy, cap_kms->context_id, VAProcPipelineParameterBufferType, sizeof(params), 1, &params, &cap_kms->buffer_id);
     if(va_status != VA_STATUS_SUCCESS) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: vaCreateBuffer failed: %d\n", va_status);
+        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateBuffer failed: %d\n", va_status);
         cap_kms->should_stop = true;
         cap_kms->stop_is_error = true;
         return -1;
@@ -331,7 +338,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         static bool error_printed = false;
         if(!error_printed) {
             error_printed = true;
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: vaBeginPicture failed: %d\n", va_status);
+            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaBeginPicture failed: %d\n", va_status);
         }
         return -1;
     }
@@ -342,7 +349,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         static bool error_printed = false;
         if(!error_printed) {
             error_printed = true;
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: vaRenderPicture failed: %d\n", va_status);
+            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaRenderPicture failed: %d\n", va_status);
         }
         return -1;
     }
@@ -352,7 +359,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         static bool error_printed = false;
         if(!error_printed) {
             error_printed = true;
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: vaEndPicture failed: %d\n", va_status);
+            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaEndPicture failed: %d\n", va_status);
         }
         return -1;
     }

@@ -76,6 +76,11 @@ The plugin does everything on the GPU and gives the texture to OBS, but OBS does
 ## How is this different from using FFMPEG with x11grab and nvenc?
 FFMPEG only uses the GPU with CUDA when doing transcoding from an input video to an output video, and not when recording the screen when using x11grab. So FFMPEG has the same fps drop issues that OBS has.
 
+# Donations
+If you really want to donate, you can donate via bitcoin or monero.
+* Bitcoin: bc1qqvuqnwrdyppf707ge27fqz2n9y9gu7lf5ypyuf
+* Monero: 4An9kp2qW1C9Gah7ewv4JzcNFQ5TAX7ineGCqXWK6vQnhsGGcRpNgcn8r9EC3tMcgY7vqCKs3nSRXhejMHBaGvFdN2egYet
+
 # TODO
 * Dynamically change bitrate/resolution to match desired fps. This would be helpful when streaming for example, where the encode output speed also depends on upload speed to the streaming service.
 * Show cursor when recording. Currently the cursor is not visible when recording a window or when using amd/intel.

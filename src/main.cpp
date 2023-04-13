@@ -1733,10 +1733,6 @@ int main(int argc, char **argv) {
     }
     memset(empty_audio, 0, audio_buffer_size);
 
-    std::condition_variable receive_packet_cv;
-    std::mutex receive_packet_mutex;
-    std::vector<ReceivePacketData> receive_packet_list;
-
     for(AudioTrack &audio_track : audio_tracks) {
         for(AudioDevice &audio_device : audio_track.audio_devices) {
             audio_device.thread = std::thread([&]() mutable {
@@ -1826,9 +1822,8 @@ int main(int argc, char **argv) {
 
                                 ret = avcodec_send_frame(audio_track.codec_context, audio_track.frame);
                                 if(ret >= 0) {
-                                    std::lock_guard<std::mutex> lock(receive_packet_mutex);
-                                    receive_packet_list.push_back({ audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_track.frame->pts });
-                                    receive_packet_cv.notify_one();
+                                    // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                                    receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_track.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
                                 } else {
                                     fprintf(stderr, "Failed to encode audio!\n");
                                 }
@@ -1866,9 +1861,8 @@ int main(int argc, char **argv) {
 
                             ret = avcodec_send_frame(audio_track.codec_context, audio_track.frame);
                             if(ret >= 0) {
-                                std::lock_guard<std::mutex> lock(receive_packet_mutex);
-                                receive_packet_list.push_back({ audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_track.frame->pts });
-                                receive_packet_cv.notify_one();
+                                // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                                receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_track.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
                             } else {
                                 fprintf(stderr, "Failed to encode audio!\n");
                             }
@@ -1881,30 +1875,6 @@ int main(int argc, char **argv) {
             });
         }
     }
-
-    std::thread receive_packet_thread([&]() mutable {
-        std::vector<ReceivePacketData> receive_packet_list_current;
-        while(running) {
-            {
-                std::unique_lock<std::mutex> lock(receive_packet_mutex);
-                receive_packet_cv.wait(lock, [&]{ return !receive_packet_list.empty() || !running; });
-                if(!running)
-                    break;
-
-                if(receive_packet_list.empty())
-                    continue;
-
-                receive_packet_list_current = std::move(receive_packet_list);
-                receive_packet_list.clear();
-            }
-
-            for(ReceivePacketData &receive_packet_data : receive_packet_list_current) {
-                receive_frames(receive_packet_data.codec_context, receive_packet_data.stream_index, receive_packet_data.stream, receive_packet_data.pts,
-                    av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
-            }
-            receive_packet_list_current.clear();
-        }
-    });
 
     // Set update_fps to 24 to test if duplicate/delayed frames cause video/audio desync or too fast/slow video.
     const double update_fps = fps + 190;
@@ -1951,9 +1921,8 @@ int main(int argc, char **argv) {
 
                     err = avcodec_send_frame(audio_track.codec_context, aframe);
                     if(err >= 0){
-                        std::lock_guard<std::mutex> lock(receive_packet_mutex);
-                        receive_packet_list.push_back({ audio_track.codec_context, audio_track.stream_index, audio_track.stream, aframe->pts });
-                        receive_packet_cv.notify_one();
+                        // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                        receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, aframe->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
                     } else {
                         fprintf(stderr, "Failed to encode audio!\n");
                     }
@@ -1996,9 +1965,9 @@ int main(int argc, char **argv) {
 
                 int ret = avcodec_send_frame(video_codec_context, frame);
                 if(ret == 0) {
-                    std::lock_guard<std::mutex> lock(receive_packet_mutex);
-                    receive_packet_list.push_back({ video_codec_context, VIDEO_STREAM_INDEX, video_stream, frame->pts });
-                    receive_packet_cv.notify_one();
+                    // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                    receive_frames(video_codec_context, VIDEO_STREAM_INDEX, video_stream, frame->pts, av_format_context,
+                           record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
                 } else {
                     fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
                 }
@@ -2046,12 +2015,6 @@ int main(int argc, char **argv) {
             sound_device_close(&audio_device.sound_device);
         }
     }
-
-    {
-        std::lock_guard<std::mutex> lock(receive_packet_mutex);
-        receive_packet_cv.notify_one();
-    }
-    receive_packet_thread.join();
 
     av_frame_free(&aframe);
 

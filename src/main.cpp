@@ -1102,6 +1102,13 @@ static bool is_xwayland(Display *display) {
     return xwayland_found;
 }
 
+struct ReceivePacketData {
+    AVCodecContext *codec_context;
+    int stream_index;
+    AVStream *stream;
+    int64_t pts;
+};
+
 int main(int argc, char **argv) {
     signal(SIGINT, int_handler);
     signal(SIGUSR1, save_replay_handler);
@@ -1726,9 +1733,13 @@ int main(int argc, char **argv) {
     }
     memset(empty_audio, 0, audio_buffer_size);
 
+    std::condition_variable receive_packet_cv;
+    std::mutex receive_packet_mutex;
+    std::vector<ReceivePacketData> receive_packet_list;
+
     for(AudioTrack &audio_track : audio_tracks) {
         for(AudioDevice &audio_device : audio_track.audio_devices) {
-            audio_device.thread = std::thread([record_start_time, replay_buffer_size_secs, &frame_data_queue, &frames_erased, &audio_track, empty_audio, &audio_device, &audio_filter_mutex, &write_output_mutex, framerate_mode](AVFormatContext *av_format_context) mutable {
+            audio_device.thread = std::thread([&]() mutable {
                 const AVSampleFormat sound_device_sample_format = audio_format_to_sample_format(audio_codec_context_get_audio_format(audio_track.codec_context));
                 const bool needs_audio_conversion = audio_track.codec_context->sample_fmt != sound_device_sample_format;
                 SwrContext *swr = nullptr;
@@ -1815,8 +1826,9 @@ int main(int argc, char **argv) {
 
                                 ret = avcodec_send_frame(audio_track.codec_context, audio_track.frame);
                                 if(ret >= 0) {
-                                    // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                                    receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_track.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+                                    std::lock_guard<std::mutex> lock(receive_packet_mutex);
+                                    receive_packet_list.push_back({ audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_track.frame->pts });
+                                    receive_packet_cv.notify_one();
                                 } else {
                                     fprintf(stderr, "Failed to encode audio!\n");
                                 }
@@ -1854,8 +1866,9 @@ int main(int argc, char **argv) {
 
                             ret = avcodec_send_frame(audio_track.codec_context, audio_track.frame);
                             if(ret >= 0) {
-                                // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                                receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_track.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+                                std::lock_guard<std::mutex> lock(receive_packet_mutex);
+                                receive_packet_list.push_back({ audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_track.frame->pts });
+                                receive_packet_cv.notify_one();
                             } else {
                                 fprintf(stderr, "Failed to encode audio!\n");
                             }
@@ -1865,9 +1878,33 @@ int main(int argc, char **argv) {
 
                 if(swr)
                     swr_free(&swr);
-            }, av_format_context);
+            });
         }
     }
+
+    std::thread receive_packet_thread([&]() mutable {
+        std::vector<ReceivePacketData> receive_packet_list_current;
+        while(running) {
+            {
+                std::unique_lock<std::mutex> lock(receive_packet_mutex);
+                receive_packet_cv.wait(lock, [&]{ return !receive_packet_list.empty() || !running; });
+                if(!running)
+                    break;
+
+                if(receive_packet_list.empty())
+                    continue;
+
+                receive_packet_list_current = std::move(receive_packet_list);
+                receive_packet_list.clear();
+            }
+
+            for(ReceivePacketData &receive_packet_data : receive_packet_list_current) {
+                receive_frames(receive_packet_data.codec_context, receive_packet_data.stream_index, receive_packet_data.stream, receive_packet_data.pts,
+                    av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+            }
+            receive_packet_list_current.clear();
+        }
+    });
 
     // Set update_fps to 24 to test if duplicate/delayed frames cause video/audio desync or too fast/slow video.
     const double update_fps = fps + 190;
@@ -1875,69 +1912,10 @@ int main(int argc, char **argv) {
 
     AVFrame *aframe = av_frame_alloc();
 
-    // Separate video encoding from frame capture because on amd/intel the frame capture can be very very slow
-    // if we are hitting the graphical processing limit, in which case all applications will run at the same framerate
-    // as the game framerate. This performance seems to be artificially limited.
-    // This garbage is needed because we want to produce constant frame rate videos instead of variable frame rate
-    // videos because bad software such as video editing software and VLC do not support variable frame rate software,
-    // despite nvidia shadowplay and xbox game bar producing variable frame rate videos.
-    // So we have to encode a frame multiple times (duplicate) if we dont produce exactly 1000/fps frames a second.
-    AVFrame *latest_video_frame = nullptr;
-    std::condition_variable video_frame_cv;
-    std::mutex video_frame_mutex;
-    std::thread video_send_encode_thread([&]() {
-        int64_t video_pts_counter = 0;
-        int64_t video_prev_pts = 0;
-        AVFrame *video_frame = nullptr;
-
-        while(running) {
-            {
-                std::unique_lock<std::mutex> lock(video_frame_mutex);
-                video_frame_cv.wait(lock, [&]{ return latest_video_frame || !running; });
-                if(!running)
-                    break;
-
-                if(!latest_video_frame)
-                    continue;
-
-                video_frame = latest_video_frame;
-                latest_video_frame = nullptr;
-            }
-
-            const double this_video_frame_time = clock_get_monotonic_seconds();
-            const int64_t expected_frames = std::round((this_video_frame_time - start_time_pts) / target_fps);
-
-            const int num_frames = framerate_mode == FramerateMode::CONSTANT ? std::max(0L, expected_frames - video_pts_counter) : 1;
-
-            // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
-            for(int i = 0; i < num_frames; ++i) {
-                if(framerate_mode == FramerateMode::CONSTANT) {
-                    video_frame->pts = video_pts_counter + i;
-                } else {
-                    video_frame->pts = (this_video_frame_time - record_start_time) * (double)AV_TIME_BASE;
-                    const bool same_pts = video_frame->pts == video_prev_pts;
-                    video_prev_pts = video_frame->pts;
-                    if(same_pts)
-                        continue;
-                }
-
-                int ret = avcodec_send_frame(video_codec_context, video_frame);
-                if(ret == 0) {
-                    // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                    receive_frames(video_codec_context, VIDEO_STREAM_INDEX, video_stream, video_frame->pts, av_format_context,
-                           record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
-                } else {
-                    fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
-                }
-            }
-            video_pts_counter += num_frames;
-
-            av_frame_free(&video_frame);
-            video_frame = nullptr;
-        }
-    });
-
+    int64_t video_pts_counter = 0;
+    int64_t video_prev_pts = 0;
     int64_t audio_prev_pts = 0;
+
     while(running) {
         double frame_start = clock_get_monotonic_seconds();
 
@@ -1973,8 +1951,9 @@ int main(int argc, char **argv) {
 
                     err = avcodec_send_frame(audio_track.codec_context, aframe);
                     if(err >= 0){
-                        // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                        receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, aframe->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+                        std::lock_guard<std::mutex> lock(receive_packet_mutex);
+                        receive_packet_list.push_back({ audio_track.codec_context, audio_track.stream_index, audio_track.stream, aframe->pts });
+                        receive_packet_cv.notify_one();
                     } else {
                         fprintf(stderr, "Failed to encode audio!\n");
                     }
@@ -1998,13 +1977,33 @@ int main(int argc, char **argv) {
             frame_timer_start = time_now - frame_time_overflow;
             gsr_capture_capture(capture, frame);
 
-            std::lock_guard<std::mutex> lock(video_frame_mutex);
-            if(latest_video_frame) {
-                av_frame_free(&latest_video_frame);
-                latest_video_frame = nullptr;
+            const double this_video_frame_time = clock_get_monotonic_seconds();
+            const int64_t expected_frames = std::round((this_video_frame_time - start_time_pts) / target_fps);
+
+            const int num_frames = framerate_mode == FramerateMode::CONSTANT ? std::max(0L, expected_frames - video_pts_counter) : 1;
+
+            // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
+            for(int i = 0; i < num_frames; ++i) {
+                if(framerate_mode == FramerateMode::CONSTANT) {
+                    frame->pts = video_pts_counter + i;
+                } else {
+                    frame->pts = (this_video_frame_time - record_start_time) * (double)AV_TIME_BASE;
+                    const bool same_pts = frame->pts == video_prev_pts;
+                    video_prev_pts = frame->pts;
+                    if(same_pts)
+                        continue;
+                }
+
+                int ret = avcodec_send_frame(video_codec_context, frame);
+                if(ret == 0) {
+                    std::lock_guard<std::mutex> lock(receive_packet_mutex);
+                    receive_packet_list.push_back({ video_codec_context, VIDEO_STREAM_INDEX, video_stream, frame->pts });
+                    receive_packet_cv.notify_one();
+                } else {
+                    fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
+                }
             }
-            latest_video_frame = av_frame_clone(frame);
-            video_frame_cv.notify_one();
+            video_pts_counter += num_frames;
         }
 
         if(save_replay_thread.valid() && save_replay_thread.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -2049,17 +2048,12 @@ int main(int argc, char **argv) {
     }
 
     {
-        std::lock_guard<std::mutex> lock(video_frame_mutex);
-        video_frame_cv.notify_one();
+        std::lock_guard<std::mutex> lock(receive_packet_mutex);
+        receive_packet_cv.notify_one();
     }
-    video_send_encode_thread.join();
+    receive_packet_thread.join();
 
     av_frame_free(&aframe);
-
-    if(latest_video_frame) {
-        av_frame_free(&latest_video_frame);
-        latest_video_frame = nullptr;
-    }
 
     if (replay_buffer_size_secs == -1 && av_write_trailer(av_format_context) != 0) {
         fprintf(stderr, "Failed to write trailer\n");

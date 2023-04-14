@@ -44,7 +44,18 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define EGL_TRUE                                1
 #define EGL_IMAGE_PRESERVED_KHR                 0x30D2
 #define EGL_NATIVE_PIXMAP_KHR                   0x30B0
+#define EGL_LINUX_DRM_FOURCC_EXT                0x3271
+#define EGL_WIDTH                               0x3057
+#define EGL_HEIGHT                              0x3056
+#define EGL_DMA_BUF_PLANE0_FD_EXT               0x3272
+#define EGL_DMA_BUF_PLANE0_OFFSET_EXT           0x3273
+#define EGL_DMA_BUF_PLANE0_PITCH_EXT            0x3274
+#define EGL_LINUX_DMA_BUF_EXT                   0x3270
 
+#define GL_FLOAT                                0x1406
+#define GL_FALSE                                0
+#define GL_TRUE                                 1
+#define GL_TRIANGLES                            0x0004
 #define GL_TEXTURE_2D                           0x0DE1
 #define GL_RGB                                  0x1907
 #define GL_UNSIGNED_BYTE                        0x1401
@@ -66,6 +77,13 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 
 #define GL_VENDOR                               0x1F00
 #define GL_RENDERER                             0x1F01
+
+#define GL_COMPILE_STATUS                       0x8B81
+#define GL_INFO_LOG_LENGTH                      0x8B84
+#define GL_FRAGMENT_SHADER                      0x8B30
+#define GL_VERTEX_SHADER                        0x8B31
+#define GL_COMPILE_STATUS                       0x8B81
+#define GL_LINK_STATUS                          0x8B82
 
 typedef struct {
     void *egl_library;
@@ -108,6 +126,38 @@ typedef struct {
     void (*glTexImage2D)(unsigned int target, int level, int internalFormat, int width, int height, int border, unsigned int format, unsigned int type, const void *pixels);
     void (*glCopyImageSubData)(unsigned int srcName, unsigned int srcTarget, int srcLevel, int srcX, int srcY, int srcZ, unsigned int dstName, unsigned int dstTarget, int dstLevel, int dstX, int dstY, int dstZ, int srcWidth, int srcHeight, int srcDepth);
     void (*glClearTexImage)(unsigned int texture, unsigned int level, unsigned int format, unsigned int type, const void *data);
+    void (*glGenFramebuffers)(int n, unsigned int *framebuffers);
+    void (*glBindFramebuffer)(unsigned int target, unsigned int framebuffer);
+    void (*glDeleteFramebuffers)(int n, const unsigned int *framebuffers);
+    void (*glViewport)(int x, int y, int width, int height);
+    void (*glFramebufferTexture2D)(unsigned int target, unsigned int attachment, unsigned int textarget, unsigned int texture, int level);
+    void (*glDrawBuffers)(int n, const unsigned int *bufs);
+    unsigned int (*glCheckFramebufferStatus)(unsigned int target);
+    void (*glBindBuffer)(unsigned int target, unsigned int buffer);
+    void (*glGenBuffers)(int n, unsigned int *buffers);
+    void (*glBufferData)(unsigned int target, khronos_ssize_t size, const void *data, unsigned int usage);
+    void (*glDeleteBuffers)(int n, const unsigned int *buffers);
+    void (*glGenVertexArrays)(int n, unsigned int *arrays);
+    void (*glBindVertexArray)(unsigned int array);
+    void (*glDeleteVertexArrays)(int n, const unsigned int *arrays);
+
+    unsigned int (*glCreateProgram)(void);
+    unsigned int (*glCreateShader)(unsigned int type);
+    void (*glAttachShader)(unsigned int program, unsigned int shader);
+    void (*glBindAttribLocation)(unsigned int program, unsigned int index, const char *name);
+    void (*glCompileShader)(unsigned int shader);
+    void (*glLinkProgram)(unsigned int program);
+    void (*glShaderSource)(unsigned int shader, int count, const char *const*string, const int *length);
+    void (*glUseProgram)(unsigned int program);
+    void (*glGetProgramInfoLog)(unsigned int program, int bufSize, int *length, char *infoLog);
+    void (*glGetShaderiv)(unsigned int shader, unsigned int pname, int *params);
+    void (*glGetShaderInfoLog)(unsigned int shader, int bufSize, int *length, char *infoLog);
+    void (*glDeleteProgram)(unsigned int program);
+    void (*glDeleteShader)(unsigned int shader);
+    void (*glGetProgramiv)(unsigned int program, unsigned int pname, int *params);
+    void (*glVertexAttribPointer)(unsigned int index, int size, unsigned int type, unsigned char normalized, int stride, const void *pointer);
+    void (*glEnableVertexAttribArray)(unsigned int index);
+    void (*glDrawArrays)(unsigned int mode, int first, int count );
 } gsr_egl;
 
 bool gsr_egl_load(gsr_egl *self, Display *dpy);

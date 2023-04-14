@@ -452,9 +452,20 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
             params.output_region = NULL;
         params.output_background_color = 0;
         params.filter_flags = VA_FRAME_PICTURE;
-        // TODO: Colors
+
+        params.input_color_properties.colour_primaries = 1;
+        params.input_color_properties.transfer_characteristics = 1;
+        params.input_color_properties.matrix_coefficients = 1;
+        params.surface_color_standard = VAProcColorStandardBT709;
         params.input_color_properties.color_range = (*frame)->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;
+
+        params.output_color_properties.colour_primaries = 1;
+        params.output_color_properties.transfer_characteristics = 1;
+        params.output_color_properties.matrix_coefficients = 1;
+        params.output_color_standard = VAProcColorStandardBT709;
         params.output_color_properties.color_range = (*frame)->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;
+
+        params.processing_mode = VAProcPerformanceMode;
 
         va_status = vaCreateBuffer(cap_xcomp->va_dpy, cap_xcomp->context_id, VAProcPipelineParameterBufferType, sizeof(params), 1, &params, &cap_xcomp->buffer_id);
         if(va_status != VA_STATUS_SUCCESS) {

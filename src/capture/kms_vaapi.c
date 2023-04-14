@@ -2,6 +2,7 @@
 #include "../../kms/client/kms_client.h"
 #include "../../include/egl.h"
 #include "../../include/utils.h"
+#include "../../include/color_conversion.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -13,6 +14,13 @@
 #include <libavcodec/avcodec.h>
 #include <va/va.h>
 #include <va/va_drmcommon.h>
+
+typedef enum {
+    X11_ROT_0    = 1 << 0,
+    X11_ROT_90   = 1 << 1,
+    X11_ROT_180  = 1 << 2,
+    X11_ROT_270  = 1 << 3
+} X11Rotation;
 
 typedef struct {
     gsr_capture_kms_vaapi_params params;
@@ -36,12 +44,17 @@ typedef struct {
     bool screen_capture;
 
     VADisplay va_dpy;
-    VAConfigID config_id;
-    VAContextID context_id;
-    VASurfaceID input_surface;
-    VABufferID buffer_id;
-    VARectangle input_region;
-    bool context_created;
+
+    bool requires_rotation;
+    X11Rotation x11_rot;
+
+    VADRMPRIMESurfaceDescriptor prime;
+
+    unsigned int input_texture;
+    unsigned int target_textures[2];
+
+    gsr_color_conversion color_conversion;
+    unsigned int vao;
 } gsr_capture_kms_vaapi;
 
 static int max_int(int a, int b) {
@@ -95,6 +108,17 @@ static bool drm_create_codec_context(gsr_capture_kms_vaapi *cap_kms, AVCodecCont
 
 // TODO: On monitor reconfiguration, find monitor x, y, width and height again. Do the same for nvfbc.
 
+typedef struct {
+    int num_monitors;
+    int rotation;
+} MonitorCallbackUserdata;
+
+static void monitor_callback(const XRROutputInfo *output_info, const XRRCrtcInfo *crt_info, const XRRModeInfo *mode_info, void *userdata) {
+    MonitorCallbackUserdata *monitor_callback_userdata = userdata;
+    monitor_callback_userdata->rotation = crt_info->rotation;
+    ++monitor_callback_userdata->num_monitors;
+}
+
 static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
@@ -103,7 +127,9 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         return -1;
     }
 
-    // TODO: Update on monitor reconfiguration, make sure to update on window focus change (maybe for kms update each second?), needs to work on focus change to the witcher 3 on full window, fullscreen firefox, etc
+    MonitorCallbackUserdata monitor_callback_userdata = {0};
+    for_each_active_monitor_output(cap_kms->params.dpy, monitor_callback, &monitor_callback_userdata);
+
     gsr_monitor monitor;
     if(strcmp(cap_kms->params.display_to_capture, "screen") == 0) {
         monitor.pos.x = 0;
@@ -117,12 +143,24 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         return -1;
     }
 
+    // TODO: Find a better way to do this. Is this info available somewhere in drm? it should be!
+
+    // TODO: test on intel
+    // Note: workaround AMD issue. If there is one monitor enabled and it's rotated then
+    // the drm buf will also be rotated. This only happens when you only have one monitor enabled.
+    cap_kms->x11_rot = monitor_callback_userdata.rotation;
+    if(monitor_callback_userdata.num_monitors == 1 && cap_kms->x11_rot != X11_ROT_0 && cap_kms->params.gpu_inf.vendor == GSR_GPU_VENDOR_AMD) {
+        cap_kms->requires_rotation = true;
+    } else {
+        cap_kms->requires_rotation = false;
+    }
+
     cap_kms->capture_pos = monitor.pos;
     cap_kms->capture_size = monitor.size;
 
-
     if(!gsr_egl_load(&cap_kms->egl, cap_kms->params.dpy)) {
         fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to load opengl\n");
+        gsr_capture_kms_vaapi_stop(cap, video_codec_context);
         return -1;
     }
 
@@ -137,17 +175,21 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         return -1;
     }
 
-    //cap_kms->window_resize_timer = clock_get_monotonic_seconds(); // TODO:
     return 0;
 }
+
+static uint32_t fourcc(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
+    return (d << 24) | (c << 16) | (b << 8) | a;
+}
+
+#define FOURCC_NV12 842094158
 
 static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame **frame) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
     // TODO:
-    //cap_kms->egl.glClear(GL_COLOR_BUFFER_BIT);
+    cap_kms->egl.glClear(GL_COLOR_BUFFER_BIT);
 
-    //const double window_resize_timeout = 1.0; // 1 second
     if(!cap_kms->created_hw_frame) {
         cap_kms->created_hw_frame = true;
 
@@ -175,6 +217,128 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
             cap_kms->stop_is_error = true;
             return;
         }
+
+        VASurfaceID target_surface_id = (uintptr_t)(*frame)->data[3];
+
+        VAStatus va_status = vaExportSurfaceHandle(cap_kms->va_dpy, target_surface_id, VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2, VA_EXPORT_SURFACE_READ_WRITE | VA_EXPORT_SURFACE_SEPARATE_LAYERS, &cap_kms->prime);
+        if(va_status != VA_STATUS_SUCCESS) {
+            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: vaExportSurfaceHandle failed, error: %d\n", va_status);
+            cap_kms->should_stop = true;
+            cap_kms->stop_is_error = true;
+            return;
+        }
+        vaSyncSurface(cap_kms->va_dpy, target_surface_id);
+
+        cap_kms->egl.glGenTextures(1, &cap_kms->input_texture);
+        cap_kms->egl.glBindTexture(GL_TEXTURE_2D, cap_kms->input_texture);
+        cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        cap_kms->egl.glBindTexture(GL_TEXTURE_2D, 0);
+
+        if(cap_kms->prime.fourcc == FOURCC_NV12) {
+            cap_kms->egl.glGenTextures(2, cap_kms->target_textures);
+            for(int i = 0; i < 2; ++i) {
+                const uint32_t formats[2] = { fourcc('R', '8', ' ', ' '), fourcc('G', 'R', '8', '8') };
+                const int layer = i;
+                const int plane = 0;
+
+                const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
+
+                const intptr_t img_attr[] = {
+                    EGL_LINUX_DRM_FOURCC_EXT,       formats[i],
+                    EGL_WIDTH,                      cap_kms->prime.width / div[i],
+                    EGL_HEIGHT,                     cap_kms->prime.height / div[i],
+                    EGL_DMA_BUF_PLANE0_FD_EXT,      cap_kms->prime.objects[cap_kms->prime.layers[layer].object_index[plane]].fd,
+                    EGL_DMA_BUF_PLANE0_OFFSET_EXT,  cap_kms->prime.layers[layer].offset[plane],
+                    EGL_DMA_BUF_PLANE0_PITCH_EXT,   cap_kms->prime.layers[layer].pitch[plane],
+                    EGL_NONE
+                };
+
+                while(cap_kms->egl.eglGetError() != EGL_SUCCESS){}
+                EGLImage image = cap_kms->egl.eglCreateImage(cap_kms->egl.egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+                if(!image) {
+                    fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: failed to create egl image from drm fd for output drm fd, error: %d\n", cap_kms->egl.eglGetError());
+                    cap_kms->should_stop = true;
+                    cap_kms->stop_is_error = true;
+                    return;
+                }
+
+                cap_kms->egl.glBindTexture(GL_TEXTURE_2D, cap_kms->target_textures[i]);
+                cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+                while(cap_kms->egl.glGetError()) {}
+                while(cap_kms->egl.eglGetError() != EGL_SUCCESS){}
+                cap_kms->egl.glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+                if(cap_kms->egl.glGetError() != 0 || cap_kms->egl.eglGetError() != EGL_SUCCESS) {
+                    fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: failed to bind egl image to gl texture, error: %d\n", cap_kms->egl.eglGetError());
+                    cap_kms->should_stop = true;
+                    cap_kms->stop_is_error = true;
+                    cap_kms->egl.eglDestroyImage(cap_kms->egl.egl_display, image);
+                    cap_kms->egl.glBindTexture(GL_TEXTURE_2D, 0);
+                    return;
+                }
+
+                cap_kms->egl.eglDestroyImage(cap_kms->egl.egl_display, image);
+                cap_kms->egl.glBindTexture(GL_TEXTURE_2D, 0);
+            }
+
+            float texture_rotation = 0.0f;
+            if(cap_kms->requires_rotation) {
+                switch(cap_kms->x11_rot) {
+                    case X11_ROT_90:
+                        texture_rotation = M_PI*0.5f;
+                        break;
+                    case X11_ROT_180:
+                        texture_rotation = M_PI;
+                        break;
+                    case X11_ROT_270:
+                        texture_rotation = M_PI*1.5f;
+                        break;
+                    default:
+                        texture_rotation = 0.0f;
+                        break;
+                }
+            }
+
+            const double combined_monitor_width = (double)XWidthOfScreen(DefaultScreenOfDisplay(cap_kms->params.dpy));
+            const double combined_monitor_height = (double)XHeightOfScreen(DefaultScreenOfDisplay(cap_kms->params.dpy));
+
+            gsr_color_conversion_params color_conversion_params = {0};
+            color_conversion_params.egl = &cap_kms->egl;
+            color_conversion_params.source_color = GSR_SOURCE_COLOR_RGB;
+            color_conversion_params.destination_color = GSR_DESTINATION_COLOR_NV12;
+
+            color_conversion_params.source_textures[0] = cap_kms->input_texture;
+            color_conversion_params.num_source_textures = 1;
+
+            color_conversion_params.destination_textures[0] = cap_kms->target_textures[0];
+            color_conversion_params.destination_textures[1] = cap_kms->target_textures[1];
+            color_conversion_params.num_destination_textures = 2;
+
+            color_conversion_params.rotation = texture_rotation;
+
+            color_conversion_params.position.x = (double)cap_kms->capture_pos.x / combined_monitor_width;
+            color_conversion_params.position.y = (double)cap_kms->capture_pos.y / combined_monitor_height;
+            color_conversion_params.size.x = (double)cap_kms->capture_size.x / combined_monitor_width;
+            color_conversion_params.size.y = (double)cap_kms->capture_size.y / combined_monitor_height;
+
+            if(gsr_color_conversion_init(&cap_kms->color_conversion, &color_conversion_params) != 0) {
+                fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: failed to create color conversion\n");
+                cap_kms->should_stop = true;
+                cap_kms->stop_is_error = true;
+                return;
+            }
+        } else {
+            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: unexpected fourcc %u for output drm fd, expected nv12\n", cap_kms->prime.fourcc);
+            cap_kms->should_stop = true;
+            cap_kms->stop_is_error = true;
+            return;
+        }
     }
 }
 
@@ -193,8 +357,6 @@ static bool gsr_capture_kms_vaapi_should_stop(gsr_capture *cap, bool *err) {
 
 static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
-
-    VASurfaceID target_surface_id = (uintptr_t)frame->data[3];
 
     if(cap_kms->dmabuf_fd > 0) {
         close(cap_kms->dmabuf_fd);
@@ -215,150 +377,43 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     cap_kms->kms_size.x = kms_response.data.fd.width;
     cap_kms->kms_size.y = kms_response.data.fd.height;
 
-    if(!cap_kms->context_created) {
-        cap_kms->context_created = true;
-
-        VAStatus va_status = vaCreateConfig(cap_kms->va_dpy, VAProfileNone, VAEntrypointVideoProc, NULL, 0, &cap_kms->config_id);
-        if(va_status != VA_STATUS_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateConfig failed: %d\n", va_status);
-            cap_kms->should_stop = true;
-            cap_kms->stop_is_error = true;
-            return -1;
-        }
-
-        va_status = vaCreateContext(cap_kms->va_dpy, cap_kms->config_id, cap_kms->kms_size.x, cap_kms->kms_size.y, VA_PROGRESSIVE, &target_surface_id, 1, &cap_kms->context_id);
-        if(va_status != VA_STATUS_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateContext failed: %d\n", va_status);
-            cap_kms->should_stop = true;
-            cap_kms->stop_is_error = true;
-            return -1;
-        }
-    }
-
-    if(cap_kms->buffer_id) {
-        vaDestroyBuffer(cap_kms->va_dpy, cap_kms->buffer_id);
-        cap_kms->buffer_id = 0;
-    }
-
-    if(cap_kms->input_surface) {
-        vaDestroySurfaces(cap_kms->va_dpy, &cap_kms->input_surface, 1);
-        cap_kms->input_surface = 0;
-    }
-
-    uintptr_t dmabuf = cap_kms->dmabuf_fd;
-
-    VASurfaceAttribExternalBuffers buf = {0};
-    buf.pixel_format = VA_FOURCC_BGRX;
-    buf.width = cap_kms->kms_size.x;
-    buf.height = cap_kms->kms_size.y;
-    buf.data_size = cap_kms->kms_size.y * cap_kms->pitch;
-    buf.num_planes = 1;
-    buf.pitches[0] = cap_kms->pitch;
-    buf.offsets[0] = cap_kms->offset;
-    buf.buffers = &dmabuf;
-    buf.num_buffers = 1;
-    buf.flags = 0;
-    buf.private_data = 0;
-
-    #define VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME        0x20000000
-
-    VASurfaceAttrib attribs[3] = {0};
-    attribs[0].type = VASurfaceAttribMemoryType;
-    attribs[0].flags = VA_SURFACE_ATTRIB_SETTABLE;
-    attribs[0].value.type = VAGenericValueTypeInteger;
-    attribs[0].value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME;
-    attribs[1].type = VASurfaceAttribExternalBufferDescriptor;
-    attribs[1].flags = VA_SURFACE_ATTRIB_SETTABLE;
-    attribs[1].value.type = VAGenericValueTypePointer;
-    attribs[1].value.value.p = &buf;
-    
-    // TODO: Do we really need to create a new surface every frame?
-    VAStatus va_status = vaCreateSurfaces(cap_kms->va_dpy, VA_RT_FORMAT_RGB32, cap_kms->kms_size.x, cap_kms->kms_size.y, &cap_kms->input_surface, 1, attribs, 2);
-    if(va_status != VA_STATUS_SUCCESS) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateSurfaces failed: %d\n", va_status);
-        cap_kms->should_stop = true;
-        cap_kms->stop_is_error = true;
-        return -1;
-    }
-
-    cap_kms->input_region = (VARectangle) {
-        .x = cap_kms->capture_pos.x,
-        .y = cap_kms->capture_pos.y,
-        .width = cap_kms->capture_size.x,
-        .height = cap_kms->capture_size.y
+    // TODO: This causes a crash sometimes on steam deck, why? is it a driver bug? a vaapi pure version doesn't cause a crash.
+    // Even ffmpeg kmsgrab causes this crash. The error is:
+    // amdgpu: Failed to allocate a buffer:
+    // amdgpu:    size      : 28508160 bytes
+    // amdgpu:    alignment : 2097152 bytes
+    // amdgpu:    domains   : 4
+    // amdgpu:    flags   : 4
+    // amdgpu: Failed to allocate a buffer:
+    // amdgpu:    size      : 28508160 bytes
+    // amdgpu:    alignment : 2097152 bytes
+    // amdgpu:    domains   : 4
+    // amdgpu:    flags   : 4
+    // EE ../jupiter-mesa/src/gallium/drivers/radeonsi/radeon_vcn_enc.c:516 radeon_create_encoder UVD - Can't create CPB buffer.
+    // [hevc_vaapi @ 0x55ea72b09840] Failed to upload encode parameters: 2 (resource allocation failed).
+    // [hevc_vaapi @ 0x55ea72b09840] Encode failed: -5.
+    // Error: avcodec_send_frame failed, error: Input/output error
+    // Assertion pic->display_order == pic->encode_order failed at libavcodec/vaapi_encode_h265.c:765
+    // kms server info: kms client shutdown, shutting down the server
+    const intptr_t img_attr[] = {
+        EGL_LINUX_DRM_FOURCC_EXT,   cap_kms->fourcc,
+        EGL_WIDTH,                  cap_kms->kms_size.x,
+        EGL_HEIGHT,                 cap_kms->kms_size.y,
+        EGL_DMA_BUF_PLANE0_FD_EXT,  cap_kms->dmabuf_fd,
+        EGL_DMA_BUF_PLANE0_OFFSET_EXT,  cap_kms->offset,
+        EGL_DMA_BUF_PLANE0_PITCH_EXT,  cap_kms->pitch,
+        EGL_NONE
     };
 
-    // Copying a surface to another surface will automatically perform the color conversion. Thanks vaapi!
-    VAProcPipelineParameterBuffer params = {0};
-    params.surface = cap_kms->input_surface;
-    if(cap_kms->screen_capture)
-        params.surface_region = NULL;
-    else
-        params.surface_region = &cap_kms->input_region;
-    params.output_region = NULL;
-    params.output_background_color = 0;
-    params.filter_flags = VA_FRAME_PICTURE;
-    // TODO: Colors
-    params.input_color_properties.color_range = frame->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;
-    params.output_color_properties.color_range = frame->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;
+    EGLImage image = cap_kms->egl.eglCreateImage(cap_kms->egl.egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+    cap_kms->egl.glBindTexture(GL_TEXTURE_2D, cap_kms->input_texture);
+    cap_kms->egl.glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+    cap_kms->egl.eglDestroyImage(cap_kms->egl.egl_display, image);
+    cap_kms->egl.glBindTexture(GL_TEXTURE_2D, 0);
 
-    // Clear texture with black background because the source texture (window_texture_get_opengl_texture_id(&cap_kms->window_texture))
-    // might be smaller than cap_kms->target_texture_id
-    // TODO:
-    //cap_kms->egl.glClearTexImage(cap_kms->target_texture_id, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    gsr_color_conversion_update(&cap_kms->color_conversion, frame->width, frame->height);
 
-    va_status = vaBeginPicture(cap_kms->va_dpy, cap_kms->context_id, target_surface_id);
-    if(va_status != VA_STATUS_SUCCESS) {
-        static bool error_printed = false;
-        if(!error_printed) {
-            error_printed = true;
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaBeginPicture failed: %d\n", va_status);
-        }
-        return -1;
-    }
-
-    va_status = vaCreateBuffer(cap_kms->va_dpy, cap_kms->context_id, VAProcPipelineParameterBufferType, sizeof(params), 1, &params, &cap_kms->buffer_id);
-    if(va_status != VA_STATUS_SUCCESS) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaCreateBuffer failed: %d\n", va_status);
-        cap_kms->should_stop = true;
-        cap_kms->stop_is_error = true;
-        return -1;
-    }
-
-    va_status = vaRenderPicture(cap_kms->va_dpy, cap_kms->context_id, &cap_kms->buffer_id, 1);
-    if(va_status != VA_STATUS_SUCCESS) {
-        vaEndPicture(cap_kms->va_dpy, cap_kms->context_id);
-        static bool error_printed = false;
-        if(!error_printed) {
-            error_printed = true;
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaRenderPicture failed: %d\n", va_status);
-        }
-        return -1;
-    }
-
-    va_status = vaEndPicture(cap_kms->va_dpy, cap_kms->context_id);
-    if(va_status != VA_STATUS_SUCCESS) {
-        static bool error_printed = false;
-        if(!error_printed) {
-            error_printed = true;
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: vaEndPicture failed: %d\n", va_status);
-        }
-        return -1;
-    }
-
-    // TODO: Needed?
-    vaSyncSurface(cap_kms->va_dpy, cap_kms->input_surface);
-    vaSyncSurface(cap_kms->va_dpy, target_surface_id);
-
-    if(cap_kms->buffer_id) {
-        vaDestroyBuffer(cap_kms->va_dpy, cap_kms->buffer_id);
-        cap_kms->buffer_id = 0;
-    }
-
-    if(cap_kms->input_surface) {
-        vaDestroySurfaces(cap_kms->va_dpy, &cap_kms->input_surface, 1);
-        cap_kms->input_surface = 0;
-    }
+    cap_kms->egl.eglSwapBuffers(cap_kms->egl.egl_display, cap_kms->egl.egl_surface);
 
     if(cap_kms->dmabuf_fd > 0) {
         close(cap_kms->dmabuf_fd);
@@ -366,7 +421,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     }
 
     // TODO: Remove
-    //cap_kms->egl.eglSwapBuffers(cap_kms->egl.egl_display, cap_kms->egl.egl_surface);
+    cap_kms->egl.eglSwapBuffers(cap_kms->egl.egl_display, cap_kms->egl.egl_surface);
 
     return 0;
 }
@@ -374,25 +429,23 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
 static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
-    if(cap_kms->buffer_id) {
-        vaDestroyBuffer(cap_kms->va_dpy, cap_kms->buffer_id);
-        cap_kms->buffer_id = 0;
+    gsr_color_conversion_deinit(&cap_kms->color_conversion);
+
+    for(uint32_t i = 0; i < cap_kms->prime.num_objects; ++i) {
+        if(cap_kms->prime.objects[i].fd > 0) {
+            close(cap_kms->prime.objects[i].fd);
+            cap_kms->prime.objects[i].fd = 0;
+        }
     }
 
-    if(cap_kms->context_id) {
-        vaDestroyContext(cap_kms->va_dpy, cap_kms->context_id);
-        cap_kms->context_id = 0;
+    if(cap_kms->input_texture) {
+        cap_kms->egl.glDeleteTextures(1, &cap_kms->input_texture);
+        cap_kms->input_texture = 0;
     }
 
-    if(cap_kms->config_id) {
-        vaDestroyConfig(cap_kms->va_dpy, cap_kms->config_id);
-        cap_kms->config_id = 0;
-    }
-
-    if(cap_kms->input_surface) {
-        vaDestroySurfaces(cap_kms->va_dpy, &cap_kms->input_surface, 1);
-        cap_kms->input_surface = 0;
-    }
+    cap_kms->egl.glDeleteTextures(2, cap_kms->target_textures);
+    cap_kms->target_textures[0] = 0;
+    cap_kms->target_textures[1] = 0;
 
     if(cap_kms->dmabuf_fd > 0) {
         close(cap_kms->dmabuf_fd);

@@ -39,12 +39,19 @@ Fix constant framerate not working properly on amd/intel because capture framera
 
 JPEG color range on amd seems to produce too bright video with h264 but not hevc, why?
 
+Properly handle monitor reconfiguration (kms vaapi, nvfbc).
+
 Better configure vaapi. The file size is too large.
 Better colors for vaapi. It looks a bit off when recording vscode for example.
 
 Clear vaapi surface (for focused window).
 Support -h and --help. -h should only show the first line and --help the full help. On error, only show that -h.
 
-Rotated display on amd doesn't work correctly (if you only have 1 monitor connected and it's rotated), even with ffmpeg kmsgrab. The drmfd is rotated as well so it needs to be rotated in the surface copy.
+Window capture performance on steam deck isn't good when playing the witcher 3 for example. The capture itself is fine but video encoding puts it to 30fps even if the game runs at 57 fps.
 
-Fix kms monitor capture. Broken right now on amd and performance is bad.
+Monitor capture on steam deck is slightly below the game fps, but only when capturing on the steam deck screen. If capturing on another monitor, there is no issue.
+    Is this related to the dma buf rotation issue? different modifier being slow? does this always happen?
+
+Make sure rgb to yuv color conversion is 100% correct.
+Fallback to vaapi copy in kms if opengl version fails. This can happen on steam deck for some reason (driver bug?).
+Test if vaapi copy version uses less memory than opengl version.

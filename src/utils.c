@@ -1,6 +1,8 @@
 #include "../include/utils.h"
+#include "../include/egl.h"
 #include <time.h>
 #include <string.h>
+#include <stdio.h>
 
 double clock_get_monotonic_seconds(void) {
     struct timespec ts;
@@ -59,4 +61,45 @@ bool get_monitor_by_name(Display *display, const char *name, gsr_monitor *monito
     userdata.found_monitor = false;
     for_each_active_monitor_output(display, get_monitor_by_name_callback, &userdata);
     return userdata.found_monitor;
+}
+
+bool gl_get_gpu_info(Display *dpy, gsr_gpu_info *info) {
+    gsr_egl gl;
+    if(!gsr_egl_load(&gl, dpy)) {
+        fprintf(stderr, "gsr error: failed to load opengl\n");
+        return false;
+    }
+
+    bool supported = true;
+    const unsigned char *gl_vendor = gl.glGetString(GL_VENDOR);
+    const unsigned char *gl_renderer = gl.glGetString(GL_RENDERER);
+
+    info->gpu_version = 0;
+
+    if(!gl_vendor) {
+        fprintf(stderr, "gsr error: failed to get gpu vendor\n");
+        supported = false;
+        goto end;
+    }
+
+    if(strstr((const char*)gl_vendor, "AMD"))
+        info->vendor = GSR_GPU_VENDOR_AMD;
+    else if(strstr((const char*)gl_vendor, "Intel"))
+        info->vendor = GSR_GPU_VENDOR_INTEL;
+    else if(strstr((const char*)gl_vendor, "NVIDIA"))
+        info->vendor = GSR_GPU_VENDOR_NVIDIA;
+    else {
+        fprintf(stderr, "gsr error: unknown gpu vendor: %s\n", gl_vendor);
+        supported = false;
+        goto end;
+    }
+
+    if(gl_renderer) {
+        if(info->vendor == GSR_GPU_VENDOR_NVIDIA)
+            sscanf((const char*)gl_renderer, "%*s %*s %*s %d", &info->gpu_version);
+    }
+
+    end:
+    gsr_egl_unload(&gl);
+    return supported;
 }

@@ -25,11 +25,13 @@ build_gsr() {
     gcc -c src/xnvctrl.c $opts $includes
     gcc -c src/overclock.c $opts $includes
     gcc -c src/window_texture.c $opts $includes
+    gcc -c src/shader.c $opts $includes
+    gcc -c src/color_conversion.c $opts $includes
     gcc -c src/utils.c $opts $includes
     gcc -c src/library_loader.c $opts $includes
     g++ -c src/sound.cpp $opts $includes
     g++ -c src/main.cpp $opts $includes
-    g++ -o gpu-screen-recorder -O2 capture.o nvfbc.o kms_client.o egl.o cuda.o xnvctrl.o overclock.o window_texture.o utils.o library_loader.o xcomposite_cuda.o xcomposite_vaapi.o kms_vaapi.o sound.o main.o -s $libs
+    g++ -o gpu-screen-recorder -O2 capture.o nvfbc.o kms_client.o egl.o cuda.o xnvctrl.o overclock.o window_texture.o shader.o color_conversion.o utils.o library_loader.o xcomposite_cuda.o xcomposite_vaapi.o kms_vaapi.o sound.o main.o -s $libs
 }
 
 build_gsr_kms_server

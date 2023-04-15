@@ -1,10 +1,6 @@
 #include "../include/window_texture.h"
 #include <X11/extensions/Xcomposite.h>
 
-#define EGL_TRUE                          1
-#define EGL_IMAGE_PRESERVED_KHR           0x30D2
-#define EGL_NATIVE_PIXMAP_KHR             0x30B0
-
 static int x11_supports_composite_named_window_pixmap(Display *display) {
     int extension_major;
     int extension_minor;

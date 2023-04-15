@@ -43,6 +43,7 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define EGL_GL_TEXTURE_2D                       0x30B1
 #define EGL_TRUE                                1
 #define EGL_IMAGE_PRESERVED_KHR                 0x30D2
+#define EGL_NATIVE_PIXMAP_KHR                   0x30B0
 
 #define GL_TEXTURE_2D                           0x0DE1
 #define GL_RGB                                  0x1907

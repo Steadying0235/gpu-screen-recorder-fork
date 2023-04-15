@@ -186,6 +186,9 @@ int gsr_color_conversion_init(gsr_color_conversion *self, const gsr_color_conver
 }
 
 void gsr_color_conversion_deinit(gsr_color_conversion *self) {
+    if(!self->egl)
+        return;
+
     if(self->vertex_buffer_object_id) {
         self->egl->glDeleteBuffers(1, &self->vertex_buffer_object_id);
         self->vertex_buffer_object_id = 0;
@@ -204,6 +207,8 @@ void gsr_color_conversion_deinit(gsr_color_conversion *self) {
     for(int i = 0; i < MAX_SHADERS; ++i) {
         gsr_shader_deinit(&self->shaders[i]);
     }
+
+    self->egl = NULL;
 }
 
 int gsr_color_conversion_update(gsr_color_conversion *self, int width, int height) {

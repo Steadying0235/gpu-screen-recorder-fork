@@ -419,9 +419,6 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         cap_kms->dmabuf_fd = 0;
     }
 
-    // TODO: Remove
-    cap_kms->egl.eglSwapBuffers(cap_kms->egl.egl_display, cap_kms->egl.egl_surface);
-
     return 0;
 }
 

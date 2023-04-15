@@ -116,10 +116,15 @@ int gsr_shader_init(gsr_shader *self, gsr_egl *egl, const char *vertex_shader, c
 }
 
 void gsr_shader_deinit(gsr_shader *self) {
+    if(!self->egl)
+        return;
+
     if(self->program_id) {
         self->egl->glDeleteProgram(self->program_id);
         self->program_id = 0;
     }
+
+    self->egl = NULL;
 }
 
 int gsr_shader_bind_attribute_location(gsr_shader *self, const char *attribute, int location) {

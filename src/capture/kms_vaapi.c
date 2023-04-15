@@ -145,11 +145,10 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
 
     // TODO: Find a better way to do this. Is this info available somewhere in drm? it should be!
 
-    // TODO: test on intel
-    // Note: workaround AMD issue. If there is one monitor enabled and it's rotated then
+    // Note: workaround AMD/Intel issue. If there is one monitor enabled and it's rotated then
     // the drm buf will also be rotated. This only happens when you only have one monitor enabled.
     cap_kms->x11_rot = monitor_callback_userdata.rotation;
-    if(monitor_callback_userdata.num_monitors == 1 && cap_kms->x11_rot != X11_ROT_0 && cap_kms->params.gpu_inf.vendor == GSR_GPU_VENDOR_AMD) {
+    if(monitor_callback_userdata.num_monitors == 1 && cap_kms->x11_rot != X11_ROT_0) {
         cap_kms->requires_rotation = true;
     } else {
         cap_kms->requires_rotation = false;

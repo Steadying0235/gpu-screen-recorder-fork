@@ -5,17 +5,12 @@
 #include <errno.h>
 #include <unistd.h>
 #include <signal.h>
-#include <limits.h>
 #include <stdbool.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <sys/capability.h>
-
-static bool is_inside_flatpak(void) {
-    return getenv("FLATPAK_ID") != NULL;
-}
 
 static bool generate_random_characters(char *buffer, int buffer_size, const char *alphabet, size_t alphabet_size) {
     int fd = open("/dev/urandom", O_RDONLY);
@@ -84,6 +79,36 @@ static int recv_msg_from_server(int server_fd, gsr_kms_response *response) {
     return res;
 }
 
+static bool create_socket_path(char *output_path, size_t output_path_size) {
+    // Can't use /tmp because of flatpak, but fallback to it if we fail to get a valid runtime dir
+    char runtime_dir_path[PATH_MAX];
+    const char *runtime_dir = getenv("XDG_RUNTIME_DIR");
+    const char *flatpak_id = getenv("FLATPAK_ID");
+    if(runtime_dir) {
+        if(flatpak_id)
+            snprintf(runtime_dir_path, sizeof(runtime_dir_path), "%s/app/%s", runtime_dir, flatpak_id);
+        else
+            strcpy(runtime_dir_path, runtime_dir);
+    } else {
+        const uint32_t uid = getuid();
+        if(flatpak_id)
+            snprintf(runtime_dir_path, sizeof(runtime_dir_path), "/run/user/%u/app/%s", uid, flatpak_id);
+        else
+            snprintf(runtime_dir_path, sizeof(runtime_dir_path), "/run/user/%u", uid);
+    }
+
+    if(access(runtime_dir_path, F_OK) != 0)
+        strcpy(runtime_dir_path, "/tmp");
+
+    char random_characters[11];
+    random_characters[10] = '\0';
+    if(!generate_random_characters(random_characters, 10, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 62))
+        return false;
+
+    snprintf(output_path, output_path_size, "%s/gsr-kms-socket-%s", runtime_dir_path, random_characters);
+    return true;
+}
+
 int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     self->kms_server_pid = -1;
     self->socket_fd = -1;
@@ -92,18 +117,10 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     struct sockaddr_un local_addr = {0};
     struct sockaddr_un remote_addr = {0};
 
-    // Can't use /tmp because of flatpak
-    const char *home_path = getenv("HOME");
-    if(!home_path)
-        home_path = "/tmp";
-
-    char random_characters[11];
-    random_characters[10] = '\0';
-    if(!generate_random_characters(random_characters, 10, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 62)) {
+    if(!create_socket_path(self->socket_path, sizeof(self->socket_path))) {
         fprintf(stderr, "gsr error: gsr_kms_client_init: failed to create path to kms socket\n");
         return -1;
     }
-    snprintf(self->socket_path, sizeof(self->socket_path), "%s/.gsr-kms-socket-%s", home_path, random_characters);
 
     // This doesn't work on nixos, but we dont want to use $PATH because we want to make this as safe as possible by running pkexec
     // on a path that only root can modify. If we use "gsr-kms-server" instead then $PATH can be modified in ~/.bashrc for example
@@ -111,7 +128,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     // If there is a safe way to do this on nixos, then please tell me; or use gpu-screen-recorder flatpak instead.
     const char *server_filepath = "/usr/bin/gsr-kms-server";
     bool has_perm = 0;
-    bool inside_flatpak = is_inside_flatpak();
+    const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     if(!inside_flatpak) {
         if(access("/usr/bin/gsr-kms-server", F_OK) != 0) {
             fprintf(stderr, "gsr error: gsr_kms_client_init: /usr/bin/gsr-kms-server not found, please install gpu-screen-recorder first\n");

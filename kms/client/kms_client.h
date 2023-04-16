@@ -3,12 +3,13 @@
 
 #include "../kms_shared.h"
 #include <sys/types.h>
+#include <limits.h>
 
 typedef struct {
     pid_t kms_server_pid;
     int socket_fd;
     int client_fd;
-    char socket_path[255];
+    char socket_path[PATH_MAX];
 } gsr_kms_client;
 
 /* |card_path| should be a path to card, for example /dev/dri/card0 */

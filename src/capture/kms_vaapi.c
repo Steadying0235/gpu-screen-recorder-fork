@@ -122,8 +122,8 @@ static void monitor_callback(const XRROutputInfo *output_info, const XRRCrtcInfo
 static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
-    // TODO: Allow specifying another card, and in other places (TODO: Use /dev/dri/renderD128?)
-    if(gsr_kms_client_init(&cap_kms->kms_client, "/dev/dri/card0") != 0) {
+    // TODO: Allow specifying another card, and in other places
+    if(gsr_kms_client_init(&cap_kms->kms_client, "/dev/dri/renderD128") != 0) {
         return -1;
     }
 

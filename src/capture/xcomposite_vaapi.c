@@ -74,7 +74,7 @@ static Window get_focused_window(Display *display, Atom net_active_window_atom) 
 
 static bool drm_create_codec_context(gsr_capture_xcomposite_vaapi *cap_xcomp, AVCodecContext *video_codec_context) {
     AVBufferRef *device_ctx;
-    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, "/dev/dri/renderD128", NULL, 0) < 0) {
+    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, cap_xcomp->params.card_path, NULL, 0) < 0) {
         fprintf(stderr, "Error: Failed to create hardware device context\n");
         return false;
     }

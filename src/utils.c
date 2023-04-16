@@ -3,6 +3,7 @@
 #include <time.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
 
 double clock_get_monotonic_seconds(void) {
     struct timespec ts;
@@ -102,4 +103,13 @@ bool gl_get_gpu_info(Display *dpy, gsr_gpu_info *info) {
     end:
     gsr_egl_unload(&gl);
     return supported;
+}
+
+bool gsr_get_valid_card_path(char *output) {
+    for(int i = 0; i < 10; ++i) {
+        sprintf(output, "/dev/dri/card%d", i);
+        if(access(output, F_OK) == 0)
+            return true;
+    }
+    return false;
 }

@@ -372,9 +372,9 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     return codec_context;
 }
 
-static bool vaapi_create_codec_context(AVCodecContext *video_codec_context) {
+static bool vaapi_create_codec_context(AVCodecContext *video_codec_context, const char *card_path) {
     AVBufferRef *device_ctx;
-    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, "/dev/dri/renderD128", NULL, 0) < 0) {
+    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, card_path, NULL, 0) < 0) {
         fprintf(stderr, "Error: Failed to create hardware device context\n");
         return false;
     }
@@ -410,7 +410,7 @@ static bool vaapi_create_codec_context(AVCodecContext *video_codec_context) {
     return true;
 }
 
-static bool check_if_codec_valid_for_hardware(const AVCodec *codec, gsr_gpu_vendor vendor) {
+static bool check_if_codec_valid_for_hardware(const AVCodec *codec, gsr_gpu_vendor vendor, const char *card_path) {
     // Do not use AV_PIX_FMT_CUDA because we dont want to do full check with hardware context
     AVCodecContext *codec_context = create_video_codec_context(vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_YUV420P : AV_PIX_FMT_VAAPI, VideoQuality::VERY_HIGH, 60, codec, false, vendor, FramerateMode::CONSTANT);
     if(!codec_context)
@@ -420,7 +420,7 @@ static bool check_if_codec_valid_for_hardware(const AVCodec *codec, gsr_gpu_vend
     codec_context->height = 512;
 
     if(vendor != GSR_GPU_VENDOR_NVIDIA) {
-        if(!vaapi_create_codec_context(codec_context)) {
+        if(!vaapi_create_codec_context(codec_context, card_path)) {
             avcodec_free_context(&codec_context);
             return false;
         }
@@ -436,7 +436,7 @@ static bool check_if_codec_valid_for_hardware(const AVCodec *codec, gsr_gpu_vend
     return success;
 }
 
-static const AVCodec* find_h264_encoder(gsr_gpu_vendor vendor) {
+static const AVCodec* find_h264_encoder(gsr_gpu_vendor vendor, const char *card_path) {
     const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "h264_nvenc" : "h264_vaapi");
     if(!codec)
         codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "nvenc_h264" : "vaapi_h264");
@@ -448,13 +448,13 @@ static const AVCodec* find_h264_encoder(gsr_gpu_vendor vendor) {
     static bool checked_success = true;
     if(!checked) {
         checked = true;
-        if(!check_if_codec_valid_for_hardware(codec, vendor))
+        if(!check_if_codec_valid_for_hardware(codec, vendor, card_path))
             checked_success = false;
     }
     return checked_success ? codec : nullptr;
 }
 
-static const AVCodec* find_h265_encoder(gsr_gpu_vendor vendor) {
+static const AVCodec* find_h265_encoder(gsr_gpu_vendor vendor, const char *card_path) {
     const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "hevc_nvenc" : "hevc_vaapi");
     if(!codec)
         codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "nvenc_hevc" : "vaapi_hevc");
@@ -466,7 +466,7 @@ static const AVCodec* find_h265_encoder(gsr_gpu_vendor vendor) {
     static bool checked_success = true;
     if(!checked) {
         checked = true;
-        if(!check_if_codec_valid_for_hardware(codec, vendor))
+        if(!check_if_codec_valid_for_hardware(codec, vendor, card_path))
             checked_success = false;
     }
     return checked_success ? codec : nullptr;
@@ -1264,6 +1264,15 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Info: overclock option has no effect on amd/intel, ignoring option...\n");
     }
 
+    char card_path[128];
+    card_path[0] = '\0';
+    if(gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA) {
+        if(!gsr_get_valid_card_path(card_path)) {
+            fprintf(stderr, "Error: no /dev/dri/cardX device found\n");
+            return 2;
+        }
+    }
+
     // TODO: Fix constant framerate not working properly on amd/intel because capture framerate gets locked to the same framerate as
     // game framerate, which doesn't work well when you need to encode multiple duplicate frames.
     const FramerateMode framerate_mode = gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA ? FramerateMode::CONSTANT : FramerateMode::VARIABLE;
@@ -1347,6 +1356,7 @@ int main(int argc, char **argv) {
             kms_params.dpy = dpy;
             kms_params.display_to_capture = capture_target;
             kms_params.gpu_inf = gpu_inf;
+            kms_params.card_path = card_path;
             capture = gsr_capture_kms_vaapi_create(&kms_params);
             if(!capture)
                 return 1;
@@ -1367,6 +1377,7 @@ int main(int argc, char **argv) {
                 xcomposite_params.window = src_window_id;
                 xcomposite_params.follow_focused = follow_focused;
                 xcomposite_params.region_size = region_size;
+                xcomposite_params.card_path = card_path;
                 capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
                 if(!capture)
                     return 1;
@@ -1377,6 +1388,7 @@ int main(int argc, char **argv) {
                 xcomposite_params.window = src_window_id;
                 xcomposite_params.follow_focused = follow_focused;
                 xcomposite_params.region_size = region_size;
+                xcomposite_params.card_path = card_path;
                 capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
                 if(!capture)
                     return 1;
@@ -1467,7 +1479,7 @@ int main(int argc, char **argv) {
 
     if(strcmp(video_codec_to_use, "auto") == 0) {
         if(gpu_inf.vendor == GSR_GPU_VENDOR_INTEL) {
-            const AVCodec *h264_codec = find_h264_encoder(gpu_inf.vendor);
+            const AVCodec *h264_codec = find_h264_encoder(gpu_inf.vendor, card_path);
             if(!h264_codec) {
                 fprintf(stderr, "Info: using h265 encoder because a codec was not specified and your gpu does not support h264\n");
                 video_codec_to_use = "h265";
@@ -1478,7 +1490,7 @@ int main(int argc, char **argv) {
                 video_codec = VideoCodec::H264;
             }
         } else {
-            const AVCodec *h265_codec = find_h265_encoder(gpu_inf.vendor);
+            const AVCodec *h265_codec = find_h265_encoder(gpu_inf.vendor, card_path);
 
             // h265 generally allows recording at a higher resolution than h264 on nvidia cards. On a gtx 1080 4k is the max resolution for h264 but for h265 it's 8k.
             // Another important info is that when recording at a higher fps than.. 60? h265 has very bad performance. For example when recording at 144 fps the fps drops to 1
@@ -1509,10 +1521,10 @@ int main(int argc, char **argv) {
     const AVCodec *video_codec_f = nullptr;
     switch(video_codec) {
         case VideoCodec::H264:
-            video_codec_f = find_h264_encoder(gpu_inf.vendor);
+            video_codec_f = find_h264_encoder(gpu_inf.vendor, card_path);
             break;
         case VideoCodec::H265:
-            video_codec_f = find_h265_encoder(gpu_inf.vendor);
+            video_codec_f = find_h265_encoder(gpu_inf.vendor, card_path);
             break;
     }
 

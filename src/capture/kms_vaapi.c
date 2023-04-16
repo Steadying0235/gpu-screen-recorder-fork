@@ -65,7 +65,7 @@ static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_c
 
 static bool drm_create_codec_context(gsr_capture_kms_vaapi *cap_kms, AVCodecContext *video_codec_context) {
     AVBufferRef *device_ctx;
-    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, "/dev/dri/renderD128", NULL, 0) < 0) {
+    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, cap_kms->params.card_path, NULL, 0) < 0) {
         fprintf(stderr, "Error: Failed to create hardware device context\n");
         return false;
     }
@@ -123,7 +123,7 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
     // TODO: Allow specifying another card, and in other places
-    if(gsr_kms_client_init(&cap_kms->kms_client, "/dev/dri/renderD128") != 0) {
+    if(gsr_kms_client_init(&cap_kms->kms_client, cap_kms->params.card_path) != 0) {
         return -1;
     }
 

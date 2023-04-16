@@ -36,4 +36,7 @@ bool get_monitor_by_name(Display *display, const char *name, gsr_monitor *monito
 
 bool gl_get_gpu_info(Display *dpy, gsr_gpu_info *info);
 
+/* |output| should be at least 128 bytes in size */
+bool gsr_get_valid_card_path(char *output);
+
 #endif /* GSR_UTILS_H */

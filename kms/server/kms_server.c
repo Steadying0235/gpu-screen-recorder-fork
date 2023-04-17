@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <time.h>
 
 #include <xf86drm.h>
 #include <xf86drmMode.h>
@@ -188,6 +189,14 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response) {
     return result;
 }
 
+static double clock_get_monotonic_seconds(void) {
+    struct timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = 0;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec * 0.000000001;
+}
+
 int main(int argc, char **argv) {
     if(argc != 3) {
         fprintf(stderr, "usage: kms_server <domain_socket_path> <card_path>\n");
@@ -217,23 +226,38 @@ int main(int argc, char **argv) {
     }
 
     fprintf(stderr, "kms server info: connecting to the client\n");
-    for(;;) {
+    bool connected = false;
+    const double connect_timeout_sec = 5.0;
+    const double start_time = clock_get_monotonic_seconds();
+    while(clock_get_monotonic_seconds() - start_time < connect_timeout_sec) {
         struct sockaddr_un remote_addr = {0};
         remote_addr.sun_family = AF_UNIX;
         strncpy(remote_addr.sun_path, domain_socket_path, sizeof(remote_addr.sun_path));
         // TODO: Check if parent disconnected
         if(connect(socket_fd, (struct sockaddr*)&remote_addr, sizeof(remote_addr.sun_family) + strlen(remote_addr.sun_path)) == -1) {
-            if(errno == ECONNREFUSED || errno == ENOENT)
-                continue; // Host not ready yet? TODO: sleep
-            if(errno == EISCONN) // TODO?
+            if(errno == ECONNREFUSED || errno == ENOENT) {
+                goto next;
+            } else if(errno == EISCONN) {
+                connected = true;
                 break;
+            }
 
             fprintf(stderr, "kms server error: connect failed, error: %s (%d)\n", strerror(errno), errno);
             close(drm.drmfd);
             return 2;
         }
+
+        next:
+        usleep(30 * 1000); // 30 milliseconds
     }
-    fprintf(stderr, "kms server info: connected to the client\n");
+
+    if(connected) {
+        fprintf(stderr, "kms server info: connected to the client\n");
+    } else {
+        fprintf(stderr, "kms server error: failed to connect to the client in %f seconds\n", connect_timeout_sec);
+        close(drm.drmfd);
+        return 2;
+    }
 
     int res = 0;
     for(;;) {

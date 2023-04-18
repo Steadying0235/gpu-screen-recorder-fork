@@ -1933,35 +1933,37 @@ int main(int argc, char **argv) {
         if (frame_time_overflow >= 0.0) {
             frame_time_overflow = std::min(frame_time_overflow, target_fps);
             frame_timer_start = time_now - frame_time_overflow;
-            gsr_capture_capture(capture, frame);
 
             const double this_video_frame_time = clock_get_monotonic_seconds();
             const int64_t expected_frames = std::round((this_video_frame_time - start_time_pts) / target_fps);
-
             const int num_frames = framerate_mode == FramerateMode::CONSTANT ? std::max(0L, expected_frames - video_pts_counter) : 1;
 
-            // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
-            for(int i = 0; i < num_frames; ++i) {
-                if(framerate_mode == FramerateMode::CONSTANT) {
-                    frame->pts = video_pts_counter + i;
-                } else {
-                    frame->pts = (this_video_frame_time - record_start_time) * (double)AV_TIME_BASE;
-                    const bool same_pts = frame->pts == video_prev_pts;
-                    video_prev_pts = frame->pts;
-                    if(same_pts)
-                        continue;
-                }
+            if(num_frames > 0) {
+                gsr_capture_capture(capture, frame);
 
-                int ret = avcodec_send_frame(video_codec_context, frame);
-                if(ret == 0) {
-                    // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                    receive_frames(video_codec_context, VIDEO_STREAM_INDEX, video_stream, frame->pts, av_format_context,
-                           record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
-                } else {
-                    fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
+                // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
+                for(int i = 0; i < num_frames; ++i) {
+                    if(framerate_mode == FramerateMode::CONSTANT) {
+                        frame->pts = video_pts_counter + i;
+                    } else {
+                        frame->pts = (this_video_frame_time - record_start_time) * (double)AV_TIME_BASE;
+                        const bool same_pts = frame->pts == video_prev_pts;
+                        video_prev_pts = frame->pts;
+                        if(same_pts)
+                            continue;
+                    }
+
+                    int ret = avcodec_send_frame(video_codec_context, frame);
+                    if(ret == 0) {
+                        // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                        receive_frames(video_codec_context, VIDEO_STREAM_INDEX, video_stream, frame->pts, av_format_context,
+                            record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+                    } else {
+                        fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
+                    }
                 }
+                video_pts_counter += num_frames;
             }
-            video_pts_counter += num_frames;
         }
 
         if(save_replay_thread.valid() && save_replay_thread.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {

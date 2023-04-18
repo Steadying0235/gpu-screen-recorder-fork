@@ -57,9 +57,9 @@ int window_texture_on_resize(WindowTexture *self) {
     EGLImage image = NULL;
 
     const intptr_t pixmap_attrs[] = {
-		EGL_IMAGE_PRESERVED_KHR, EGL_TRUE,
-		EGL_NONE,
-	};
+        EGL_IMAGE_PRESERVED_KHR, EGL_TRUE,
+        EGL_NONE,
+    };
 
     pixmap = XCompositeNameWindowPixmap(self->display, self->window);
     if(!pixmap) {

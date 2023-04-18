@@ -98,7 +98,7 @@ static void receive_frames(AVCodecContext *av_codec_context, int stream_index, A
                            std::deque<AVPacket> &frame_data_queue,
                            int replay_buffer_size_secs,
                            bool &frames_erased,
-						   std::mutex &write_output_mutex) {
+                           std::mutex &write_output_mutex) {
     for (;;) {
         // TODO: Use av_packet_alloc instead because sizeof(av_packet) might not be future proof(?)
         AVPacket av_packet;
@@ -246,7 +246,7 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
     AVCodecContext *codec_context = avcodec_alloc_context3(codec);
 
     assert(codec->type == AVMEDIA_TYPE_AUDIO);
-	codec_context->codec_id = codec->id;
+    codec_context->codec_id = codec->id;
     codec_context->sample_fmt = audio_codec_get_sample_format(audio_codec, codec);
     codec_context->bit_rate = audio_codec_get_get_bitrate(audio_codec);
     codec_context->sample_rate = 48000;
@@ -984,9 +984,9 @@ static int init_filter_graph(AVCodecContext *audio_codec_context, AVFilterGraph 
     
     char args[512];
     snprintf(args, sizeof(args), "inputs=%d", (int)num_sources);
-	
+    
     AVFilterContext *mix_ctx;
-	err = avfilter_graph_create_filter(&mix_ctx, mix_filter, "amix",
+    err = avfilter_graph_create_filter(&mix_ctx, mix_filter, "amix",
                                        args, NULL, filter_graph);
 
     if (err < 0) {
@@ -1972,7 +1972,7 @@ int main(int argc, char **argv) {
             usleep(sleep_time * 1000.0 * 1000.0);
     }
 
-	running = 0;
+    running = 0;
 
     if(save_replay_thread.valid()) {
         save_replay_thread.get();

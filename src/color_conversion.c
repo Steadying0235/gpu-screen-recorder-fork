@@ -26,30 +26,30 @@ static int load_shader_y(gsr_shader *shader, gsr_egl *egl, float rotation) {
         "in vec2 texcoords;                                \n"
         "out vec2 texcoords_out;                           \n"
         ROTATE_Z
-		"void main()                                       \n"
-		"{                                                 \n"
+        "void main()                                       \n"
+        "{                                                 \n"
         "  texcoords_out = texcoords;                      \n"
-		"  gl_Position = vec4(pos.x, pos.y, 0.0, 1.0) * rotate_z(%f);    \n"
-		"}                                                 \n", rotation);
+        "  gl_Position = vec4(pos.x, pos.y, 0.0, 1.0) * rotate_z(%f);    \n"
+        "}                                                 \n", rotation);
 
     char fragment_shader[] =
         "#version 300 es                                                                 \n"
-		"precision mediump float;                                                        \n"
+        "precision mediump float;                                                        \n"
         "in vec2 texcoords_out;                                                          \n"
         "uniform sampler2D tex1;                                                         \n"
         "out vec4 FragColor;                                                             \n"
         RGB_TO_YUV
-		"void main()                                                                     \n"
-		"{                                                                               \n"
+        "void main()                                                                     \n"
+        "{                                                                               \n"
         "  FragColor.x = (RGBtoYUV * vec4(texture(tex1, texcoords_out).rgb, 1.0)).x;     \n"
-		"}                                                                               \n";
+        "}                                                                               \n";
 
     if(gsr_shader_init(shader, egl, vertex_shader, fragment_shader) != 0)
         return -1;
 
     gsr_shader_bind_attribute_location(shader, "pos", 0);
     gsr_shader_bind_attribute_location(shader, "texcoords", 1);
-	return 0;
+    return 0;
 }
 
 static unsigned int load_shader_uv(gsr_shader *shader, gsr_egl *egl, float rotation) {
@@ -60,30 +60,30 @@ static unsigned int load_shader_uv(gsr_shader *shader, gsr_egl *egl, float rotat
         "in vec2 texcoords;                              \n"
         "out vec2 texcoords_out;                         \n"
         ROTATE_Z
-		"void main()                                     \n"
-		"{                                               \n"
+        "void main()                                     \n"
+        "{                                               \n"
         "  texcoords_out = texcoords;                    \n"
-		"  gl_Position = vec4(pos.x, pos.y, 0.0, 1.0) * rotate_z(%f) * vec4(0.5, 0.5, 1.0, 1.0) - vec4(0.5, 0.5, 0.0, 0.0);   \n"
-		"}                                               \n", rotation);
+        "  gl_Position = vec4(pos.x, pos.y, 0.0, 1.0) * rotate_z(%f) * vec4(0.5, 0.5, 1.0, 1.0) - vec4(0.5, 0.5, 0.0, 0.0);   \n"
+        "}                                               \n", rotation);
 
     char fragment_shader[] =
         "#version 300 es                                                                       \n"
-		"precision mediump float;                                                              \n"
+        "precision mediump float;                                                              \n"
         "in vec2 texcoords_out;                                                                \n"
         "uniform sampler2D tex1;                                                               \n"
         "out vec4 FragColor;                                                                   \n"
         RGB_TO_YUV
-		"void main()                                                                           \n"
-		"{                                                                                     \n"
+        "void main()                                                                           \n"
+        "{                                                                                     \n"
         "  FragColor.xy = (RGBtoYUV * vec4(texture(tex1, texcoords_out).rgb, 1.0)).zy;         \n"
-		"}                                                                                     \n";
+        "}                                                                                     \n";
 
     if(gsr_shader_init(shader, egl, vertex_shader, fragment_shader) != 0)
         return -1;
 
     gsr_shader_bind_attribute_location(shader, "pos", 0);
     gsr_shader_bind_attribute_location(shader, "texcoords", 1);
-	return 0;
+    return 0;
 }
 
 static int loader_framebuffers(gsr_color_conversion *self) {

@@ -633,7 +633,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 }
 
 static void usage() {
-    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265] [-ac aac|opus|flac] [-oc yes|no] [-o <output_file>]\n");
+    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265] [-ac aac|opus|flac] [-oc yes|no] [-v yes|no] [-o <output_file>]\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "OPTIONS:\n");
     fprintf(stderr, "  -w    Window to record, a display, \"screen\", \"screen-direct\", \"screen-direct-force\" or \"focused\".\n");
@@ -672,6 +672,8 @@ static void usage() {
     fprintf(stderr, "  -oc   Overclock memory transfer rate to the maximum performance level. This only applies to NVIDIA and exists to overcome a bug in NVIDIA driver where performance level\n");
     fprintf(stderr, "        is dropped when you record a game. Only needed if you are recording a game that is bottlenecked by GPU.\n");
     fprintf(stderr, "        Works only if your have \"Coolbits\" set to \"12\" in NVIDIA X settings, see README for more information. Note! use at your own risk! Optional, disabled by default\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  -v    Prints per second, fps updates. Optional, set to 'yes' by default.\n");
     fprintf(stderr, "\n");
     //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, defaults to yuv420\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r).\n");
@@ -1079,7 +1081,8 @@ int main(int argc, char **argv) {
         { "-k", Arg { {}, true, false } },
         { "-ac", Arg { {}, true, false } },
         { "-oc", Arg { {}, true, false } },
-        { "-pixfmt", Arg { {}, true, false } }
+        { "-pixfmt", Arg { {}, true, false } },
+        { "-v", Arg { {}, true, false } },
     };
 
     for(int i = 1; i < argc; i += 2) {
@@ -1150,6 +1153,20 @@ int main(int argc, char **argv) {
         overclock = false;
     } else {
         fprintf(stderr, "Error: -oc should either be either 'yes' or 'no', got: '%s'\n", overclock_str);
+        usage();
+    }
+
+    bool verbose = true;
+    const char *verbose_str = args["-v"].value();
+    if(!verbose_str)
+        verbose_str = "yes";
+
+    if(strcmp(verbose_str, "yes") == 0) {
+        verbose = true;
+    } else if(strcmp(verbose_str, "no") == 0) {
+        verbose = false;
+    } else {
+        fprintf(stderr, "Error: -v should either be either 'yes' or 'no', got: '%s'\n", verbose_str);
         usage();
     }
 
@@ -1891,7 +1908,9 @@ int main(int argc, char **argv) {
         double frame_timer_elapsed = time_now - frame_timer_start;
         double elapsed = time_now - start_time;
         if (elapsed >= 1.0) {
-            fprintf(stderr, "update fps: %d\n", fps_counter);
+            if(verbose) {
+                fprintf(stderr, "update fps: %d\n", fps_counter);
+            }
             start_time = time_now;
             fps_counter = 0;
         }

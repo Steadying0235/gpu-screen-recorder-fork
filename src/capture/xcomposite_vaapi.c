@@ -469,10 +469,7 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
         VAProcPipelineParameterBuffer params = {0};
         params.surface = cap_xcomp->input_surface;
         params.surface_region = NULL;
-        if(cap_xcomp->params.follow_focused)
-            params.output_region = &cap_xcomp->output_region;
-        else
-            params.output_region = NULL;
+        params.output_region = &cap_xcomp->output_region;
         params.output_background_color = 0;
         params.filter_flags = VA_FRAME_PICTURE;
 

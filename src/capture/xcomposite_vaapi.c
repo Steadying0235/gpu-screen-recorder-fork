@@ -249,13 +249,13 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
     }
 
     if(cap_xcomp->params.follow_focused && !cap_xcomp->follow_focused_initialized) {
-        cap_xcomp->follow_focused_initialized = true;
         init_new_window = true;
     }
 
     if(init_new_window) {
         Window focused_window = get_focused_window(cap_xcomp->dpy, cap_xcomp->net_active_window_atom);
         if(focused_window != cap_xcomp->window || !cap_xcomp->follow_focused_initialized) {
+            cap_xcomp->follow_focused_initialized = true;
             XSelectInput(cap_xcomp->dpy, cap_xcomp->window, 0);
             cap_xcomp->window = focused_window;
             XSelectInput(cap_xcomp->dpy, cap_xcomp->window, StructureNotifyMask | ExposureMask);
@@ -294,7 +294,7 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
             fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: window_texture_on_resize failed\n");
             //cap_xcomp->should_stop = true;
             //cap_xcomp->stop_is_error = true;
-            //return;
+            return;
         }
 
         cap_xcomp->texture_size.x = 0;

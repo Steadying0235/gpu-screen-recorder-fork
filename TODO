@@ -58,3 +58,5 @@ Test if vaapi copy version uses less memory than opengl version.
 Intel is a bit weird with monitor capture and multiple monitors. If one of the monitors is rotated then all the kms will be rotated as well.
     Is that only the case when the primary monitor is rotated? Also the primary monitor becomes position 0, 0 so crtc (x11 randr) position doesn't match the drm pos. Maybe get monitor position and size from drm instead.
     How about if multiple monitors are rotated?
+
+When using multiple monitors kms grab the target monitor instead of the whole screen.

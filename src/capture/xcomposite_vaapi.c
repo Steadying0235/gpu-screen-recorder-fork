@@ -16,6 +16,7 @@ typedef struct {
     gsr_capture_xcomposite_vaapi_params params;
     Display *dpy;
     XEvent xev;
+
     bool should_stop;
     bool stop_is_error;
     bool window_resized;
@@ -610,11 +611,6 @@ static void gsr_capture_xcomposite_vaapi_destroy(gsr_capture *cap, AVCodecContex
         gsr_capture_xcomposite_vaapi_stop(cap, video_codec_context);
         free(cap->priv);
         cap->priv = NULL;
-    }
-    if(cap_xcomp->dpy) {
-        // TODO: This causes a crash, why? maybe some other library dlclose xlib and that also happened to unload this???
-        //XCloseDisplay(cap_xcomp->dpy);
-        cap_xcomp->dpy = NULL;
     }
     free(cap);
 }

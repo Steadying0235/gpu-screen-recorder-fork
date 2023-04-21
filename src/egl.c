@@ -138,7 +138,6 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
         { (void**)&self->glTexImage2D, "glTexImage2D" },
         { (void**)&self->glCopyImageSubData, "glCopyImageSubData" },
         { (void**)&self->glClearTexImage, "glClearTexImage" },
-        { (void**)&self->glGenerateMipmap, "glGenerateMipmap" },
         { (void**)&self->glGenFramebuffers, "glGenFramebuffers" },
         { (void**)&self->glBindFramebuffer, "glBindFramebuffer" },
         { (void**)&self->glDeleteFramebuffers, "glDeleteFramebuffers" },
@@ -149,6 +148,7 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
         { (void**)&self->glBindBuffer, "glBindBuffer" },
         { (void**)&self->glGenBuffers, "glGenBuffers" },
         { (void**)&self->glBufferData, "glBufferData" },
+        { (void**)&self->glBufferSubData, "glBufferSubData" },
         { (void**)&self->glDeleteBuffers, "glDeleteBuffers" },
         { (void**)&self->glGenVertexArrays, "glGenVertexArrays" },
         { (void**)&self->glBindVertexArray, "glBindVertexArray" },
@@ -170,6 +170,10 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
         { (void**)&self->glVertexAttribPointer, "glVertexAttribPointer" },
         { (void**)&self->glEnableVertexAttribArray, "glEnableVertexAttribArray" },
         { (void**)&self->glDrawArrays, "glDrawArrays" },
+        { (void**)&self->glEnable, "glEnable" },
+        { (void**)&self->glBlendFunc, "glBlendFunc" },
+        { (void**)&self->glGetUniformLocation, "glGetUniformLocation" },
+        { (void**)&self->glUniform1f, "glUniform1f" },
 
         { NULL, NULL }
     };
@@ -213,6 +217,9 @@ bool gsr_egl_load(gsr_egl *self, Display *dpy) {
 
     if(!gsr_egl_create_window(self))
         goto fail;
+
+    self->glEnable(GL_BLEND);
+    self->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     self->egl_library = egl_lib;
     self->gl_library = gl_lib;

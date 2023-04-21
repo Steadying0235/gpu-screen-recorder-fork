@@ -46,12 +46,11 @@ static bool gsr_cursor_set_from_x11_cursor_image(gsr_cursor *self, XFixesCursorI
 
     self->egl->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, self->size.x, self->size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, cursor_data);
     free(cursor_data);
-    self->egl->glGenerateMipmap(GL_TEXTURE_2D);
 
     self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
     self->egl->glBindTexture(GL_TEXTURE_2D, 0);
     XFree(x11_cursor_image);
@@ -65,6 +64,8 @@ static bool gsr_cursor_set_from_x11_cursor_image(gsr_cursor *self, XFixesCursorI
 }
 
 int gsr_cursor_init(gsr_cursor *self, gsr_egl *egl, Display *display) {
+    int x_fixes_error_base = 0;
+
     assert(egl);
     assert(display);
     memset(self, 0, sizeof(*self));
@@ -72,9 +73,8 @@ int gsr_cursor_init(gsr_cursor *self, gsr_egl *egl, Display *display) {
     self->display = display;
 
     self->x_fixes_event_base = 0;
-    int x_fixes_error_base = 0;
-    if(!XFixesQueryExtension(display, &self->x_fixes_event_base, &x_fixes_error_base)) {
-        fprintf(stderr, "gsr error: gsr_cursor_init: your x11 server is missing the xfixes extension. no cursor will be visible in the video\n");
+    if(!XFixesQueryExtension(self->display, &self->x_fixes_event_base, &x_fixes_error_base)) {
+        fprintf(stderr, "gsr error: gsr_cursor_init: your X11 server is missing the XFixes extension\n");
         gsr_cursor_deinit(self);
         return -1;
     }
@@ -104,7 +104,7 @@ void gsr_cursor_deinit(gsr_cursor *self) {
 int gsr_cursor_change_window_target(gsr_cursor *self, Window window) {
     if(self->window)
         XFixesSelectCursorInput(self->display, self->window, 0);
-    
+
     XFixesSelectCursorInput(self->display, window, XFixesDisplayCursorNotifyMask);
     self->window = window;
     self->cursor_image_set = false;
@@ -113,7 +113,7 @@ int gsr_cursor_change_window_target(gsr_cursor *self, Window window) {
 
 void gsr_cursor_update(gsr_cursor *self, XEvent *xev) {
     if(xev->type == self->x_fixes_event_base + XFixesCursorNotify) {
-        XFixesCursorNotifyEvent *cursor_notify_event = (XFixesCursorNotifyEvent*)&xev;
+        XFixesCursorNotifyEvent *cursor_notify_event = (XFixesCursorNotifyEvent*)xev;
         if(cursor_notify_event->subtype == XFixesDisplayCursorNotify && cursor_notify_event->window == self->window) {
             self->cursor_image_set = true;
             gsr_cursor_set_from_x11_cursor_image(self, XFixesGetCursorImage(self->display));
@@ -124,4 +124,12 @@ void gsr_cursor_update(gsr_cursor *self, XEvent *xev) {
         self->cursor_image_set = true;
         gsr_cursor_set_from_x11_cursor_image(self, XFixesGetCursorImage(self->display));
     }
+}
+
+void gsr_cursor_tick(gsr_cursor *self) {
+    /* TODO: Use XInput2 instead. However that doesn't work when the pointer is grabbed. Maybe check for focused window change and XSelectInput PointerMask */
+    Window dummy_window;
+    int dummy_i;
+    unsigned int dummy_u;
+    XQueryPointer(self->display, DefaultRootWindow(self->display), &dummy_window, &dummy_window, &dummy_i, &dummy_i, &self->position.x, &self->position.y, &dummy_u);
 }

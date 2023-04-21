@@ -66,7 +66,6 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define GL_TEXTURE_WRAP_T                       0x2803
 #define GL_TEXTURE_MAG_FILTER                   0x2800
 #define GL_TEXTURE_MIN_FILTER                   0x2801
-#define GL_LINEAR_MIPMAP_LINEAR                 0x2703
 #define GL_TEXTURE_WIDTH                        0x1000
 #define GL_TEXTURE_HEIGHT                       0x1001
 #define GL_NEAREST                              0x2600
@@ -75,8 +74,11 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define GL_FRAMEBUFFER                          0x8D40
 #define GL_COLOR_ATTACHMENT0                    0x8CE0
 #define GL_FRAMEBUFFER_COMPLETE                 0x8CD5
-#define GL_STATIC_DRAW                          0x88E4
+#define GL_STREAM_DRAW                          0x88E0
 #define GL_ARRAY_BUFFER                         0x8892
+#define GL_BLEND                                0x0BE2
+#define GL_SRC_ALPHA                            0x0302
+#define GL_ONE_MINUS_SRC_ALPHA                  0x0303
 
 #define GL_VENDOR                               0x1F00
 #define GL_RENDERER                             0x1F01
@@ -129,7 +131,6 @@ typedef struct {
     void (*glTexImage2D)(unsigned int target, int level, int internalFormat, int width, int height, int border, unsigned int format, unsigned int type, const void *pixels);
     void (*glCopyImageSubData)(unsigned int srcName, unsigned int srcTarget, int srcLevel, int srcX, int srcY, int srcZ, unsigned int dstName, unsigned int dstTarget, int dstLevel, int dstX, int dstY, int dstZ, int srcWidth, int srcHeight, int srcDepth);
     void (*glClearTexImage)(unsigned int texture, unsigned int level, unsigned int format, unsigned int type, const void *data);
-    void (*glGenerateMipmap)(unsigned int target);
     void (*glGenFramebuffers)(int n, unsigned int *framebuffers);
     void (*glBindFramebuffer)(unsigned int target, unsigned int framebuffer);
     void (*glDeleteFramebuffers)(int n, const unsigned int *framebuffers);
@@ -140,11 +141,11 @@ typedef struct {
     void (*glBindBuffer)(unsigned int target, unsigned int buffer);
     void (*glGenBuffers)(int n, unsigned int *buffers);
     void (*glBufferData)(unsigned int target, khronos_ssize_t size, const void *data, unsigned int usage);
+    void (*glBufferSubData)(unsigned int target, khronos_intptr_t offset, khronos_ssize_t size, const void *data);
     void (*glDeleteBuffers)(int n, const unsigned int *buffers);
     void (*glGenVertexArrays)(int n, unsigned int *arrays);
     void (*glBindVertexArray)(unsigned int array);
     void (*glDeleteVertexArrays)(int n, const unsigned int *arrays);
-
     unsigned int (*glCreateProgram)(void);
     unsigned int (*glCreateShader)(unsigned int type);
     void (*glAttachShader)(unsigned int program, unsigned int shader);
@@ -161,7 +162,11 @@ typedef struct {
     void (*glGetProgramiv)(unsigned int program, unsigned int pname, int *params);
     void (*glVertexAttribPointer)(unsigned int index, int size, unsigned int type, unsigned char normalized, int stride, const void *pointer);
     void (*glEnableVertexAttribArray)(unsigned int index);
-    void (*glDrawArrays)(unsigned int mode, int first, int count );
+    void (*glDrawArrays)(unsigned int mode, int first, int count);
+    void (*glEnable)(unsigned int cap);
+    void (*glBlendFunc)(unsigned int sfactor, unsigned int dfactor);
+    int (*glGetUniformLocation)(unsigned int program, const char *name);
+    void (*glUniform1f)(int location, float v0);
 } gsr_egl;
 
 bool gsr_egl_load(gsr_egl *self, Display *dpy);

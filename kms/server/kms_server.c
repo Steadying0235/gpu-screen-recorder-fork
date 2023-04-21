@@ -65,9 +65,9 @@ static int send_msg_to_client(int client_fd, gsr_kms_response *response, int *fd
 
 static int kms_get_plane_id(gsr_drm *drm) {
     drmModePlaneResPtr planes = NULL;
-    drmModePlanePtr plane = NULL;
-    drmModeFB2Ptr drmfb = NULL;
     int result = -1;
+    int64_t max_size = 0;
+    uint32_t best_plane_match = UINT32_MAX;
 
     if(drmSetClientCap(drm->drmfd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1) != 0) {
         fprintf(stderr, "kms server error: drmSetClientCap failed, error: %s\n", strerror(errno));
@@ -81,7 +81,7 @@ static int kms_get_plane_id(gsr_drm *drm) {
     }
 
     for(uint32_t i = 0; i < planes->count_planes; ++i) {
-        plane = drmModeGetPlane(drm->drmfd, planes->planes[i]);
+        drmModePlanePtr plane = drmModeGetPlane(drm->drmfd, planes->planes[i]);
         if(!plane) {
             fprintf(stderr, "kms server warning: failed to get drmModePlanePtr for plane %#x: %s (%d)\n", planes->planes[i], strerror(errno), errno);
             continue;
@@ -92,34 +92,28 @@ static int kms_get_plane_id(gsr_drm *drm) {
             continue;
         }
 
-        break;
+        // TODO: Fallback to getfb(1)?
+        drmModeFB2Ptr drmfb = drmModeGetFB2(drm->drmfd, plane->fb_id);
+        if(drmfb) {
+            const int64_t plane_size = (int64_t)drmfb->width * (int64_t)drmfb->height;
+            if(drmfb->handles[0] && plane_size >= max_size) {
+                max_size = plane_size;
+                best_plane_match = plane->plane_id;
+            }
+            drmModeFreeFB2(drmfb);
+        }
+        drmModeFreePlane(plane);
     }
 
-    if(!plane) {
+    if(best_plane_match == UINT32_MAX || max_size == 0) {
         fprintf(stderr, "kms server error: failed to find a usable plane\n");
         goto error;
     }
 
-    // TODO: Fallback to getfb(1)?
-    drmfb = drmModeGetFB2(drm->drmfd, plane->fb_id);
-    if(!drmfb) {
-        fprintf(stderr, "kms server error: drmModeGetFB2 failed on plane fb id %d, error: %s\n", plane->fb_id, strerror(errno));
-        goto error;
-    }
-
-    if(!drmfb->handles[0]) {
-        fprintf(stderr, "kms server error: drmfb handle is NULL\n");
-        goto error;
-    }
-
-    drm->plane_id = plane->plane_id;
+    drm->plane_id = best_plane_match;
     result = 0;
 
     error:
-    if(drmfb)
-        drmModeFreeFB2(drmfb);
-    if(plane)
-        drmModeFreePlane(plane);
     if(planes)
         drmModeFreePlaneResources(planes);
 

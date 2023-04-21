@@ -18,24 +18,14 @@ typedef struct {
     gsr_source_color source_color;
     gsr_destination_color destination_color;
 
-    unsigned int source_textures[2];
-    int num_source_textures;
-
     unsigned int destination_textures[2];
     int num_destination_textures;
-
-    float rotation;
-
-    vec2f position;
-    vec2f size;
 } gsr_color_conversion_params;
 
 typedef struct {
-    gsr_egl *egl;
+    gsr_color_conversion_params params;
+    int rotation_uniforms[2];
     gsr_shader shaders[2];
-
-    unsigned int source_textures[2];
-    unsigned int destination_textures[2];
 
     unsigned int framebuffers[2];
 
@@ -46,6 +36,6 @@ typedef struct {
 int gsr_color_conversion_init(gsr_color_conversion *self, const gsr_color_conversion_params *params);
 void gsr_color_conversion_deinit(gsr_color_conversion *self);
 
-int gsr_color_conversion_update(gsr_color_conversion *self, int width, int height);
+int gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_id, vec2i source_pos, vec2i source_size, vec2i texture_pos, vec2i texture_size, float rotation);
 
 #endif /* GSR_COLOR_CONVERSION_H */

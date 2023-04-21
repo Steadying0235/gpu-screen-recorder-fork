@@ -1384,7 +1384,6 @@ int main(int argc, char **argv) {
             }
 
             gsr_capture_kms_vaapi_params kms_params;
-            kms_params.dpy = dpy;
             kms_params.display_to_capture = capture_target;
             kms_params.gpu_inf = gpu_inf;
             kms_params.card_path = card_path;

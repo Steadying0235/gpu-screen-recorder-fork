@@ -3,6 +3,7 @@
 #include "../../include/egl.h"
 #include "../../include/utils.h"
 #include "../../include/color_conversion.h"
+#include "../../include/cursor.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -24,6 +25,9 @@ typedef enum {
 
 typedef struct {
     gsr_capture_kms_vaapi_params params;
+    Display *dpy;
+    XEvent xev;
+
     bool should_stop;
     bool stop_is_error;
     bool created_hw_frame;
@@ -54,7 +58,8 @@ typedef struct {
     unsigned int target_textures[2];
 
     gsr_color_conversion color_conversion;
-    unsigned int vao;
+
+    gsr_cursor cursor;
 } gsr_capture_kms_vaapi;
 
 static int max_int(int a, int b) {
@@ -127,17 +132,17 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         return -1;
     }
 
-    MonitorCallbackUserdata monitor_callback_userdata = {0};
-    for_each_active_monitor_output(cap_kms->params.dpy, monitor_callback, &monitor_callback_userdata);
+    MonitorCallbackUserdata monitor_callback_userdata = {0, X11_ROT_0};
+    for_each_active_monitor_output(cap_kms->dpy, monitor_callback, &monitor_callback_userdata);
 
     gsr_monitor monitor;
     if(strcmp(cap_kms->params.display_to_capture, "screen") == 0) {
         monitor.pos.x = 0;
         monitor.pos.y = 0;
-        monitor.size.x = XWidthOfScreen(DefaultScreenOfDisplay(cap_kms->params.dpy));
-        monitor.size.y = XHeightOfScreen(DefaultScreenOfDisplay(cap_kms->params.dpy));
+        monitor.size.x = WidthOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
+        monitor.size.y = HeightOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
         cap_kms->screen_capture = true;
-    } else if(!get_monitor_by_name(cap_kms->params.dpy, cap_kms->params.display_to_capture, &monitor)) {
+    } else if(!get_monitor_by_name(cap_kms->dpy, cap_kms->params.display_to_capture, &monitor)) {
         fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
         gsr_capture_kms_vaapi_stop(cap, video_codec_context);
         return -1;
@@ -157,7 +162,7 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
     cap_kms->capture_pos = monitor.pos;
     cap_kms->capture_size = monitor.size;
 
-    if(!gsr_egl_load(&cap_kms->egl, cap_kms->params.dpy)) {
+    if(!gsr_egl_load(&cap_kms->egl, cap_kms->dpy)) {
         fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to load opengl\n");
         gsr_capture_kms_vaapi_stop(cap, video_codec_context);
         return -1;
@@ -174,6 +179,14 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         return -1;
     }
 
+    if(gsr_cursor_init(&cap_kms->cursor, &cap_kms->egl, cap_kms->dpy) != 0) {
+        gsr_capture_kms_vaapi_stop(cap, video_codec_context);
+        return -1;
+    }
+
+    gsr_cursor_change_window_target(&cap_kms->cursor, DefaultRootWindow(cap_kms->dpy));
+    gsr_cursor_update(&cap_kms->cursor, &cap_kms->xev);
+
     return 0;
 }
 
@@ -188,6 +201,11 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
 
     // TODO:
     cap_kms->egl.glClear(GL_COLOR_BUFFER_BIT);
+
+    while(XPending(cap_kms->dpy)) {
+        XNextEvent(cap_kms->dpy, &cap_kms->xev);
+        gsr_cursor_update(&cap_kms->cursor, &cap_kms->xev);
+    }
 
     if(!cap_kms->created_hw_frame) {
         cap_kms->created_hw_frame = true;
@@ -286,45 +304,14 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
                 cap_kms->egl.glBindTexture(GL_TEXTURE_2D, 0);
             }
 
-            float texture_rotation = 0.0f;
-            if(cap_kms->requires_rotation) {
-                switch(cap_kms->x11_rot) {
-                    case X11_ROT_90:
-                        texture_rotation = M_PI*0.5f;
-                        break;
-                    case X11_ROT_180:
-                        texture_rotation = M_PI;
-                        break;
-                    case X11_ROT_270:
-                        texture_rotation = M_PI*1.5f;
-                        break;
-                    default:
-                        texture_rotation = 0.0f;
-                        break;
-                }
-            }
-
-            const double combined_monitor_width = (double)XWidthOfScreen(DefaultScreenOfDisplay(cap_kms->params.dpy));
-            const double combined_monitor_height = (double)XHeightOfScreen(DefaultScreenOfDisplay(cap_kms->params.dpy));
-
             gsr_color_conversion_params color_conversion_params = {0};
             color_conversion_params.egl = &cap_kms->egl;
             color_conversion_params.source_color = GSR_SOURCE_COLOR_RGB;
             color_conversion_params.destination_color = GSR_DESTINATION_COLOR_NV12;
 
-            color_conversion_params.source_textures[0] = cap_kms->input_texture;
-            color_conversion_params.num_source_textures = 1;
-
             color_conversion_params.destination_textures[0] = cap_kms->target_textures[0];
             color_conversion_params.destination_textures[1] = cap_kms->target_textures[1];
             color_conversion_params.num_destination_textures = 2;
-
-            color_conversion_params.rotation = texture_rotation;
-
-            color_conversion_params.position.x = (double)cap_kms->capture_pos.x / combined_monitor_width;
-            color_conversion_params.position.y = (double)cap_kms->capture_pos.y / combined_monitor_height;
-            color_conversion_params.size.x = (double)cap_kms->capture_size.x / combined_monitor_width;
-            color_conversion_params.size.y = (double)cap_kms->capture_size.y / combined_monitor_height;
 
             if(gsr_color_conversion_init(&cap_kms->color_conversion, &color_conversion_params) != 0) {
                 fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: failed to create color conversion\n");
@@ -410,7 +397,35 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     cap_kms->egl.eglDestroyImage(cap_kms->egl.egl_display, image);
     cap_kms->egl.glBindTexture(GL_TEXTURE_2D, 0);
 
-    gsr_color_conversion_update(&cap_kms->color_conversion, frame->width, frame->height);
+    float texture_rotation = 0.0f;
+    if(cap_kms->requires_rotation) {
+        switch(cap_kms->x11_rot) {
+            case X11_ROT_90:
+                texture_rotation = M_PI*0.5f;
+                break;
+            case X11_ROT_180:
+                texture_rotation = M_PI;
+                break;
+            case X11_ROT_270:
+                texture_rotation = M_PI*1.5f;
+                break;
+            default:
+                texture_rotation = 0.0f;
+                break;
+        }
+    }
+
+    gsr_cursor_tick(&cap_kms->cursor);
+
+    gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
+        (vec2i){0, 0}, (vec2i){cap_kms->capture_size.x, cap_kms->capture_size.y},
+        (vec2i){cap_kms->capture_pos.x, cap_kms->capture_pos.y}, (vec2i){cap_kms->capture_size.x, cap_kms->capture_size.y},
+        texture_rotation);
+
+    gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->cursor.texture_id,
+        (vec2i){cap_kms->cursor.position.x - cap_kms->cursor.hotspot.x - cap_kms->capture_pos.x, cap_kms->cursor.position.y - cap_kms->cursor.hotspot.y - cap_kms->capture_pos.y}, (vec2i){cap_kms->cursor.size.x, cap_kms->cursor.size.y},
+        (vec2i){0, 0}, (vec2i){cap_kms->cursor.size.x, cap_kms->cursor.size.y},
+        0.0f);
 
     cap_kms->egl.eglSwapBuffers(cap_kms->egl.egl_display, cap_kms->egl.egl_surface);
 
@@ -425,6 +440,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
 static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
+    gsr_cursor_deinit(&cap_kms->cursor);
     gsr_color_conversion_deinit(&cap_kms->color_conversion);
 
     for(uint32_t i = 0; i < cap_kms->prime.num_objects; ++i) {
@@ -455,6 +471,11 @@ static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_c
 
     gsr_egl_unload(&cap_kms->egl);
     gsr_kms_client_deinit(&cap_kms->kms_client);
+    if(cap_kms->dpy) {
+        // TODO: This causes a crash, why? maybe some other library dlclose xlib and that also happened to unload this???
+        //XCloseDisplay(cap_kms->dpy);
+        cap_kms->dpy = NULL;
+    }
 }
 
 static void gsr_capture_kms_vaapi_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
@@ -496,11 +517,13 @@ gsr_capture* gsr_capture_kms_vaapi_create(const gsr_capture_kms_vaapi_params *pa
 
     const char *display_to_capture = strdup(params->display_to_capture);
     if(!display_to_capture) {
+        /* TODO XCloseDisplay */
         free(cap);
         free(cap_kms);
         return NULL;
     }
 
+    cap_kms->dpy = display;
     cap_kms->params = *params;
     cap_kms->params.display_to_capture = display_to_capture;
     

@@ -58,12 +58,15 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define GL_TRIANGLES                            0x0004
 #define GL_TEXTURE_2D                           0x0DE1
 #define GL_RGB                                  0x1907
+#define GL_RGBA                                 0x1908
+#define GL_RGBA8                                0x8058
 #define GL_UNSIGNED_BYTE                        0x1401
 #define GL_COLOR_BUFFER_BIT                     0x00004000
 #define GL_TEXTURE_WRAP_S                       0x2802
 #define GL_TEXTURE_WRAP_T                       0x2803
 #define GL_TEXTURE_MAG_FILTER                   0x2800
 #define GL_TEXTURE_MIN_FILTER                   0x2801
+#define GL_LINEAR_MIPMAP_LINEAR                 0x2703
 #define GL_TEXTURE_WIDTH                        0x1000
 #define GL_TEXTURE_HEIGHT                       0x1001
 #define GL_NEAREST                              0x2600
@@ -126,6 +129,7 @@ typedef struct {
     void (*glTexImage2D)(unsigned int target, int level, int internalFormat, int width, int height, int border, unsigned int format, unsigned int type, const void *pixels);
     void (*glCopyImageSubData)(unsigned int srcName, unsigned int srcTarget, int srcLevel, int srcX, int srcY, int srcZ, unsigned int dstName, unsigned int dstTarget, int dstLevel, int dstX, int dstY, int dstZ, int srcWidth, int srcHeight, int srcDepth);
     void (*glClearTexImage)(unsigned int texture, unsigned int level, unsigned int format, unsigned int type, const void *data);
+    void (*glGenerateMipmap)(unsigned int target);
     void (*glGenFramebuffers)(int n, unsigned int *framebuffers);
     void (*glBindFramebuffer)(unsigned int target, unsigned int framebuffer);
     void (*glDeleteFramebuffers)(int n, const unsigned int *framebuffers);

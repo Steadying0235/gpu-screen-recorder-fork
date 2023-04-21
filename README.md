@@ -39,11 +39,11 @@ to install GPU Screen Recorder on non-arch based distros.
 
 # Dependencies
 ## AMD
-`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libpulse, libva, libva-mesa-driver, libdrm, libcap, polkit (for pkexec)`.
+`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libxfixes, libpulse, libva, libva-mesa-driver, libdrm, libcap, polkit (for pkexec)`.
 ## Intel
-`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libpulse, libva, libva-intel-driver, libdrm, libcap, polkit (for pkexec)`.
+`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libxfixes, libpulse, libva, libva-intel-driver, libdrm, libcap, polkit (for pkexec)`.
 ## NVIDIA
-`libglvnd (which provides libgl and libegl), ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libpulse, cuda (libnvidia-compute), nvenc (libnvidia-encode), libva, libdrm, libcap`. Additionally, you need to have `nvfbc (libnvidia-fbc1)` installed when using nvfbc and `xnvctrl (libxnvctrl0)` when using the `-oc` option.
+`libglvnd (which provides libgl and libegl), ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libxfixes, libpulse, cuda (libnvidia-compute), nvenc (libnvidia-encode), libva, libdrm, libcap`. Additionally, you need to have `nvfbc (libnvidia-fbc1)` installed when using nvfbc and `xnvctrl (libxnvctrl0)` when using the `-oc` option.
 
 # How to use
 Run `scripts/interactive.sh` or run gpu-screen-recorder directly, for example: `gpu-screen-recorder -w $(xdotool selectwindow) -c mp4 -f 60 -a "$(pactl get-default-sink).monitor" -o test_video.mp4` then stop the screen recorder with Ctrl+C, which will also save the recording. You can change -w to -w screen if you want to record all monitors or if you want to record a specific monitor then you can use -w monitor-name, for example -w HDMI-0 (use xrandr command to find the name of your monitor. The name can also be found in your desktop environments display settings).\

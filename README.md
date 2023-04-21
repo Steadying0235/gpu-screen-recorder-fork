@@ -75,6 +75,8 @@ This gpu-screen-recorder keeps the window image on the GPU and sends it directly
 The plugin does everything on the GPU and gives the texture to OBS, but OBS does not know how to use the texture directly on the GPU so it copies the texture to the CPU and then back to the GPU (video encoding unit). These operations are very slow and causes a lot of fps drops unless you have a fast CPU. This is especially noticable when recording at higher resolutions than 1080p.
 ## How is this different from using FFMPEG with x11grab and nvenc?
 FFMPEG only uses the GPU with CUDA when doing transcoding from an input video to an output video, and not when recording the screen when using x11grab. So FFMPEG has the same fps drop issues that OBS has.
+## It tells me that my GPU is not supported or that my GPU doesn't support h264/hevc, but that's not true!
+Some linux distros disable h264/hevc because of "patent license issues". If you are using an arch-based distro then you can install mesa-git instead of mesa and if you are using another distro then you may have to switch to a better distro.
 
 # Donations
 If you really want to donate, you can donate via bitcoin or monero.

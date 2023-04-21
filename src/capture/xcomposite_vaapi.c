@@ -207,32 +207,55 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
     // TODO:
     //cap_xcomp->egl.glClear(GL_COLOR_BUFFER_BIT);
 
-    if(!cap_xcomp->params.follow_focused && XCheckTypedWindowEvent(cap_xcomp->dpy, cap_xcomp->window, DestroyNotify, &cap_xcomp->xev)) {
-        cap_xcomp->should_stop = true;
-        cap_xcomp->stop_is_error = false;
-    }
+    bool init_new_window = false;
+    while(XPending(cap_xcomp->dpy)) {
+        XNextEvent(cap_xcomp->dpy, &cap_xcomp->xev);
 
-    if(XCheckTypedWindowEvent(cap_xcomp->dpy, cap_xcomp->window, Expose, &cap_xcomp->xev) && cap_xcomp->xev.xexpose.count == 0) {
-        cap_xcomp->window_resize_timer = clock_get_monotonic_seconds();
-        cap_xcomp->window_resized = true;
-    }
-
-    if(XCheckTypedWindowEvent(cap_xcomp->dpy, cap_xcomp->window, ConfigureNotify, &cap_xcomp->xev) && cap_xcomp->xev.xconfigure.window == cap_xcomp->window) {
-        while(XCheckTypedWindowEvent(cap_xcomp->dpy, cap_xcomp->window, ConfigureNotify, &cap_xcomp->xev)) {}
-
-        /* Window resize */
-        if(cap_xcomp->xev.xconfigure.width != cap_xcomp->window_size.x || cap_xcomp->xev.xconfigure.height != cap_xcomp->window_size.y) {
-            cap_xcomp->window_size.x = max_int(cap_xcomp->xev.xconfigure.width, 0);
-            cap_xcomp->window_size.y = max_int(cap_xcomp->xev.xconfigure.height, 0);
-            cap_xcomp->window_resize_timer = clock_get_monotonic_seconds();
-            cap_xcomp->window_resized = true;
+        switch(cap_xcomp->xev.type) {
+            case DestroyNotify: {
+                /* Window died (when not following focused window), so we stop recording */
+                if(!cap_xcomp->params.follow_focused && cap_xcomp->xev.xdestroywindow.window == cap_xcomp->window) {
+                    cap_xcomp->should_stop = true;
+                    cap_xcomp->stop_is_error = false;
+                }
+                break;
+            }
+            case Expose: {
+                /* Requires window texture recreate */
+                if(cap_xcomp->xev.xexpose.count == 0 && cap_xcomp->xev.xexpose.window == cap_xcomp->window) {
+                    cap_xcomp->window_resize_timer = clock_get_monotonic_seconds();
+                    cap_xcomp->window_resized = true;
+                }
+                break;
+            }
+            case ConfigureNotify: {
+                /* Window resized */
+                if(cap_xcomp->xev.xconfigure.window == cap_xcomp->window && (cap_xcomp->xev.xconfigure.width != cap_xcomp->window_size.x || cap_xcomp->xev.xconfigure.height != cap_xcomp->window_size.y)) {
+                    cap_xcomp->window_size.x = max_int(cap_xcomp->xev.xconfigure.width, 0);
+                    cap_xcomp->window_size.y = max_int(cap_xcomp->xev.xconfigure.height, 0);
+                    cap_xcomp->window_resize_timer = clock_get_monotonic_seconds();
+                    cap_xcomp->window_resized = true;
+                }
+                break;
+            }
+            case PropertyNotify: {
+                /* Focused window changed */
+                if(cap_xcomp->params.follow_focused && cap_xcomp->xev.xproperty.atom == cap_xcomp->net_active_window_atom) {
+                    init_new_window = true;
+                }
+                break;
+            }
         }
     }
 
-    if(cap_xcomp->params.follow_focused && (!cap_xcomp->follow_focused_initialized || (XCheckTypedWindowEvent(cap_xcomp->dpy, DefaultRootWindow(cap_xcomp->dpy), PropertyNotify, &cap_xcomp->xev) && cap_xcomp->xev.xproperty.atom == cap_xcomp->net_active_window_atom))) {
+    if(cap_xcomp->params.follow_focused && !cap_xcomp->follow_focused_initialized) {
+        cap_xcomp->follow_focused_initialized = true;
+        init_new_window = true;
+    }
+
+    if(init_new_window) {
         Window focused_window = get_focused_window(cap_xcomp->dpy, cap_xcomp->net_active_window_atom);
         if(focused_window != cap_xcomp->window || !cap_xcomp->follow_focused_initialized) {
-            cap_xcomp->follow_focused_initialized = true;
             XSelectInput(cap_xcomp->dpy, cap_xcomp->window, 0);
             cap_xcomp->window = focused_window;
             XSelectInput(cap_xcomp->dpy, cap_xcomp->window, StructureNotifyMask | ExposureMask);

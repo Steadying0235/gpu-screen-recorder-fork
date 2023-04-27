@@ -260,7 +260,7 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
 #endif
 
     codec_context->time_base.num = 1;
-    codec_context->time_base.den = framerate_mode == FramerateMode::CONSTANT ? codec_context->sample_rate : AV_TIME_BASE;
+    codec_context->time_base.den = AV_TIME_BASE;
     codec_context->framerate.num = fps;
     codec_context->framerate.den = 1;
     codec_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
@@ -633,7 +633,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 }
 
 static void usage_header() {
-    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265] [-ac aac|opus|flac] [-oc yes|no] [-v yes|no] [-h|--help] [-o <output_file>]\n");
+    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265] [-ac aac|opus|flac] [-oc yes|no] [-fm cfr|vfr] [-v yes|no] [-h|--help] [-o <output_file>]\n");
 }
 
 static void usage_full() {
@@ -676,6 +676,8 @@ static void usage_full() {
     fprintf(stderr, "  -oc   Overclock memory transfer rate to the maximum performance level. This only applies to NVIDIA and exists to overcome a bug in NVIDIA driver where performance level\n");
     fprintf(stderr, "        is dropped when you record a game. Only needed if you are recording a game that is bottlenecked by GPU.\n");
     fprintf(stderr, "        Works only if your have \"Coolbits\" set to \"12\" in NVIDIA X settings, see README for more information. Note! use at your own risk! Optional, disabled by default.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  -fm   Framerate mode. Should be either 'cfr' or 'vfr'. Defaults to 'cfr' on NVIDIA and 'vfr' on AMD/Intel.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -v    Prints per second, fps updates. Optional, set to 'yes' by default.\n");
     fprintf(stderr, "\n");
@@ -781,7 +783,6 @@ struct AudioTrack {
     std::vector<AudioDevice> audio_devices;
     AVFilterGraph *graph = nullptr;
     AVFilterContext *sink = nullptr;
-    int64_t pts = 0;
     int stream_index = 0;
 };
 
@@ -944,8 +945,7 @@ static bool is_livestream_path(const char *str) {
 }
 
 // TODO: Proper cleanup
-static int init_filter_graph(AVCodecContext *audio_codec_context, AVFilterGraph **graph, AVFilterContext **sink, std::vector<AVFilterContext*> &src_filter_ctx, size_t num_sources)
-{
+static int init_filter_graph(AVCodecContext *audio_codec_context, AVFilterGraph **graph, AVFilterContext **sink, std::vector<AVFilterContext*> &src_filter_ctx, size_t num_sources) {
     char ch_layout[64];
     int err = 0;
  
@@ -973,10 +973,11 @@ static int init_filter_graph(AVCodecContext *audio_codec_context, AVFilterGraph 
         #else
         av_channel_layout_describe(&audio_codec_context->ch_layout, ch_layout, sizeof(ch_layout));
         #endif
-        av_opt_set    (abuffer_ctx, "channel_layout", ch_layout,                            AV_OPT_SEARCH_CHILDREN);
+        av_opt_set    (abuffer_ctx, "channel_layout", ch_layout,                                               AV_OPT_SEARCH_CHILDREN);
         av_opt_set    (abuffer_ctx, "sample_fmt",     av_get_sample_fmt_name(audio_codec_context->sample_fmt), AV_OPT_SEARCH_CHILDREN);
-        av_opt_set_q  (abuffer_ctx, "time_base",      { 1, audio_codec_context->sample_rate },  AV_OPT_SEARCH_CHILDREN);
-        av_opt_set_int(abuffer_ctx, "sample_rate",    audio_codec_context->sample_rate,                     AV_OPT_SEARCH_CHILDREN);
+        av_opt_set_q  (abuffer_ctx, "time_base",      audio_codec_context->time_base,                          AV_OPT_SEARCH_CHILDREN);
+        av_opt_set_int(abuffer_ctx, "sample_rate",    audio_codec_context->sample_rate,                        AV_OPT_SEARCH_CHILDREN);
+        av_opt_set_int(abuffer_ctx, "bit_rate",       audio_codec_context->bit_rate,                           AV_OPT_SEARCH_CHILDREN);
     
         err = avfilter_init_str(abuffer_ctx, NULL);
         if (err < 0) {
@@ -997,9 +998,7 @@ static int init_filter_graph(AVCodecContext *audio_codec_context, AVFilterGraph 
     snprintf(args, sizeof(args), "inputs=%d", (int)num_sources);
     
     AVFilterContext *mix_ctx;
-    err = avfilter_graph_create_filter(&mix_ctx, mix_filter, "amix",
-                                       args, NULL, filter_graph);
-
+    err = avfilter_graph_create_filter(&mix_ctx, mix_filter, "amix", args, NULL, filter_graph);
     if (err < 0) {
         av_log(NULL, AV_LOG_ERROR, "Cannot create audio amix filter\n");
         return err;
@@ -1095,6 +1094,7 @@ int main(int argc, char **argv) {
         { "-k", Arg { {}, true, false } },
         { "-ac", Arg { {}, true, false } },
         { "-oc", Arg { {}, true, false } },
+        { "-fm", Arg { {}, true, false } },
         { "-pixfmt", Arg { {}, true, false } },
         { "-v", Arg { {}, true, false } },
     };
@@ -1143,7 +1143,7 @@ int main(int argc, char **argv) {
     AudioCodec audio_codec = AudioCodec::OPUS;
     const char *audio_codec_to_use = args["-ac"].value();
     if(!audio_codec_to_use)
-        audio_codec_to_use = "opus";
+        audio_codec_to_use = "aac";
 
     if(strcmp(audio_codec_to_use, "aac") == 0) {
         audio_codec = AudioCodec::AAC;
@@ -1154,6 +1154,12 @@ int main(int argc, char **argv) {
     } else {
         fprintf(stderr, "Error: -ac should either be either 'aac', 'opus' or 'flac', got: '%s'\n", audio_codec_to_use);
         usage();
+    }
+
+    if(audio_codec != AudioCodec::AAC) {
+        audio_codec_to_use = "aac";
+        audio_codec = AudioCodec::AAC;
+        fprintf(stderr, "Info: audio codec is forcefully set to aac at the moment because of issues with opus/flac. This is a temporary issue\n");
     }
 
     bool overclock = false;
@@ -1305,8 +1311,20 @@ int main(int argc, char **argv) {
     }
 
     // TODO: Fix constant framerate not working properly on amd/intel because capture framerate gets locked to the same framerate as
-    // game framerate, which doesn't work well when you need to encode multiple duplicate frames.
-    const FramerateMode framerate_mode = gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA ? FramerateMode::CONSTANT : FramerateMode::VARIABLE;
+    // game framerate, which doesn't work well when you need to encode multiple duplicate frames (AMD/Intel is slow at encoding!).
+    FramerateMode framerate_mode;
+    const char *framerate_mode_str = args["-fm"].value();
+    if(!framerate_mode_str)
+        framerate_mode_str = gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA ? "cfr" : "vfr";
+
+    if(strcmp(framerate_mode_str, "cfr") == 0) {
+        framerate_mode = FramerateMode::CONSTANT;
+    } else if(strcmp(framerate_mode_str, "vfr") == 0) {
+        framerate_mode = FramerateMode::VARIABLE;
+    } else {
+        fprintf(stderr, "Error: -fm should either be either 'cfr' or 'vfr', got: '%s'\n", framerate_mode_str);
+        usage();
+    }
 
     const char *screen_region = args["-s"].value();
     const char *window_str = args["-w"].value();
@@ -1654,7 +1672,6 @@ int main(int argc, char **argv) {
         audio_track.audio_devices = std::move(audio_devices);
         audio_track.graph = graph;
         audio_track.sink = sink;
-        audio_track.pts = 0;
         audio_track.stream_index = audio_stream_index;
         audio_tracks.push_back(std::move(audio_track));
         ++audio_stream_index;
@@ -1795,16 +1812,11 @@ int main(int argc, char **argv) {
                                     fprintf(stderr, "Error: failed to add audio frame to filter\n");
                                 }
                             } else {
-                                if(framerate_mode == FramerateMode::CONSTANT) {
-                                    audio_track.frame->pts = audio_track.pts;
-                                    audio_track.pts += audio_track.frame->nb_samples;
-                                } else {
-                                    audio_track.frame->pts = (this_audio_frame_time - record_start_time) * (double)AV_TIME_BASE;
-                                    const bool same_pts = audio_track.frame->pts == prev_pts;
-                                    prev_pts = audio_track.frame->pts;
-                                    if(same_pts)
-                                        continue;
-                                }
+                                audio_track.frame->pts = (this_audio_frame_time - record_start_time) * (double)AV_TIME_BASE;
+                                const bool same_pts = audio_track.frame->pts == prev_pts;
+                                prev_pts = audio_track.frame->pts;
+                                if(same_pts)
+                                    continue;
 
                                 ret = avcodec_send_frame(audio_track.codec_context, audio_track.frame);
                                 if(ret >= 0) {
@@ -1827,6 +1839,12 @@ int main(int argc, char **argv) {
                         else
                             audio_track.frame->data[0] = (uint8_t*)sound_buffer;
 
+                        audio_track.frame->pts = (this_audio_frame_time - record_start_time) * (double)AV_TIME_BASE;
+                        const bool same_pts = audio_track.frame->pts == prev_pts;
+                        prev_pts = audio_track.frame->pts;
+                        if(same_pts)
+                            continue;
+
                         if(audio_track.graph) {
                             std::lock_guard<std::mutex> lock(audio_filter_mutex);
                             // TODO: av_buffersrc_add_frame
@@ -1834,17 +1852,6 @@ int main(int argc, char **argv) {
                                 fprintf(stderr, "Error: failed to add audio frame to filter\n");
                             }
                         } else {
-                            if(framerate_mode == FramerateMode::CONSTANT) {
-                                audio_track.frame->pts = audio_track.pts;
-                                audio_track.pts += audio_track.frame->nb_samples;
-                            } else {
-                                audio_track.frame->pts = (this_audio_frame_time - record_start_time) * (double)AV_TIME_BASE;
-                                const bool same_pts = audio_track.frame->pts == prev_pts;
-                                prev_pts = audio_track.frame->pts;
-                                if(same_pts)
-                                    continue;
-                            }
-
                             ret = avcodec_send_frame(audio_track.codec_context, audio_track.frame);
                             if(ret >= 0) {
                                 // TODO: Move to separate thread because this could write to network (for example when livestreaming)
@@ -1891,18 +1898,13 @@ int main(int argc, char **argv) {
 
                 int err = 0;
                 while ((err = av_buffersink_get_frame(audio_track.sink, aframe)) >= 0) {
-                    if(framerate_mode == FramerateMode::CONSTANT) {
-                        aframe->pts = audio_track.pts;
-                        audio_track.pts += audio_track.codec_context->frame_size;
-                    } else {
-                        const double this_audio_frame_time = clock_get_monotonic_seconds();
-                        aframe->pts = (this_audio_frame_time - record_start_time) * (double)AV_TIME_BASE;
-                        const bool same_pts = aframe->pts == audio_prev_pts;
-                        audio_prev_pts = aframe->pts;
-                        if(same_pts) {
-                            av_frame_unref(aframe);
-                            continue;
-                        }
+                    const double this_audio_frame_time = clock_get_monotonic_seconds();
+                    aframe->pts = (this_audio_frame_time - record_start_time) * (double)AV_TIME_BASE;
+                    const bool same_pts = aframe->pts == audio_prev_pts;
+                    audio_prev_pts = aframe->pts;
+                    if(same_pts) {
+                        av_frame_unref(aframe);
+                        continue;
                     }
 
                     err = avcodec_send_frame(audio_track.codec_context, aframe);

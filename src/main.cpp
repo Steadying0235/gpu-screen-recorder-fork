@@ -1577,7 +1577,12 @@ int main(int argc, char **argv) {
     }
 
     if(!video_codec_f) {
-        fprintf(stderr, "Error: your gpu does not support '%s' video codec\n", video_codec == VideoCodec::H264 ? "h264" : "h265");
+        const char *video_codec_name = video_codec == VideoCodec::H264 ? "h264" : "h265";
+        fprintf(stderr, "Error: your gpu does not support '%s' video codec. If you are sure that your gpu does support '%s' video encoding and you are using an AMD/Intel GPU,\n"
+            "  then it's possible that your distro has disabled hardware accelerated video encoding for '%s' video codec.\n"
+            "  This may be the case on corporate distros such as Manjaro.\n"
+            "  You can test this by running 'vainfo | grep VAEntrypointEncSlice' to see if it matches any H264/HEVC profile. vainfo is part of libva-utils.\n"
+            "  On such distros, you need to manually install mesa from source to enable H264/HEVC hardware acceleration, or use a more user friendly distro.\n", video_codec_name, video_codec_name, video_codec_name);
         exit(2);
     }
 

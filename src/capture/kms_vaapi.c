@@ -45,6 +45,7 @@ typedef struct {
     gsr_kms_client kms_client;
     gsr_kms_response kms_response;
 
+    vec2i screen_size;
     vec2i capture_pos;
     vec2i capture_size;
     bool screen_capture;
@@ -136,6 +137,10 @@ static bool properties_has_atom(Atom *props, int nprop, Atom atom) {
 static void monitor_callback(const XRROutputInfo *output_info, const XRRCrtcInfo *crt_info, const XRRModeInfo *mode_info, void *userdata) {
     MonitorCallbackUserdata *monitor_callback_userdata = userdata;
     ++monitor_callback_userdata->num_monitors;
+
+    if(strcmp(monitor_callback_userdata->monitor_to_capture, "screen") == 0)
+        monitor_callback_userdata->rotation = crt_info->rotation;
+
     if(monitor_callback_userdata->monitor_to_capture_len != output_info->nameLen || memcmp(monitor_callback_userdata->monitor_to_capture, output_info->name, output_info->nameLen) != 0)
         return;
 
@@ -190,12 +195,14 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
     };
     for_each_active_monitor_output(cap_kms->dpy, monitor_callback, &monitor_callback_userdata);
 
+    cap_kms->screen_size.x = WidthOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
+    cap_kms->screen_size.y = HeightOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
+
     gsr_monitor monitor;
     if(strcmp(cap_kms->params.display_to_capture, "screen") == 0) {
         monitor.pos.x = 0;
         monitor.pos.y = 0;
-        monitor.size.x = WidthOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
-        monitor.size.y = HeightOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
+        monitor.size = cap_kms->screen_size;
         cap_kms->screen_capture = true;
     } else if(!get_monitor_by_name(cap_kms->dpy, cap_kms->params.display_to_capture, &monitor)) {
         fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
@@ -412,6 +419,22 @@ static gsr_kms_response_fd* find_first_combined_drm(gsr_kms_response *kms_respon
     return NULL;
 }
 
+static gsr_kms_response_fd* find_largest_drm(gsr_kms_response *kms_response) {
+    if(kms_response->num_fds == 0)
+        return NULL;
+
+    int64_t largest_size = 0;
+    gsr_kms_response_fd *largest_drm = &kms_response->fds[0];
+    for(int i = 0; i < kms_response->num_fds; ++i) {
+        const int64_t size = (int64_t)kms_response->fds[i].width * (int64_t)kms_response->fds[i].height;
+        if(size > largest_size) {
+            largest_size = size;
+            largest_drm = &kms_response->fds[i];
+        }
+    }
+    return largest_drm;
+}
+
 static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
@@ -442,16 +465,9 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_kms_response_fd *drm_fd = NULL;
     if(cap_kms->screen_capture) {
         drm_fd = find_first_combined_drm(&cap_kms->kms_response);
-        if(drm_fd) {
-            capture_is_combined_plane = true;
-        } else {
-            static bool error_shown = false;
-            if(!error_shown) {
-                error_shown = true;
-                fprintf(stderr, "gsr warning: no combined drm found, screen capture will capture the first monitor found instead\n");
-            }
-            drm_fd = &cap_kms->kms_response.fds[0];
-        }
+        if(!drm_fd)
+            drm_fd = find_largest_drm(&cap_kms->kms_response);
+        capture_is_combined_plane = drm_fd->is_combined_plane || ((int)drm_fd->width == cap_kms->screen_size.x && (int)drm_fd->height == cap_kms->screen_size.y);
     } else {
         for(int i = 0; i < cap_kms->monitor_id.num_connector_ids; ++i) {
             drm_fd = find_drm_by_connector_id(&cap_kms->kms_response, cap_kms->monitor_id.connector_ids[i]);
@@ -464,16 +480,9 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
 
         if(!drm_fd) {
             drm_fd = find_first_combined_drm(&cap_kms->kms_response);
-            if(drm_fd) {
-                capture_is_combined_plane = true;
-            } else {
-                static bool error_shown = false;
-                if(!error_shown) {
-                    error_shown = true;
-                    fprintf(stderr, "gsr error: no drm found for monitor and no combined drm found, capture will fail\n");
-                }
-                return -1;
-            }
+            if(!drm_fd)
+                drm_fd = find_largest_drm(&cap_kms->kms_response);
+            capture_is_combined_plane = drm_fd->is_combined_plane || ((int)drm_fd->width == cap_kms->screen_size.x && (int)drm_fd->height == cap_kms->screen_size.y);
         }
     }
 

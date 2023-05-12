@@ -14,6 +14,7 @@
 
 #include <xf86drm.h>
 #include <xf86drmMode.h>
+#include <libdrm/drm_mode.h>
 
 #define MAX_CONNECTORS 32
 
@@ -85,6 +86,37 @@ static bool connector_get_property_by_name(int drmfd, drmModeConnectorPtr props,
     return false;
 }
 
+static bool plane_is_cursor_plane(int drmfd, uint32_t plane_id) {
+    drmModeObjectPropertiesPtr props = drmModeObjectGetProperties(drmfd, plane_id, DRM_MODE_OBJECT_PLANE);
+    if(!props)
+        return false;
+
+    for(uint32_t i = 0; i < props->count_props; ++i) {
+        drmModePropertyPtr prop = drmModeGetProperty(drmfd, props->props[i]);
+        if(prop) {
+            if(strcmp(prop->name, "type") == 0) {
+                const uint64_t current_enum_value = props->prop_values[i];
+                bool is_cursor = false;
+
+                for(int j = 0; j < prop->count_enums; ++j) {
+                    if(prop->enums[j].value == current_enum_value && strcmp(prop->enums[j].name, "Cursor") == 0) {
+                        is_cursor = true;
+                        break;
+                    }
+
+                }
+
+                drmModeFreeProperty(prop);
+                return is_cursor;
+            }
+            drmModeFreeProperty(prop);
+        }
+    }
+
+    drmModeFreeObjectProperties(props);
+    return false;
+}
+
 /* Returns 0 if not found */
 static uint32_t get_connector_by_crtc_id(const connector_to_crtc_map *c2crtc_map, uint32_t crtc_id) {
     for(int i = 0; i < c2crtc_map->num_maps; ++i) {
@@ -146,6 +178,9 @@ static int kms_get_plane_ids(gsr_drm *drm) {
             drmModeFreePlane(plane);
             continue;
         }
+
+        if(plane_is_cursor_plane(drm->drmfd, plane->plane_id))
+            continue;
 
         // TODO: Fallback to getfb(1)?
         drmModeFB2Ptr drmfb = drmModeGetFB2(drm->drmfd, plane->fb_id);

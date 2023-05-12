@@ -2,6 +2,9 @@
 #define GSR_KMS_SHARED_H
 
 #include <stdint.h>
+#include <stdbool.h>
+
+#define GSR_KMS_MAX_PLANES 32
 
 typedef enum {
     KMS_REQUEST_TYPE_GET_KMS
@@ -26,14 +29,15 @@ typedef struct {
     uint32_t offset;
     uint32_t pixel_format;
     uint64_t modifier;
+    uint32_t connector_id; /* 0 if unknown */
+    bool is_combined_plane;
 } gsr_kms_response_fd;
 
 typedef struct {
     int result; /* gsr_kms_result */
-    union {
-        char err_msg[128];
-        gsr_kms_response_fd fd;
-    } data;
+    char err_msg[128];
+    gsr_kms_response_fd fds[GSR_KMS_MAX_PLANES];
+    int num_fds;
 } gsr_kms_response;
 
 #endif /* #define GSR_KMS_SHARED_H */

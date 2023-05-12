@@ -55,7 +55,7 @@ static int recv_msg_from_server(int server_fd, gsr_kms_response *response) {
     response_message.msg_iov = &iov;
     response_message.msg_iovlen = 1;
 
-    char cmsgbuf[CMSG_SPACE(sizeof(int))];
+    char cmsgbuf[CMSG_SPACE(sizeof(int) * GSR_KMS_MAX_PLANES)];
     memset(cmsgbuf, 0, sizeof(cmsgbuf));
     response_message.msg_control = cmsgbuf;
     response_message.msg_controllen = sizeof(cmsgbuf);
@@ -64,15 +64,17 @@ static int recv_msg_from_server(int server_fd, gsr_kms_response *response) {
     if(res <= 0)
         return res;
 
-    if(response->result == KMS_RESULT_OK)
-        response->data.fd.fd = 0;
-
-    struct cmsghdr *cmsg = CMSG_FIRSTHDR(&response_message);
-    if(cmsg) {
-        if(cmsg->cmsg_type == SCM_RIGHTS) {
-            int kms_fd = 0;
-            memcpy(&kms_fd, CMSG_DATA(cmsg), sizeof(int));
-            response->data.fd.fd = kms_fd;
+    if(response->num_fds > 0) {
+        struct cmsghdr *cmsg = CMSG_FIRSTHDR(&response_message);
+        if(cmsg) {
+            int *fds = (int*)CMSG_DATA(cmsg);
+            for(int i = 0; i < response->num_fds; ++i) {
+                response->fds[i].fd = fds[i];
+            }
+        } else {
+            for(int i = 0; i < response->num_fds; ++i) {
+                response->fds[i].fd = 0;
+            }
         }
     }
 
@@ -246,7 +248,7 @@ void gsr_kms_client_deinit(gsr_kms_client *self) {
 
 int gsr_kms_client_get_kms(gsr_kms_client *self, gsr_kms_response *response) {
     response->result = KMS_RESULT_FAILED_TO_SEND;
-    strcpy(response->data.err_msg, "failed to send");
+    strcpy(response->err_msg, "failed to send");
 
     gsr_kms_request request;
     request.type = KMS_REQUEST_TYPE_GET_KMS;

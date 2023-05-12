@@ -9,12 +9,20 @@
 #include <unistd.h>
 #include <assert.h>
 #include <X11/Xlib.h>
+#include <X11/Xatom.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_vaapi.h>
 #include <libavutil/frame.h>
 #include <libavcodec/avcodec.h>
 #include <va/va.h>
 #include <va/va_drmcommon.h>
+
+#define MAX_CONNECTOR_IDS 32
+
+typedef struct {
+    uint32_t connector_ids[MAX_CONNECTOR_IDS];
+    int num_connector_ids;
+} MonitorId;
 
 typedef enum {
     X11_ROT_0    = 1 << 0,
@@ -35,17 +43,12 @@ typedef struct {
     gsr_egl egl;
     
     gsr_kms_client kms_client;
-
-    uint32_t fourcc;
-    uint64_t modifiers;
-    int dmabuf_fd;
-    uint32_t pitch;
-    uint32_t offset;
-    vec2i kms_size;
+    gsr_kms_response kms_response;
 
     vec2i capture_pos;
     vec2i capture_size;
     bool screen_capture;
+    MonitorId monitor_id;
 
     VADisplay va_dpy;
 
@@ -114,25 +117,77 @@ static bool drm_create_codec_context(gsr_capture_kms_vaapi *cap_kms, AVCodecCont
 // TODO: On monitor reconfiguration, find monitor x, y, width and height again. Do the same for nvfbc.
 
 typedef struct {
+    gsr_capture_kms_vaapi *cap_kms;
+    const Atom randr_connector_id_atom;
+    const char *monitor_to_capture;
+    int monitor_to_capture_len;
     int num_monitors;
     int rotation;
 } MonitorCallbackUserdata;
 
+static bool properties_has_atom(Atom *props, int nprop, Atom atom) {
+    for(int i = 0; i < nprop; ++i) {
+        if(props[i] == atom)
+            return true;
+    }
+    return false;
+}
+
 static void monitor_callback(const XRROutputInfo *output_info, const XRRCrtcInfo *crt_info, const XRRModeInfo *mode_info, void *userdata) {
     MonitorCallbackUserdata *monitor_callback_userdata = userdata;
-    monitor_callback_userdata->rotation = crt_info->rotation;
     ++monitor_callback_userdata->num_monitors;
+    if(monitor_callback_userdata->monitor_to_capture_len != output_info->nameLen || memcmp(monitor_callback_userdata->monitor_to_capture, output_info->name, output_info->nameLen) != 0)
+        return;
+
+    monitor_callback_userdata->rotation = crt_info->rotation;
+    for(int i = 0; i < crt_info->noutput && monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids < MAX_CONNECTOR_IDS; ++i) {
+        int nprop = 0;
+        Atom *props = XRRListOutputProperties(monitor_callback_userdata->cap_kms->dpy, crt_info->outputs[i], &nprop);
+        if(!props)
+            continue;
+
+        if(!properties_has_atom(props, nprop, monitor_callback_userdata->randr_connector_id_atom)) {
+            XFree(props);
+            continue;
+        }
+
+        Atom type = 0;
+        int format = 0;
+        unsigned long bytes_after = 0;
+        unsigned long nitems = 0;
+        unsigned char *prop = NULL;
+        XRRGetOutputProperty(monitor_callback_userdata->cap_kms->dpy, crt_info->outputs[i],
+            monitor_callback_userdata->randr_connector_id_atom,
+            0, 128, false, false, AnyPropertyType,
+            &type, &format, &nitems, &bytes_after, &prop);
+
+        if(type == XA_INTEGER && format == 32) {
+            monitor_callback_userdata->cap_kms->monitor_id.connector_ids[monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids] = *(long*)prop;
+            ++monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids;
+        }
+
+        XFree(props);
+    }
+
+    if(monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids == MAX_CONNECTOR_IDS)
+        fprintf(stderr, "gsr warning: reached max connector ids\n");
 }
 
 static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
-    // TODO: Allow specifying another card, and in other places
     if(gsr_kms_client_init(&cap_kms->kms_client, cap_kms->params.card_path) != 0) {
         return -1;
     }
 
-    MonitorCallbackUserdata monitor_callback_userdata = {0, X11_ROT_0};
+    const Atom randr_connector_id_atom = XInternAtom(cap_kms->dpy, "CONNECTOR_ID", False);
+    cap_kms->monitor_id.num_connector_ids = 0;
+    MonitorCallbackUserdata monitor_callback_userdata = {
+        cap_kms, randr_connector_id_atom,
+        cap_kms->params.display_to_capture, strlen(cap_kms->params.display_to_capture),
+        0,
+        X11_ROT_0
+    };
     for_each_active_monitor_output(cap_kms->dpy, monitor_callback, &monitor_callback_userdata);
 
     gsr_monitor monitor;
@@ -341,27 +396,86 @@ static bool gsr_capture_kms_vaapi_should_stop(gsr_capture *cap, bool *err) {
     return false;
 }
 
+static gsr_kms_response_fd* find_drm_by_connector_id(gsr_kms_response *kms_response, uint32_t connector_id) {
+    for(int i = 0; i < kms_response->num_fds; ++i) {
+        if(kms_response->fds[i].connector_id == connector_id)
+            return &kms_response->fds[i];
+    }
+    return NULL;
+}
+
+static gsr_kms_response_fd* find_first_combined_drm(gsr_kms_response *kms_response) {
+    for(int i = 0; i < kms_response->num_fds; ++i) {
+        if(kms_response->fds[i].is_combined_plane)
+            return &kms_response->fds[i];
+    }
+    return NULL;
+}
+
 static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
-    if(cap_kms->dmabuf_fd > 0) {
-        close(cap_kms->dmabuf_fd);
-        cap_kms->dmabuf_fd = 0;
+    for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {
+        if(cap_kms->kms_response.fds[i].fd > 0)
+            close(cap_kms->kms_response.fds[i].fd);
+        cap_kms->kms_response.fds[i].fd = 0;
     }
+    cap_kms->kms_response.num_fds = 0;
 
-    gsr_kms_response kms_response;
-    if(gsr_kms_client_get_kms(&cap_kms->kms_client, &kms_response) != 0) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: failed to get kms, error: %d (%s)\n", kms_response.result, kms_response.data.err_msg);
+    if(gsr_kms_client_get_kms(&cap_kms->kms_client, &cap_kms->kms_response) != 0) {
+        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: failed to get kms, error: %d (%s)\n", cap_kms->kms_response.result, cap_kms->kms_response.err_msg);
         return -1;
     }
 
-    cap_kms->dmabuf_fd = kms_response.data.fd.fd;
-    cap_kms->pitch = kms_response.data.fd.pitch;
-    cap_kms->offset = kms_response.data.fd.offset;
-    cap_kms->fourcc = kms_response.data.fd.pixel_format;
-    cap_kms->modifiers = kms_response.data.fd.modifier;
-    cap_kms->kms_size.x = kms_response.data.fd.width;
-    cap_kms->kms_size.y = kms_response.data.fd.height;
+    if(cap_kms->kms_response.num_fds == 0) {
+        static bool error_shown = false;
+        if(!error_shown) {
+            error_shown = true;
+            fprintf(stderr, "gsr error: no drm found, capture will fail\n");
+        }
+        return -1;
+    }
+
+    bool requires_rotation = cap_kms->requires_rotation;
+    bool capture_is_combined_plane = false;
+
+    gsr_kms_response_fd *drm_fd = NULL;
+    if(cap_kms->screen_capture) {
+        drm_fd = find_first_combined_drm(&cap_kms->kms_response);
+        if(drm_fd) {
+            capture_is_combined_plane = true;
+        } else {
+            static bool error_shown = false;
+            if(!error_shown) {
+                error_shown = true;
+                fprintf(stderr, "gsr warning: no combined drm found, screen capture will capture the first monitor found instead\n");
+            }
+            drm_fd = &cap_kms->kms_response.fds[0];
+        }
+    } else {
+        for(int i = 0; i < cap_kms->monitor_id.num_connector_ids; ++i) {
+            drm_fd = find_drm_by_connector_id(&cap_kms->kms_response, cap_kms->monitor_id.connector_ids[i]);
+            if(drm_fd) {
+                requires_rotation = cap_kms->x11_rot != X11_ROT_0;
+                capture_is_combined_plane = drm_fd->is_combined_plane;
+                break;
+            }
+        }
+
+        if(!drm_fd) {
+            drm_fd = find_first_combined_drm(&cap_kms->kms_response);
+            if(drm_fd) {
+                capture_is_combined_plane = true;
+            } else {
+                static bool error_shown = false;
+                if(!error_shown) {
+                    error_shown = true;
+                    fprintf(stderr, "gsr error: no drm found for monitor and no combined drm found, capture will fail\n");
+                }
+                return -1;
+            }
+        }
+    }
 
     // TODO: This causes a crash sometimes on steam deck, why? is it a driver bug? a vaapi pure version doesn't cause a crash.
     // Even ffmpeg kmsgrab causes this crash. The error is:
@@ -382,12 +496,12 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     // Assertion pic->display_order == pic->encode_order failed at libavcodec/vaapi_encode_h265.c:765
     // kms server info: kms client shutdown, shutting down the server
     const intptr_t img_attr[] = {
-        EGL_LINUX_DRM_FOURCC_EXT,   cap_kms->fourcc,
-        EGL_WIDTH,                  cap_kms->kms_size.x,
-        EGL_HEIGHT,                 cap_kms->kms_size.y,
-        EGL_DMA_BUF_PLANE0_FD_EXT,  cap_kms->dmabuf_fd,
-        EGL_DMA_BUF_PLANE0_OFFSET_EXT,  cap_kms->offset,
-        EGL_DMA_BUF_PLANE0_PITCH_EXT,  cap_kms->pitch,
+        EGL_LINUX_DRM_FOURCC_EXT,       drm_fd->pixel_format,
+        EGL_WIDTH,                      drm_fd->width,
+        EGL_HEIGHT,                     drm_fd->height,
+        EGL_DMA_BUF_PLANE0_FD_EXT,      drm_fd->fd,
+        EGL_DMA_BUF_PLANE0_OFFSET_EXT,  drm_fd->offset,
+        EGL_DMA_BUF_PLANE0_PITCH_EXT,   drm_fd->pitch,
         EGL_NONE
     };
 
@@ -398,7 +512,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     cap_kms->egl.glBindTexture(GL_TEXTURE_2D, 0);
 
     float texture_rotation = 0.0f;
-    if(cap_kms->requires_rotation) {
+    if(requires_rotation) {
         switch(cap_kms->x11_rot) {
             case X11_ROT_90:
                 texture_rotation = M_PI*0.5f;
@@ -417,22 +531,32 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
 
     gsr_cursor_tick(&cap_kms->cursor);
 
+    vec2i capture_pos = cap_kms->capture_pos;
+    vec2i capture_size = cap_kms->capture_size;
+    vec2i cursor_capture_pos = (vec2i){cap_kms->cursor.position.x - cap_kms->cursor.hotspot.x - capture_pos.x, cap_kms->cursor.position.y - cap_kms->cursor.hotspot.y - capture_pos.y};
+    if(!capture_is_combined_plane) {
+        capture_pos = (vec2i){0, 0};
+        //cursor_capture_pos = (vec2i){cap_kms->cursor.position.x - cap_kms->cursor.hotspot.x, cap_kms->cursor.position.y - cap_kms->cursor.hotspot.y};
+    }
+
     gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
-        (vec2i){0, 0}, (vec2i){cap_kms->capture_size.x, cap_kms->capture_size.y},
-        (vec2i){cap_kms->capture_pos.x, cap_kms->capture_pos.y}, (vec2i){cap_kms->capture_size.x, cap_kms->capture_size.y},
+        (vec2i){0, 0}, capture_size,
+        capture_pos, capture_size,
         texture_rotation);
 
     gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->cursor.texture_id,
-        (vec2i){cap_kms->cursor.position.x - cap_kms->cursor.hotspot.x - cap_kms->capture_pos.x, cap_kms->cursor.position.y - cap_kms->cursor.hotspot.y - cap_kms->capture_pos.y}, (vec2i){cap_kms->cursor.size.x, cap_kms->cursor.size.y},
+        cursor_capture_pos, (vec2i){cap_kms->cursor.size.x, cap_kms->cursor.size.y},
         (vec2i){0, 0}, (vec2i){cap_kms->cursor.size.x, cap_kms->cursor.size.y},
         0.0f);
 
     cap_kms->egl.eglSwapBuffers(cap_kms->egl.egl_display, cap_kms->egl.egl_surface);
 
-    if(cap_kms->dmabuf_fd > 0) {
-        close(cap_kms->dmabuf_fd);
-        cap_kms->dmabuf_fd = 0;
+    for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {
+        if(cap_kms->kms_response.fds[i].fd > 0)
+            close(cap_kms->kms_response.fds[i].fd);
+        cap_kms->kms_response.fds[i].fd = 0;
     }
+    cap_kms->kms_response.num_fds = 0;
 
     return 0;
 }
@@ -459,10 +583,12 @@ static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_c
     cap_kms->target_textures[0] = 0;
     cap_kms->target_textures[1] = 0;
 
-    if(cap_kms->dmabuf_fd > 0) {
-        close(cap_kms->dmabuf_fd);
-        cap_kms->dmabuf_fd = 0;
+    for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {
+        if(cap_kms->kms_response.fds[i].fd > 0)
+            close(cap_kms->kms_response.fds[i].fd);
+        cap_kms->kms_response.fds[i].fd = 0;
     }
+    cap_kms->kms_response.num_fds = 0;
 
     if(video_codec_context->hw_device_ctx)
         av_buffer_unref(&video_codec_context->hw_device_ctx);

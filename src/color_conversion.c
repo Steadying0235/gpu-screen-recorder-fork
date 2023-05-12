@@ -267,7 +267,7 @@ int gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_i
 
     {
         self->params.egl->glBindFramebuffer(GL_FRAMEBUFFER, self->framebuffers[0]);
-        //cap_xcomp->egl.glClear(GL_COLOR_BUFFER_BIT);
+        //cap_xcomp->egl.glClear(GL_COLOR_BUFFER_BIT); // TODO: Do this in a separate clear_ function. We want to do that when using multiple drm to create the final image (multiple monitors for example)
 
         gsr_shader_use(&self->shaders[0]);
         self->params.egl->glUniform1f(self->rotation_uniforms[0], rotation);

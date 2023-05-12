@@ -1304,6 +1304,7 @@ int main(int argc, char **argv) {
     char card_path[128];
     card_path[0] = '\0';
     if(gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA) {
+        // TODO: Allow specifying another card, and in other places
         if(!gsr_get_valid_card_path(card_path)) {
             fprintf(stderr, "Error: no /dev/dri/cardX device found\n");
             return 2;

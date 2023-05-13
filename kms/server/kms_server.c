@@ -1,6 +1,5 @@
 #include "../kms_shared.h"
 
-#include <asm-generic/socket.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>

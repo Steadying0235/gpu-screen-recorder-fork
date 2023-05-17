@@ -294,6 +294,15 @@ static double clock_get_monotonic_seconds(void) {
     return (double)ts.tv_sec + (double)ts.tv_nsec * 0.000000001;
 }
 
+static void strncpy_safe(char *dst, const char *src, int len) {
+    int src_len = strlen(src);
+    int min_len = src_len;
+    if(len - 1 < min_len)
+        min_len = len - 1;
+    memcpy(dst, src, min_len);
+    dst[min_len] = '\0';
+}
+
 int main(int argc, char **argv) {
     if(argc != 3) {
         fprintf(stderr, "usage: kms_server <domain_socket_path> <card_path>\n");
@@ -329,7 +338,7 @@ int main(int argc, char **argv) {
     while(clock_get_monotonic_seconds() - start_time < connect_timeout_sec) {
         struct sockaddr_un remote_addr = {0};
         remote_addr.sun_family = AF_UNIX;
-        strncpy(remote_addr.sun_path, domain_socket_path, sizeof(remote_addr.sun_path));
+        strncpy_safe(remote_addr.sun_path, domain_socket_path, sizeof(remote_addr.sun_path));
         // TODO: Check if parent disconnected
         if(connect(socket_fd, (struct sockaddr*)&remote_addr, sizeof(remote_addr.sun_family) + strlen(remote_addr.sun_path)) == -1) {
             if(errno == ECONNREFUSED || errno == ENOENT) {

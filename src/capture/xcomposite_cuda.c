@@ -477,7 +477,6 @@ static int gsr_capture_xcomposite_cuda_capture(gsr_capture *cap, AVFrame *frame)
 }
 
 static void gsr_capture_xcomposite_cuda_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
-    gsr_capture_xcomposite_cuda *cap_xcomp = cap->priv;
     if(cap->priv) {
         gsr_capture_xcomposite_cuda_stop(cap, video_codec_context);
         free(cap->priv);

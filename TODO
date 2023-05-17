@@ -60,7 +60,6 @@ Intel is a bit weird with monitor capture and multiple monitors. If one of the m
     How about if multiple monitors are rotated?
 
 When using multiple monitors kms grab the target monitor instead of the whole screen.
-Enable opus/flac again. It's broken right now when merging audio inputs. The audio gets a lot of static noise!
 
 Support vp8/vp9/av1. This is especially important on amd which on some distros (such as Manjaro) where hardware accelerated h264/hevc is disabled in the mesa package.
 

@@ -606,7 +606,6 @@ static void gsr_capture_xcomposite_vaapi_stop(gsr_capture *cap, AVCodecContext *
 
 static void gsr_capture_xcomposite_vaapi_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
     (void)video_codec_context;
-    gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
     if(cap->priv) {
         gsr_capture_xcomposite_vaapi_stop(cap, video_codec_context);
         free(cap->priv);

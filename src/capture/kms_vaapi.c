@@ -135,6 +135,7 @@ static bool properties_has_atom(Atom *props, int nprop, Atom atom) {
 }
 
 static void monitor_callback(const XRROutputInfo *output_info, const XRRCrtcInfo *crt_info, const XRRModeInfo *mode_info, void *userdata) {
+    (void)mode_info;
     MonitorCallbackUserdata *monitor_callback_userdata = userdata;
     ++monitor_callback_userdata->num_monitors;
 
@@ -436,6 +437,7 @@ static gsr_kms_response_fd* find_largest_drm(gsr_kms_response *kms_response) {
 }
 
 static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
+    (void)frame;
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
     for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {

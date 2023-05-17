@@ -95,6 +95,10 @@ static bool version_less_than(int major, int minor, int expected_major, int expe
     return major < expected_major || (major == expected_major && minor < expected_minor);
 }
 
+static void set_func_ptr(void **dst, void *src) {
+    *dst = src;
+}
+
 static bool gsr_capture_nvfbc_load_library(gsr_capture *cap) {
     gsr_capture_nvfbc *cap_nvfbc = cap->priv;
 
@@ -105,7 +109,7 @@ static bool gsr_capture_nvfbc_load_library(gsr_capture *cap) {
         return false;
     }
 
-    cap_nvfbc->nv_fbc_create_instance = (PNVFBCCREATEINSTANCE)dlsym(lib, "NvFBCCreateInstance");
+    set_func_ptr((void**)&cap_nvfbc->nv_fbc_create_instance, dlsym(lib, "NvFBCCreateInstance"));
     if(!cap_nvfbc->nv_fbc_create_instance) {
         fprintf(stderr, "gsr error: unable to resolve symbol 'NvFBCCreateInstance'\n");
         dlclose(lib);

@@ -46,6 +46,7 @@ void for_each_active_monitor_output(Display *display, active_monitor_callback ca
 }
 
 static void get_monitor_by_name_callback(const XRROutputInfo *output_info, const XRRCrtcInfo *crt_info, const XRRModeInfo *mode_info, void *userdata) {
+    (void)mode_info;
     get_monitor_by_name_userdata *data = (get_monitor_by_name_userdata*)userdata;
     if(!data->found_monitor && data->name_len == output_info->nameLen && memcmp(data->name, output_info->name, data->name_len) == 0) {
         data->monitor->pos = (vec2i){ .x = crt_info->x, .y = crt_info->y };

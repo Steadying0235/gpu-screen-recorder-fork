@@ -96,6 +96,15 @@ static bool create_socket_path(char *output_path, size_t output_path_size) {
     return true;
 }
 
+static void strncpy_safe(char *dst, const char *src, int len) {
+    int src_len = strlen(src);
+    int min_len = src_len;
+    if(len - 1 < min_len)
+        min_len = len - 1;
+    memcpy(dst, src, min_len);
+    dst[min_len] = '\0';
+}
+
 int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     self->kms_server_pid = -1;
     self->socket_fd = -1;
@@ -152,7 +161,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     }
 
     local_addr.sun_family = AF_UNIX;
-    strncpy(local_addr.sun_path, self->socket_path, sizeof(local_addr.sun_path));
+    strncpy_safe(local_addr.sun_path, self->socket_path, sizeof(local_addr.sun_path));
     if(bind(self->socket_fd, (struct sockaddr*)&local_addr, sizeof(local_addr.sun_family) + strlen(local_addr.sun_path)) == -1) {
         fprintf(stderr, "gsr error: gsr_kms_client_init: failed to bind socket, error: %s\n", strerror(errno));
         goto err;

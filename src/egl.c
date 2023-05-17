@@ -112,9 +112,9 @@ static bool gsr_egl_load_egl(gsr_egl *self, void *library) {
 }
 
 static bool gsr_egl_proc_load_egl(gsr_egl *self) {
-    self->eglExportDMABUFImageQueryMESA = self->eglGetProcAddress("eglExportDMABUFImageQueryMESA");
-    self->eglExportDMABUFImageMESA = self->eglGetProcAddress("eglExportDMABUFImageMESA");
-    self->glEGLImageTargetTexture2DOES = self->eglGetProcAddress("glEGLImageTargetTexture2DOES");
+    self->eglExportDMABUFImageQueryMESA = (FUNC_eglExportDMABUFImageQueryMESA)self->eglGetProcAddress("eglExportDMABUFImageQueryMESA");
+    self->eglExportDMABUFImageMESA = (FUNC_eglExportDMABUFImageMESA)self->eglGetProcAddress("eglExportDMABUFImageMESA");
+    self->glEGLImageTargetTexture2DOES = (FUNC_glEGLImageTargetTexture2DOES)self->eglGetProcAddress("glEGLImageTargetTexture2DOES");
 
     if(!self->glEGLImageTargetTexture2DOES) {
         fprintf(stderr, "gsr error: gsr_egl_load failed: could not find glEGLImageTargetTexture2DOES\n");

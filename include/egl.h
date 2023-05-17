@@ -90,6 +90,10 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define GL_COMPILE_STATUS                       0x8B81
 #define GL_LINK_STATUS                          0x8B82
 
+typedef unsigned int (*FUNC_eglExportDMABUFImageQueryMESA)(EGLDisplay dpy, EGLImageKHR image, int *fourcc, int *num_planes, uint64_t *modifiers);
+typedef unsigned int (*FUNC_eglExportDMABUFImageMESA)(EGLDisplay dpy, EGLImageKHR image, int *fds, int32_t *strides, int32_t *offsets);
+typedef void (*FUNC_glEGLImageTargetTexture2DOES)(unsigned int target, GLeglImageOES image);
+
 typedef struct {
     void *egl_library;
     void *gl_library;
@@ -115,9 +119,9 @@ typedef struct {
     unsigned int (*eglSwapBuffers)(EGLDisplay dpy, EGLSurface surface);
     __eglMustCastToProperFunctionPointerType (*eglGetProcAddress)(const char *procname);
 
-    unsigned int (*eglExportDMABUFImageQueryMESA)(EGLDisplay dpy, EGLImageKHR image, int *fourcc, int *num_planes, uint64_t *modifiers);
-    unsigned int (*eglExportDMABUFImageMESA)(EGLDisplay dpy, EGLImageKHR image, int *fds, int32_t *strides, int32_t *offsets);
-    void (*glEGLImageTargetTexture2DOES)(unsigned int target, GLeglImageOES image);
+    FUNC_eglExportDMABUFImageQueryMESA eglExportDMABUFImageQueryMESA;
+    FUNC_eglExportDMABUFImageMESA eglExportDMABUFImageMESA;
+    FUNC_glEGLImageTargetTexture2DOES glEGLImageTargetTexture2DOES;
 
     unsigned int (*glGetError)(void);
     const unsigned char* (*glGetString)(unsigned int name);

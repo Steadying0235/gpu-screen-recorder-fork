@@ -46,6 +46,8 @@ static const int VIDEO_STREAM_INDEX = 0;
 static thread_local char av_error_buffer[AV_ERROR_MAX_STRING_SIZE];
 
 static void monitor_output_callback_print(const XRROutputInfo *output_info, const XRRCrtcInfo *crt_info, const XRRModeInfo *mode_info, void *userdata) {
+    (void)mode_info;
+    (void)userdata;
     fprintf(stderr, "    \"%.*s\"    (%dx%d+%d+%d)\n", output_info->nameLen, output_info->name, (int)crt_info->width, (int)crt_info->height, crt_info->x, crt_info->y);
 }
 
@@ -83,11 +85,11 @@ enum class FramerateMode {
     VARIABLE
 };
 
-static int x11_error_handler(Display *dpy, XErrorEvent *ev) {
+static int x11_error_handler(Display*, XErrorEvent*) {
     return 0;
 }
 
-static int x11_io_error_handler(Display *dpy) {
+static int x11_io_error_handler(Display*) {
     return 0;
 }
 
@@ -236,7 +238,7 @@ static AVSampleFormat audio_format_to_sample_format(const AudioFormat audio_form
     return AV_SAMPLE_FMT_S16;
 }
 
-static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_codec, FramerateMode framerate_mode) {
+static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_codec) {
     const AVCodec *codec = avcodec_find_encoder(audio_codec_get_id(audio_codec));
     if (!codec) {
         fprintf(stderr, "Error: Could not find %s audio encoder\n", audio_codec_get_name(audio_codec));
@@ -1615,7 +1617,7 @@ int main(int argc, char **argv) {
 
     int audio_stream_index = VIDEO_STREAM_INDEX + 1;
     for(const MergedAudioInputs &merged_audio_inputs : requested_audio_inputs) {
-        AVCodecContext *audio_codec_context = create_audio_codec_context(fps, audio_codec, framerate_mode);
+        AVCodecContext *audio_codec_context = create_audio_codec_context(fps, audio_codec);
 
         AVStream *audio_stream = nullptr;
         if(replay_buffer_size_secs == -1)

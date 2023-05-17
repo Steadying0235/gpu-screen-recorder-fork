@@ -309,6 +309,7 @@ static void pa_state_cb(pa_context *c, void *userdata) {
 }
 
 static void pa_sourcelist_cb(pa_context *ctx, const pa_source_info *source_info, int eol, void *userdata) {
+    (void)ctx;
     if(eol > 0)
         return;
 

@@ -1,7 +1,7 @@
 #!/bin/sh -e
 
-opts="-O2 -g0 -DNDEBUG -Wall -Wextra -Werror -s"
-[ -n "$DEBUG" ] && opts="-O0 -g3 -Wall -Wextra -Werror";
+opts="-O2 -g0 -DNDEBUG -Wall -Wextra -s"
+[ -n "$DEBUG" ] && opts="-O0 -g3 -Wall -Wextra";
 
 build_gsr_kms_server() {
     dependencies="libdrm"

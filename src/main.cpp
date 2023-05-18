@@ -103,15 +103,17 @@ static void receive_frames(AVCodecContext *av_codec_context, int stream_index, A
                            std::mutex &write_output_mutex) {
     for (;;) {
         // TODO: Use av_packet_alloc instead because sizeof(av_packet) might not be future proof(?)
-        AVPacket av_packet;
-        memset(&av_packet, 0, sizeof(av_packet));
-        av_packet.data = NULL;
-        av_packet.size = 0;
-        int res = avcodec_receive_packet(av_codec_context, &av_packet);
+        AVPacket *av_packet = av_packet_alloc();
+        if(!av_packet)
+            break;
+
+        av_packet->data = NULL;
+        av_packet->size = 0;
+        int res = avcodec_receive_packet(av_codec_context, av_packet);
         if (res == 0) { // we have a packet, send the packet to the muxer
-            av_packet.stream_index = stream_index;
-            av_packet.pts = pts;
-            av_packet.dts = pts;
+            av_packet->stream_index = stream_index;
+            av_packet->pts = pts;
+            av_packet->dts = pts;
 
             std::lock_guard<std::mutex> lock(write_output_mutex);
             if(replay_buffer_size_secs != -1) {
@@ -119,36 +121,33 @@ static void receive_frames(AVCodecContext *av_codec_context, int stream_index, A
                 double replay_time_elapsed = time_now - replay_start_time;
 
                 AVPacket new_pack;
-                av_packet_move_ref(&new_pack, &av_packet);
+                av_packet_move_ref(&new_pack, av_packet);
                 frame_data_queue.push_back(std::move(new_pack));
                 if(replay_time_elapsed >= replay_buffer_size_secs) {
                     av_packet_unref(&frame_data_queue.front());
                     frame_data_queue.pop_front();
                     frames_erased = true;
                 }
-                av_packet_unref(&av_packet);
             } else {
-                av_packet_rescale_ts(&av_packet, av_codec_context->time_base, stream->time_base);
-                av_packet.stream_index = stream->index;
+                av_packet_rescale_ts(av_packet, av_codec_context->time_base, stream->time_base);
+                av_packet->stream_index = stream->index;
                 // TODO: Is av_interleaved_write_frame needed?
-                int ret = av_interleaved_write_frame(av_format_context, &av_packet);
+                int ret = av_interleaved_write_frame(av_format_context, av_packet);
                 if(ret < 0) {
-                    fprintf(stderr, "Error: Failed to write frame index %d to muxer, reason: %s (%d)\n", av_packet.stream_index, av_error_to_string(ret), ret);
+                    fprintf(stderr, "Error: Failed to write frame index %d to muxer, reason: %s (%d)\n", av_packet->stream_index, av_error_to_string(ret), ret);
                 }
             }
         } else if (res == AVERROR(EAGAIN)) { // we have no packet
                                              // fprintf(stderr, "No packet!\n");
-            av_packet_unref(&av_packet);
             break;
         } else if (res == AVERROR_EOF) { // this is the end of the stream
             fprintf(stderr, "End of stream!\n");
-            av_packet_unref(&av_packet);
             break;
         } else {
             fprintf(stderr, "Unexpected error: %d\n", res);
-            av_packet_unref(&av_packet);
             break;
         }
+        av_packet_free(&av_packet);
     }
 }
 

@@ -241,7 +241,7 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
     const AVCodec *codec = avcodec_find_encoder(audio_codec_get_id(audio_codec));
     if (!codec) {
         fprintf(stderr, "Error: Could not find %s audio encoder\n", audio_codec_get_name(audio_codec));
-        exit(1);
+        _exit(1);
     }
 
     AVCodecContext *codec_context = avcodec_alloc_context3(codec);
@@ -481,13 +481,13 @@ static AVFrame* open_audio(AVCodecContext *audio_codec_context) {
     ret = avcodec_open2(audio_codec_context, audio_codec_context->codec, &options);
     if(ret < 0) {
         fprintf(stderr, "failed to open codec, reason: %s\n", av_error_to_string(ret));
-        exit(1);
+        _exit(1);
     }
 
     AVFrame *frame = av_frame_alloc();
     if(!frame) {
         fprintf(stderr, "failed to allocate audio frame\n");
-        exit(1);
+        _exit(1);
     }
 
     frame->sample_rate = audio_codec_context->sample_rate;
@@ -503,7 +503,7 @@ static AVFrame* open_audio(AVCodecContext *audio_codec_context) {
     ret = av_frame_get_buffer(frame, 0);
     if(ret < 0) {
         fprintf(stderr, "failed to allocate audio data buffers, reason: %s\n", av_error_to_string(ret));
-        exit(1);
+        _exit(1);
     }
 
     return frame;
@@ -629,7 +629,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
     int ret = avcodec_open2(codec_context, codec_context->codec, &options);
     if (ret < 0) {
         fprintf(stderr, "Error: Could not open video codec: %s\n", av_error_to_string(ret));
-        exit(1);
+        _exit(1);
     }
 }
 
@@ -696,12 +696,12 @@ static void usage_full() {
     fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -o video.mp4\n");
     fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -a \"$(pactl get-default-sink).monitor|$(pactl get-default-source)\" -o video.mp4\n");
     //fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -q ultra -pixfmt yuv444 -o video.mp4\n");
-    exit(1);
+    _exit(1);
 }
 
 static void usage() {
     usage_header();
-    exit(1);
+    _exit(1);
 }
 
 static sig_atomic_t running = 1;
@@ -760,7 +760,7 @@ static AVStream* create_stream(AVFormatContext *av_format_context, AVCodecContex
     AVStream *stream = avformat_new_stream(av_format_context, nullptr);
     if (!stream) {
         fprintf(stderr, "Error: Could not allocate stream\n");
-        exit(1);
+        _exit(1);
     }
     stream->id = av_format_context->nb_streams - 1;
     stream->time_base = codec_context->time_base;
@@ -1231,7 +1231,7 @@ int main(int argc, char **argv) {
                 for(const auto &existing_audio_input : audio_inputs) {
                     fprintf(stderr, "    %s\n", existing_audio_input.name.c_str());
                 }
-                exit(2);
+                _exit(2);
             }
         }
     }
@@ -1240,7 +1240,7 @@ int main(int argc, char **argv) {
     int fps = atoi(args["-f"].value());
     if(fps == 0) {
         fprintf(stderr, "Invalid fps argument: %s\n", args["-f"].value());
-        return 1;
+        _exit(1);
     }
     if(fps < 1)
         fps = 1;
@@ -1269,7 +1269,7 @@ int main(int argc, char **argv) {
         replay_buffer_size_secs = atoi(replay_buffer_size_secs_str);
         if(replay_buffer_size_secs < 5 || replay_buffer_size_secs > 1200) {
             fprintf(stderr, "Error: option -r has to be between 5 and 1200, was: %s\n", replay_buffer_size_secs_str);
-            return 1;
+            _exit(1);
         }
         replay_buffer_size_secs += 5; // Add a few seconds to account of lost packets because of non-keyframe packets skipped
     }
@@ -1277,7 +1277,7 @@ int main(int argc, char **argv) {
     Display *dpy = XOpenDisplay(nullptr);
     if (!dpy) {
         fprintf(stderr, "Error: Failed to open display. Make sure you are running x11\n");
-        return 2;
+        _exit(2);
     }
 
     XSetErrorHandler(x11_error_handler);
@@ -1285,13 +1285,13 @@ int main(int argc, char **argv) {
 
     if(is_xwayland(dpy)) {
         fprintf(stderr, "Error: GPU Screen Recorder only works in a pure X11 session. Xwayland is not supported\n");
-        return 2;
+        _exit(2);
     }
 
     gsr_gpu_info gpu_inf;
     bool very_old_gpu = false;
     if(!gl_get_gpu_info(dpy, &gpu_inf))
-        return 2;
+        _exit(2);
 
     if(gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA && gpu_inf.gpu_version != 0 && gpu_inf.gpu_version < 900) {
         fprintf(stderr, "Info: your gpu appears to be very old (older than maxwell architecture). Switching to lower preset\n");
@@ -1308,7 +1308,7 @@ int main(int argc, char **argv) {
         // TODO: Allow specifying another card, and in other places
         if(!gsr_get_valid_card_path(card_path)) {
             fprintf(stderr, "Error: no /dev/dri/cardX device found\n");
-            return 2;
+            _exit(2);
         }
     }
 
@@ -1367,7 +1367,7 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "    \"screen-direct\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
                 fprintf(stderr, "    \"screen-direct-force\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
                 for_each_active_monitor_output(dpy, monitor_output_callback_print, NULL);
-                return 1;
+                _exit(1);
             }
         }
 
@@ -1396,7 +1396,7 @@ int main(int argc, char **argv) {
             nvfbc_params.overclock = overclock;
             capture = gsr_capture_nvfbc_create(&nvfbc_params);
             if(!capture)
-                return 1;
+                _exit(1);
         } else {
             const char *capture_target = window_str;
             if(strcmp(window_str, "screen-direct") == 0 || strcmp(window_str, "screen-direct-force") == 0) {
@@ -1409,7 +1409,7 @@ int main(int argc, char **argv) {
             kms_params.card_path = card_path;
             capture = gsr_capture_kms_vaapi_create(&kms_params);
             if(!capture)
-                return 1;
+                _exit(1);
         }
     } else {
         errno = 0;
@@ -1430,7 +1430,7 @@ int main(int argc, char **argv) {
                 xcomposite_params.card_path = card_path;
                 capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
                 if(!capture)
-                    return 1;
+                    _exit(1);
                 break;
             }
             case GSR_GPU_VENDOR_INTEL: {
@@ -1441,7 +1441,7 @@ int main(int argc, char **argv) {
                 xcomposite_params.card_path = card_path;
                 capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
                 if(!capture)
-                    return 1;
+                    _exit(1);
                 break;
             }
             case GSR_GPU_VENDOR_NVIDIA: {
@@ -1452,7 +1452,7 @@ int main(int argc, char **argv) {
                 xcomposite_params.overclock = overclock;
                 capture = gsr_capture_xcomposite_cuda_create(&xcomposite_params);
                 if(!capture)
-                    return 1;
+                    _exit(1);
                 break;
             }
         }
@@ -1491,7 +1491,7 @@ int main(int argc, char **argv) {
     avformat_alloc_output_context2(&av_format_context, nullptr, container_format, filename);
     if (!av_format_context) {
         fprintf(stderr, "Error: Failed to deduce container format from file extension\n");
-        return 1;
+        _exit(1);
     }
 
     const AVOutputFormat *output_format = av_format_context->oformat;
@@ -1585,7 +1585,7 @@ int main(int argc, char **argv) {
             "  This may be the case on corporate distros such as Manjaro.\n"
             "  You can test this by running 'vainfo | grep VAEntrypointEncSlice' to see if it matches any H264/HEVC profile. vainfo is part of libva-utils.\n"
             "  On such distros, you need to manually install mesa from source to enable H264/HEVC hardware acceleration, or use a more user friendly distro.\n", video_codec_name, video_codec_name, video_codec_name);
-        exit(2);
+        _exit(2);
     }
 
     const bool is_livestream = is_livestream_path(filename);
@@ -1607,7 +1607,7 @@ int main(int argc, char **argv) {
 
     if(gsr_capture_start(capture, video_codec_context) != 0) {
         fprintf(stderr, "gsr error: gsr_capture_start failed\n");
-        return 1;
+        _exit(1);
     }
 
     open_video(video_codec_context, quality, very_old_gpu, gpu_inf.vendor, pixel_format);
@@ -1642,7 +1642,7 @@ int main(int argc, char **argv) {
             int err = init_filter_graph(audio_codec_context, &graph, &sink, src_filter_ctx, merged_audio_inputs.audio_inputs.size());
             if(err < 0) {
                 fprintf(stderr, "Error: failed to create audio filter\n");
-                exit(1);
+                _exit(1);
             }
         }
 
@@ -1665,7 +1665,7 @@ int main(int argc, char **argv) {
             } else {
                 if(sound_device_get_by_name(&audio_device.sound_device, audio_input.name.c_str(), audio_input.description.c_str(), num_channels, audio_codec_context->frame_size, audio_codec_context_get_audio_format(audio_codec_context)) != 0) {
                     fprintf(stderr, "Error: failed to get \"%s\" sound device\n", audio_input.name.c_str());
-                    exit(1);
+                    _exit(1);
                 }
             }
 
@@ -1690,7 +1690,7 @@ int main(int argc, char **argv) {
         int ret = avio_open(&av_format_context->pb, filename, AVIO_FLAG_WRITE);
         if (ret < 0) {
             fprintf(stderr, "Error: Could not open '%s': %s\n", filename, av_error_to_string(ret));
-            return 1;
+            _exit(1);
         }
     }
 
@@ -1702,7 +1702,7 @@ int main(int argc, char **argv) {
         int ret = avformat_write_header(av_format_context, &options);
         if (ret < 0) {
             fprintf(stderr, "Error occurred when writing header to output file: %s\n", av_error_to_string(ret));
-            return 1;
+            _exit(1);
         }
 
         av_dict_free(&options);
@@ -1717,7 +1717,7 @@ int main(int argc, char **argv) {
     AVFrame *frame = av_frame_alloc();
     if (!frame) {
         fprintf(stderr, "Error: Failed to allocate frame\n");
-        exit(1);
+        _exit(1);
     }
     frame->format = video_codec_context->pix_fmt;
     frame->width = video_codec_context->width;
@@ -1739,7 +1739,7 @@ int main(int argc, char **argv) {
     uint8_t *empty_audio = (uint8_t*)malloc(audio_buffer_size);
     if(!empty_audio) {
         fprintf(stderr, "Error: failed to create empty audio\n");
-        exit(1);
+        _exit(1);
     }
     memset(empty_audio, 0, audio_buffer_size);
 
@@ -1753,7 +1753,7 @@ int main(int argc, char **argv) {
                     swr = swr_alloc();
                     if(!swr) {
                         fprintf(stderr, "Failed to create SwrContext\n");
-                        exit(1);
+                        _exit(1);
                     }
                     av_opt_set_int(swr, "in_channel_layout", AV_CH_LAYOUT_STEREO, 0);
                     av_opt_set_int(swr, "out_channel_layout", AV_CH_LAYOUT_STEREO, 0);
@@ -2032,5 +2032,5 @@ int main(int argc, char **argv) {
     }
 
     free(empty_audio);
-    return should_stop_error ? 3 : 0;
+    _exit(should_stop_error ? 3 : 0);
 }

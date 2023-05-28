@@ -2032,5 +2032,11 @@ int main(int argc, char **argv) {
     }
 
     free(empty_audio);
+    // We do an _exit here because cuda uses at_exit to do _something_ that causes the program to freeze,
+    // but only on some nvidia driver versions on some gpus (RTX?), and _exit exits the program without calling
+    // the at_exit registered functions.
+    // Cuda (cuvid library in this case) seems to be waiting for a thread that never finishes execution.
+    // Maybe this happens because we dont clean up all ffmpeg resources?
+    // TODO: Investigate this.
     _exit(should_stop_error ? 3 : 0);
 }

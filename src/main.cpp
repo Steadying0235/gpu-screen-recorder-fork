@@ -732,20 +732,26 @@ static bool is_hex_num(char c) {
 }
 
 static bool contains_non_hex_number(const char *str) {
+    bool hex_start = false;
     size_t len = strlen(str);
     if(len >= 2 && memcmp(str, "0x", 2) == 0) {
         str += 2;
         len -= 2;
+        hex_start = true;
     }
 
+    bool is_hex = false;
     for(size_t i = 0; i < len; ++i) {
         char c = str[i];
         if(c == '\0')
             return false;
         if(!is_hex_num(c))
             return true;
+        if((c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
+            is_hex = true;
     }
-    return false;
+
+    return is_hex && !hex_start;
 }
 
 static std::string get_date_str() {

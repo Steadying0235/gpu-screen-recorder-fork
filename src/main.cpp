@@ -651,6 +651,8 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -c    Container format for output file, for example mp4, or flv. Only required if no output file is specified or if recording in replay buffer mode.\n");
     fprintf(stderr, "        If an output file is specified and -c is not used then the container format is determined from the output filename extension.\n");
+    fprintf(stderr, "        Only containers that support h264 or hevc are supported, which means that only mp4, mkv, flv (and some others) are supported.\n");
+    fprintf(stderr, "        WebM is not supported yet.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -s    The size (area) to record at in the format WxH, for example 1920x1080. This option is only supported (and required) when -w is \"focused\".\n");
     fprintf(stderr, "\n");

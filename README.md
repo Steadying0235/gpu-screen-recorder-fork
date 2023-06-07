@@ -7,7 +7,8 @@ where only the last few seconds are saved.
 
 ## Note
 This software works only on X11 (Wayland with Xwayland is NOT supported).\
-If you are using a variable refresh rate monitor then choose to record "screen-direct-force". This will allow variable refresh rate to work when recording fullscreen applications. Note that some applications such as mpv will not work in fullscreen mode. A fix is being developed for this.
+If you are using a variable refresh rate monitor then choose to record "screen-direct-force". This will allow variable refresh rate to work when recording fullscreen applications. Note that some applications such as mpv will not work in fullscreen mode. A fix is being developed for this.\
+GPU Screen Recorder only supports h264 and hevc codecs at the moment which means that webm files are not supported.
 ### TEMPORARY ISSUES
 1) screen-direct capture has been temporary disabled as it causes issues with stuttering. This might be a nvfbc bug.
 2) Recording the monitor on steam deck might fail sometimes. This happens even when using ffmpeg directly. This might be a steam deck driver bug. Recording a single window doesn't have this issue.

@@ -469,13 +469,11 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         drm_fd = find_first_combined_drm(&cap_kms->kms_response);
         if(!drm_fd)
             drm_fd = find_largest_drm(&cap_kms->kms_response);
-        capture_is_combined_plane = drm_fd->is_combined_plane || ((int)drm_fd->width == cap_kms->screen_size.x && (int)drm_fd->height == cap_kms->screen_size.y);
     } else {
         for(int i = 0; i < cap_kms->monitor_id.num_connector_ids; ++i) {
             drm_fd = find_drm_by_connector_id(&cap_kms->kms_response, cap_kms->monitor_id.connector_ids[i]);
             if(drm_fd) {
                 requires_rotation = cap_kms->x11_rot != X11_ROT_0;
-                capture_is_combined_plane = drm_fd->is_combined_plane;
                 break;
             }
         }
@@ -484,9 +482,10 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
             drm_fd = find_first_combined_drm(&cap_kms->kms_response);
             if(!drm_fd)
                 drm_fd = find_largest_drm(&cap_kms->kms_response);
-            capture_is_combined_plane = drm_fd->is_combined_plane || ((int)drm_fd->width == cap_kms->screen_size.x && (int)drm_fd->height == cap_kms->screen_size.y);
         }
     }
+
+    capture_is_combined_plane = drm_fd->is_combined_plane || ((int)drm_fd->width == cap_kms->screen_size.x && (int)drm_fd->height == cap_kms->screen_size.y);
 
     // TODO: This causes a crash sometimes on steam deck, why? is it a driver bug? a vaapi pure version doesn't cause a crash.
     // Even ffmpeg kmsgrab causes this crash. The error is:
@@ -546,8 +545,11 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     vec2i capture_size = cap_kms->capture_size;
     vec2i cursor_capture_pos = (vec2i){cap_kms->cursor.position.x - cap_kms->cursor.hotspot.x - capture_pos.x, cap_kms->cursor.position.y - cap_kms->cursor.hotspot.y - capture_pos.y};
     if(!capture_is_combined_plane) {
+        fprintf(stderr, "plane not combined\n");
         capture_pos = (vec2i){0, 0};
         //cursor_capture_pos = (vec2i){cap_kms->cursor.position.x - cap_kms->cursor.hotspot.x, cap_kms->cursor.position.y - cap_kms->cursor.hotspot.y};
+    } else {
+        fprintf(stderr, "plane combined\n");
     }
 
     gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,

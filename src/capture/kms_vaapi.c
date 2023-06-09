@@ -461,6 +461,8 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         return -1;
     }
 
+    bool requires_rotation = cap_kms->requires_rotation;
+
     gsr_kms_response_fd *drm_fd = NULL;
     if(cap_kms->screen_capture) {
         drm_fd = find_first_combined_drm(&cap_kms->kms_response);
@@ -469,8 +471,10 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     } else {
         for(int i = 0; i < cap_kms->monitor_id.num_connector_ids; ++i) {
             drm_fd = find_drm_by_connector_id(&cap_kms->kms_response, cap_kms->monitor_id.connector_ids[i]);
-            if(drm_fd)
+            if(drm_fd) {
+                requires_rotation = cap_kms->x11_rot != X11_ROT_0;
                 break;
+            }
         }
 
         if(!drm_fd) {
@@ -481,9 +485,6 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     }
 
     bool capture_is_combined_plane = drm_fd->is_combined_plane || ((int)drm_fd->width == cap_kms->screen_size.x && (int)drm_fd->height == cap_kms->screen_size.y);
-    bool requires_rotation = cap_kms->requires_rotation;
-    if(!capture_is_combined_plane && !cap_kms->screen_capture)
-        requires_rotation |= (cap_kms->x11_rot != X11_ROT_0);
 
     // TODO: This causes a crash sometimes on steam deck, why? is it a driver bug? a vaapi pure version doesn't cause a crash.
     // Even ffmpeg kmsgrab causes this crash. The error is:

@@ -167,28 +167,29 @@ static int kms_get_plane_ids(gsr_drm *drm) {
     }
 
     for(uint32_t i = 0; i < planes->count_planes && drm->num_plane_ids < GSR_KMS_MAX_PLANES; ++i) {
+        drmModeFB2Ptr drmfb = NULL;
         drmModePlanePtr plane = drmModeGetPlane(drm->drmfd, planes->planes[i]);
         if(!plane) {
             fprintf(stderr, "kms server warning: failed to get drmModePlanePtr for plane %#x: %s (%d)\n", planes->planes[i], strerror(errno), errno);
             continue;
         }
 
-        if(!plane->fb_id) {
-            drmModeFreePlane(plane);
-            continue;
-        }
+        if(!plane->fb_id)
+            goto next;
 
         if(plane_is_cursor_plane(drm->drmfd, plane->plane_id))
-            continue;
+            goto next;
 
         // TODO: Fallback to getfb(1)?
-        drmModeFB2Ptr drmfb = drmModeGetFB2(drm->drmfd, plane->fb_id);
+        drmfb = drmModeGetFB2(drm->drmfd, plane->fb_id);
         if(drmfb) {
             drm->plane_ids[drm->num_plane_ids] = plane->plane_id;
             drm->connector_ids[drm->num_plane_ids] = get_connector_by_crtc_id(&c2crtc_map, plane->crtc_id);
             ++drm->num_plane_ids;
             drmModeFreeFB2(drmfb);
         }
+
+        next:
         drmModeFreePlane(plane);
     }
 

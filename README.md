@@ -16,7 +16,7 @@ GPU Screen Recorder only supports h264 and hevc codecs at the moment which means
 ### AMD/Intel root permission
 When recording a window under AMD/Intel no special user permission is required, however when recording a monitor the program needs root permission (to access KMS).
 To make this safer, the part that needs root access has been moved to its own executable (to make it as small as possible) and a GUI sudo prompt is shown to run this executable as root. The executable is called "gsr-kms-server".
-However this doesn't work if you want to start replay at startup for example. To fix this, run: `sudo setcap cap_sys_admin+ep /usr/bin/gsr-kms-server` if you have installed GPU Screen Recorder.
+However this doesn't work if you want to start replay at startup for example. To fix this, run: `sudo setcap cap_sys_admin+ep /usr/bin/gsr-kms-server` if you have installed GPU Screen Recorder from source or AUR.
 
 # Performance
 On a system with a i5 4690k CPU and a GTX 1080 GPU:\

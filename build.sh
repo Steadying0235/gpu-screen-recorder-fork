@@ -7,11 +7,12 @@ opts="-O2 -g0 -DNDEBUG -Wall -Wextra"
 [ -n "$DEBUG" ] && opts="-O0 -g3 -Wall -Wextra";
 
 build_gsr_kms_server() {
+    extra_opts="-fstack-protector-all -fcf-protection=full"
     dependencies="libdrm"
     includes="$(pkg-config --cflags $dependencies)"
     libs="$(pkg-config --libs $dependencies) -ldl"
-    $CC -c kms/server/kms_server.c $opts $includes
-    $CC -o gsr-kms-server -O2 kms_server.o $libs $opts
+    $CC -c kms/server/kms_server.c $opts $extra_opts $includes
+    $CC -o gsr-kms-server -O2 kms_server.o $libs $opts $extra_opts
 }
 
 build_gsr() {

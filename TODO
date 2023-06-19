@@ -68,3 +68,5 @@ Support screen (all monitors) capture on amd/intel when no combined plane is fou
 Use separate plane (which has offset and pitch) from combined plane instead of the combined plane.
 
 Both twitch and youtube support variable bitrate but twitch recommends constant bitrate to reduce stream buffering/dropped frames when going from low motion to high motion: https://help.twitch.tv/s/article/broadcasting-guidelines?language=en_US. Info for youtube: https://support.google.com/youtube/answer/2853702?hl=en#zippy=%2Cvariable-bitrate-with-custom-stream-keys-in-live-control-room%2Ck-p-fps%2Cp-fps.
+
+Limit fps recording with x damage. This is good when running replay mode 24/7 and being afk or when not much is happening on the screen.

@@ -1245,6 +1245,9 @@ int main(int argc, char **argv) {
     }
 
     const char *container_format = args["-c"].value();
+    if(container_format && strcmp(container_format, "mkv") == 0)
+        container_format = "matroska";
+
     int fps = atoi(args["-f"].value());
     if(fps == 0) {
         fprintf(stderr, "Invalid fps argument: %s\n", args["-f"].value());
@@ -1498,7 +1501,10 @@ int main(int argc, char **argv) {
     // The output format is automatically guessed by the file extension
     avformat_alloc_output_context2(&av_format_context, nullptr, container_format, filename);
     if (!av_format_context) {
-        fprintf(stderr, "Error: Failed to deduce container format from file extension\n");
+        if(container_format)
+            fprintf(stderr, "Error: Container format '%s' (argument -c) is not valid\n", container_format);
+        else
+            fprintf(stderr, "Error: Failed to deduce container format from file extension\n");
         _exit(1);
     }
 

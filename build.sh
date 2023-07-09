@@ -16,7 +16,7 @@ build_gsr_kms_server() {
 }
 
 build_gsr() {
-    dependencies="libavcodec libavformat libavutil x11 xcomposite xrandr xfixes libpulse libswresample libavfilter libva libcap"
+    dependencies="libavcodec libavformat libavutil x11 xcomposite xrandr xfixes libpulse libswresample libavfilter libva libcap libdrm"
     includes="$(pkg-config --cflags $dependencies)"
     libs="$(pkg-config --libs $dependencies) -ldl -pthread -lm"
     $CC -c src/capture/capture.c $opts $includes

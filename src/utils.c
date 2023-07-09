@@ -4,6 +4,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <xf86drmMode.h>
+#include <fcntl.h>
 
 double clock_get_monotonic_seconds(void) {
     struct timespec ts;
@@ -109,7 +111,19 @@ bool gl_get_gpu_info(Display *dpy, gsr_gpu_info *info) {
 bool gsr_get_valid_card_path(char *output) {
     for(int i = 0; i < 10; ++i) {
         sprintf(output, "/dev/dri/card%d", i);
-        if(access(output, F_OK) == 0)
+        int fd = open(output, O_RDONLY);
+        if(fd == -1)
+            continue;
+
+        bool is_display_card = false;
+        drmModeResPtr resources = drmModeGetResources(fd);
+        if(resources) {
+            is_display_card = true;
+            drmModeFreeResources(resources);
+        }
+        close(fd);
+
+        if(is_display_card)
             return true;
     }
     return false;

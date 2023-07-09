@@ -4,8 +4,9 @@
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <xf86drmMode.h>
 #include <fcntl.h>
+#include <xf86drmMode.h>
+#include <xf86drm.h>
 
 double clock_get_monotonic_seconds(void) {
     struct timespec ts;
@@ -115,15 +116,32 @@ bool gsr_get_valid_card_path(char *output) {
         if(fd == -1)
             continue;
 
-        bool is_display_card = false;
-        drmModeResPtr resources = drmModeGetResources(fd);
-        if(resources) {
-            is_display_card = true;
-            drmModeFreeResources(resources);
+        drmSetClientCap(fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1);
+
+        drmModePlaneResPtr planes = drmModeGetPlaneResources(fd);
+        if(!planes) {
+            close(fd);
+            continue;
         }
+
+        bool found_screen_card = false;
+        for(uint32_t i = 0; i < planes->count_planes; ++i) {
+            drmModePlanePtr plane = drmModeGetPlane(fd, planes->planes[i]);
+            if(!plane)
+                continue;
+
+            if(plane->fb_id)
+                found_screen_card = true;
+
+            drmModeFreePlane(plane);
+
+            if(found_screen_card)
+                break;
+        }
+
         close(fd);
 
-        if(is_display_card)
+        if(found_screen_card)
             return true;
     }
     return false;

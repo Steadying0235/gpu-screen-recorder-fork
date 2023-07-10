@@ -7,7 +7,8 @@ opts="-O2 -g0 -DNDEBUG -Wall -Wextra"
 [ -n "$DEBUG" ] && opts="-O0 -g3 -Wall -Wextra";
 
 build_gsr_kms_server() {
-    extra_opts="-fstack-protector-all -fcf-protection=full"
+    # TODO: -fcf-protection=full, not supported on arm
+    extra_opts="-fstack-protector-all"
     dependencies="libdrm"
     includes="$(pkg-config --cflags $dependencies)"
     libs="$(pkg-config --libs $dependencies) -ldl"

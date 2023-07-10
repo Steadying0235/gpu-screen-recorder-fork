@@ -134,13 +134,11 @@ bool gsr_get_valid_card_path(char *output) {
                 found_screen_card = true;
 
             drmModeFreePlane(plane);
-
             if(found_screen_card)
                 break;
         }
 
         close(fd);
-
         if(found_screen_card)
             return true;
     }

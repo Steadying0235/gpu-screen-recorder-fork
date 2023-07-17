@@ -306,7 +306,7 @@ static void strncpy_safe(char *dst, const char *src, int len) {
 
 int main(int argc, char **argv) {
     if(argc != 3) {
-        fprintf(stderr, "usage: kms_server <domain_socket_path> <card_path>\n");
+        fprintf(stderr, "usage: gsr-kms-server <domain_socket_path> <card_path>\n");
         return 1;
     }
 

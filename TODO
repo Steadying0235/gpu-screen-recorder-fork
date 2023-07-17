@@ -70,3 +70,14 @@ Use separate plane (which has offset and pitch) from combined plane instead of t
 Both twitch and youtube support variable bitrate but twitch recommends constant bitrate to reduce stream buffering/dropped frames when going from low motion to high motion: https://help.twitch.tv/s/article/broadcasting-guidelines?language=en_US. Info for youtube: https://support.google.com/youtube/answer/2853702?hl=en#zippy=%2Cvariable-bitrate-with-custom-stream-keys-in-live-control-room%2Ck-p-fps%2Cp-fps.
 
 Limit fps recording with x damage. This is good when running replay mode 24/7 and being afk or when not much is happening on the screen.
+
+On nvidia some games apparently causes the game to appear to stutter (without dropping fps) when recording a monitor but not using
+    when using direct screen capture. Observed in Deus Ex and Apex Legends.
+
+Test kms_cuda on hyprland and other wlroots based compositor to see if it works.
+
+Support "screen" (all monitors) capture on wayland. This should be done by getting all drm fds and multiple EGL_DMA_BUF_PLANEX_FD_EXT to create one egl image with all fds combined.
+
+Support pipewire screen capture?
+Support screen rotation in nvidia wayland.
+Support wlroots dmabuf screen recording, because it doesn't require root access unlike kms grab.

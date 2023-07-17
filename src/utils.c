@@ -24,19 +24,32 @@ static const XRRModeInfo* get_mode_info(const XRRScreenResources *sr, RRMode id)
     return NULL;
 }
 
-void for_each_active_monitor_output(Display *display, active_monitor_callback callback, void *userdata) {
+static void for_each_active_monitor_output_x11(Display *display, active_monitor_callback callback, void *userdata) {
     XRRScreenResources *screen_res = XRRGetScreenResources(display, DefaultRootWindow(display));
     if(!screen_res)
         return;
 
+    char display_name[256];
     for(int i = 0; i < screen_res->noutput; ++i) {
         XRROutputInfo *out_info = XRRGetOutputInfo(display, screen_res, screen_res->outputs[i]);
         if(out_info && out_info->crtc && out_info->connection == RR_Connected) {
             XRRCrtcInfo *crt_info = XRRGetCrtcInfo(display, screen_res, out_info->crtc);
             if(crt_info && crt_info->mode) {
                 const XRRModeInfo *mode_info = get_mode_info(screen_res, crt_info->mode);
-                if(mode_info)
-                    callback(out_info, crt_info, mode_info, userdata);
+                if(mode_info && out_info->nameLen < (int)sizeof(display_name)) {
+                    memcpy(display_name, out_info->name, out_info->nameLen);
+                    display_name[out_info->nameLen] = '\0';
+
+                    gsr_monitor monitor = {
+                        .name = display_name,
+                        .name_len = out_info->nameLen,
+                        .pos = { .x = crt_info->x, .y = crt_info->y },
+                        .size = { .x = (int)crt_info->width, .y = (int)crt_info->height },
+                        .crt_info = crt_info,
+                        .connector_id = 0 // TODO: Get connector id
+                    };
+                    callback(&monitor, userdata);
+                }
             }
             if(crt_info)
                 XRRFreeCrtcInfo(crt_info);
@@ -48,29 +61,137 @@ void for_each_active_monitor_output(Display *display, active_monitor_callback ca
     XRRFreeScreenResources(screen_res);
 }
 
-static void get_monitor_by_name_callback(const XRROutputInfo *output_info, const XRRCrtcInfo *crt_info, const XRRModeInfo *mode_info, void *userdata) {
-    (void)mode_info;
+typedef struct {
+    int type;
+    int count;
+} drm_connector_type_count;
+
+#define CONNECTOR_TYPE_COUNTS 32
+
+static drm_connector_type_count* drm_connector_types_get_index(drm_connector_type_count *type_counts, int *num_type_counts, int connector_type) {
+    for(int i = 0; i < *num_type_counts; ++i) {
+        if(type_counts[i].type == connector_type)
+            return &type_counts[i];
+    }
+
+    if(*num_type_counts == CONNECTOR_TYPE_COUNTS)
+        return NULL;
+
+    const int index = *num_type_counts;
+    type_counts[index].type = connector_type;
+    type_counts[index].count = 0;
+    ++*num_type_counts;
+    return &type_counts[index];
+}
+
+static bool connector_get_property_by_name(int drmfd, drmModeConnectorPtr props, const char *name, uint64_t *result) {
+    for(int i = 0; i < props->count_props; ++i) {
+        drmModePropertyPtr prop = drmModeGetProperty(drmfd, props->props[i]);
+        if(prop) {
+            if(strcmp(name, prop->name) == 0) {
+                *result = props->prop_values[i];
+                drmModeFreeProperty(prop);
+                return true;
+            }
+            drmModeFreeProperty(prop);
+        }
+    }
+    return false;
+}
+
+static void for_each_active_monitor_output_drm(const char *drm_card_path, active_monitor_callback callback, void *userdata) {
+    int fd = open(drm_card_path, O_RDONLY);
+    if(fd == -1)
+        return;
+
+    drmSetClientCap(fd, DRM_CLIENT_CAP_ATOMIC, 1);
+
+    drm_connector_type_count type_counts[CONNECTOR_TYPE_COUNTS];
+    int num_type_counts = 0;
+
+    char display_name[256];
+    drmModeResPtr resources = drmModeGetResources(fd);
+    if(resources) {
+        for(int i = 0; i < resources->count_connectors; ++i) {
+            drmModeConnectorPtr connector = drmModeGetConnectorCurrent(fd, resources->connectors[i]);
+            if(!connector)
+                continue;
+
+            if(connector->connection != DRM_MODE_CONNECTED) {
+                drmModeFreeConnector(connector);
+                continue;
+            }
+
+            drm_connector_type_count *connector_type = drm_connector_types_get_index(type_counts, &num_type_counts, connector->connector_type);
+            const char *connection_name = drmModeGetConnectorTypeName(connector->connector_type);
+            const int connection_name_len = strlen(connection_name);
+            if(connector_type)
+                ++connector_type->count;
+
+            uint64_t crtc_id = 0;
+            connector_get_property_by_name(fd, connector, "CRTC_ID", &crtc_id);
+
+            drmModeCrtcPtr crtc = drmModeGetCrtc(fd, crtc_id);
+            if(connector_type && crtc_id > 0 && crtc && connection_name_len + 5 < (int)sizeof(display_name)) {
+                const int display_name_len = snprintf(display_name, sizeof(display_name), "%s-%d", connection_name, connector_type->count);
+                gsr_monitor monitor = {
+                    .name = display_name,
+                    .name_len = display_name_len,
+                    .pos = { .x = crtc->x, .y = crtc->y },
+                    .size = { .x = (int)crtc->width, .y = (int)crtc->height },
+                    .crt_info = NULL,
+                    .connector_id = connector->connector_id
+                };
+                callback(&monitor, userdata);
+            }
+
+            if(crtc)
+                drmModeFreeCrtc(crtc);
+
+            drmModeFreeConnector(connector);
+        }
+        drmModeFreeResources(resources);
+    }
+
+    close(fd);
+}
+
+void for_each_active_monitor_output(void *connection, gsr_connection_type connection_type, active_monitor_callback callback, void *userdata) {
+    switch(connection_type) {
+        case GSR_CONNECTION_X11:
+            for_each_active_monitor_output_x11(connection, callback, userdata);
+            break;
+        case GSR_CONNECTION_WAYLAND:
+            // TODO: use gsr_egl here (connection)
+            break;
+        case GSR_CONNECTION_DRM:
+            for_each_active_monitor_output_drm(connection, callback, userdata);
+            break;
+    }
+}
+
+static void get_monitor_by_name_callback(const gsr_monitor *monitor, void *userdata) {
     get_monitor_by_name_userdata *data = (get_monitor_by_name_userdata*)userdata;
-    if(!data->found_monitor && data->name_len == output_info->nameLen && memcmp(data->name, output_info->name, data->name_len) == 0) {
-        data->monitor->pos = (vec2i){ .x = crt_info->x, .y = crt_info->y };
-        data->monitor->size = (vec2i){ .x = (int)crt_info->width, .y = (int)crt_info->height };
+    if(!data->found_monitor && strcmp(data->name, monitor->name) == 0) {
+        data->monitor->pos = monitor->pos;
+        data->monitor->size = monitor->size;
         data->found_monitor = true;
     }
 }
 
-bool get_monitor_by_name(Display *display, const char *name, gsr_monitor *monitor) {
+bool get_monitor_by_name(void *connection, gsr_connection_type connection_type, const char *name, gsr_monitor *monitor) {
     get_monitor_by_name_userdata userdata;
     userdata.name = name;
     userdata.name_len = strlen(name);
     userdata.monitor = monitor;
     userdata.found_monitor = false;
-    for_each_active_monitor_output(display, get_monitor_by_name_callback, &userdata);
+    for_each_active_monitor_output(connection, connection_type, get_monitor_by_name_callback, &userdata);
     return userdata.found_monitor;
 }
 
-bool gl_get_gpu_info(Display *dpy, gsr_gpu_info *info) {
+bool gl_get_gpu_info(Display *dpy, gsr_gpu_info *info, bool wayland) {
     gsr_egl gl;
-    if(!gsr_egl_load(&gl, dpy)) {
+    if(!gsr_egl_load(&gl, dpy, wayland)) {
         fprintf(stderr, "gsr error: failed to load opengl\n");
         return false;
     }
@@ -83,6 +204,12 @@ bool gl_get_gpu_info(Display *dpy, gsr_gpu_info *info) {
 
     if(!gl_vendor) {
         fprintf(stderr, "gsr error: failed to get gpu vendor\n");
+        supported = false;
+        goto end;
+    }
+
+    if(gl_renderer && strstr((const char*)gl_renderer, "llvmpipe")) {
+        fprintf(stderr, "gsr error: your opengl environment is not properly setup. It's using llvmpipe (cpu fallback) for opengl instead of your graphics card\n");
         supported = false;
         goto end;
     }

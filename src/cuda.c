@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <dlfcn.h>
+#include <assert.h>
 
 bool gsr_cuda_load(gsr_cuda *self, Display *display, bool do_overclock) {
     memset(self, 0, sizeof(gsr_cuda));
@@ -31,6 +32,7 @@ bool gsr_cuda_load(gsr_cuda *self, Display *display, bool do_overclock) {
         { (void**)&self->cuMemcpy2D_v2, "cuMemcpy2D_v2" },
 
         { (void**)&self->cuGraphicsGLRegisterImage, "cuGraphicsGLRegisterImage" },
+        { (void**)&self->cuGraphicsEGLRegisterImage, "cuGraphicsEGLRegisterImage" },
         { (void**)&self->cuGraphicsResourceSetMapFlags, "cuGraphicsResourceSetMapFlags" },
         { (void**)&self->cuGraphicsMapResources, "cuGraphicsMapResources" },
         { (void**)&self->cuGraphicsUnmapResources, "cuGraphicsUnmapResources" },
@@ -80,6 +82,7 @@ bool gsr_cuda_load(gsr_cuda *self, Display *display, bool do_overclock) {
     }
 
     if(self->do_overclock) {
+        assert(display);
         if(gsr_overclock_load(&self->overclock, display))
             gsr_overclock_start(&self->overclock);
         else

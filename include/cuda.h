@@ -91,7 +91,8 @@ typedef struct {
     CUresult (*cuMemsetD8_v2)(CUdeviceptr dstDevice, unsigned char uc, size_t N);
     CUresult (*cuMemcpy2D_v2)(const CUDA_MEMCPY2D *pCopy);
 
-    CUresult (*cuGraphicsGLRegisterImage)(CUgraphicsResource *pCudaResource, unsigned int image, unsigned int target, unsigned int Flags);
+    CUresult (*cuGraphicsGLRegisterImage)(CUgraphicsResource *pCudaResource, unsigned int image, unsigned int target, unsigned int flags);
+    CUresult (*cuGraphicsEGLRegisterImage)(CUgraphicsResource *pCudaResource, void *image, unsigned int flags);
     CUresult (*cuGraphicsResourceSetMapFlags)(CUgraphicsResource resource, unsigned int flags);
     CUresult (*cuGraphicsMapResources)(unsigned int count, CUgraphicsResource *resources, CUstream hStream);
     CUresult (*cuGraphicsUnmapResources)(unsigned int count, CUgraphicsResource *resources, CUstream hStream);

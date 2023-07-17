@@ -4,6 +4,9 @@ compile_commands.json
 tests/sibs-build/
 tests/compile_commands.json
 
+external/wlr-export-dmabuf-unstable-v1-client-protocol.h
+external/wlr-export-dmabuf-unstable-v1-protocol.c
+
 .clangd/
 .cache/
 .vscode/

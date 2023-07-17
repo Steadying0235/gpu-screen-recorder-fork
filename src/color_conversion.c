@@ -23,6 +23,42 @@ static float abs_f(float v) {
                    "                           0.098, -0.071,  0.439, 0.0,\n" \
                    "                           0.0625, 0.500,  0.500, 1.0);"
 
+static int load_shader_rgb(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform) {
+    char vertex_shader[2048];
+    snprintf(vertex_shader, sizeof(vertex_shader),
+        "#version 300 es                                   \n"
+        "in vec2 pos;                                      \n"
+        "in vec2 texcoords;                                \n"
+        "out vec2 texcoords_out;                           \n"
+        "uniform float rotation;                           \n"
+        ROTATE_Z
+        "void main()                                       \n"
+        "{                                                 \n"
+        "  texcoords_out = texcoords;                      \n"
+        "  gl_Position = vec4(pos.x, pos.y, 0.0, 1.0) * rotate_z(rotation);    \n"
+        "}                                                 \n");
+
+    char fragment_shader[] =
+        "#version 300 es                                                                 \n"
+        "precision mediump float;                                                        \n"
+        "in vec2 texcoords_out;                                                          \n"
+        "uniform sampler2D tex1;                                                         \n"
+        "out vec4 FragColor;                                                             \n"
+        RGB_TO_YUV
+        "void main()                                                                     \n"
+        "{                                                                               \n"
+        "  FragColor = texture(tex1, texcoords_out);                                     \n"
+        "}                                                                               \n";
+
+    if(gsr_shader_init(shader, egl, vertex_shader, fragment_shader) != 0)
+        return -1;
+
+    gsr_shader_bind_attribute_location(shader, "pos", 0);
+    gsr_shader_bind_attribute_location(shader, "texcoords", 1);
+    *rotation_uniform = egl->glGetUniformLocation(shader->program_id, "rotation");
+    return 0;
+}
+
 static int load_shader_y(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform) {
     char vertex_shader[2048];
     snprintf(vertex_shader, sizeof(vertex_shader),
@@ -111,12 +147,14 @@ static int loader_framebuffers(gsr_color_conversion *self) {
         goto err;
     }
 
-    self->params.egl->glBindFramebuffer(GL_FRAMEBUFFER, self->framebuffers[1]);
-    self->params.egl->glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, self->params.destination_textures[1], 0);
-    self->params.egl->glDrawBuffers(1, &draw_buffer);
-    if(self->params.egl->glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to create framebuffer for UV\n");
-        goto err;
+    if(self->params.num_destination_textures > 1) {
+        self->params.egl->glBindFramebuffer(GL_FRAMEBUFFER, self->framebuffers[1]);
+        self->params.egl->glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, self->params.destination_textures[1], 0);
+        self->params.egl->glDrawBuffers(1, &draw_buffer);
+        if(self->params.egl->glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to create framebuffer for UV\n");
+            goto err;
+        }
     }
 
     self->params.egl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -152,19 +190,36 @@ int gsr_color_conversion_init(gsr_color_conversion *self, const gsr_color_conver
     self->params.egl = params->egl;
     self->params = *params;
 
-    if(self->params.num_destination_textures != 2) {
-        fprintf(stderr, "gsr error: gsr_color_conversion_init: expected 2 destination textures for destination color NV12, got %d destination texture(s)\n", self->params.num_destination_textures);
-        return -1;
-    }
+    switch(params->destination_color) {
+        case GSR_DESTINATION_COLOR_RGB: {
+            if(self->params.num_destination_textures != 1) {
+                fprintf(stderr, "gsr error: gsr_color_conversion_init: expected 1 destination texture for destination color RGB, got %d destination texture(s)\n", self->params.num_destination_textures);
+                return -1;
+            }
 
-    if(load_shader_y(&self->shaders[0], self->params.egl, &self->rotation_uniforms[0]) != 0) {
-        fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load Y shader\n");
-        goto err;
-    }
+            if(load_shader_rgb(&self->shaders[0], self->params.egl, &self->rotation_uniforms[0]) != 0) {
+                fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load rgb shader\n");
+                goto err;
+            }
+            break;
+        }
+        case GSR_DESTINATION_COLOR_NV12: {
+            if(self->params.num_destination_textures != 2) {
+                fprintf(stderr, "gsr error: gsr_color_conversion_init: expected 2 destination textures for destination color RGB, got %d destination texture(s)\n", self->params.num_destination_textures);
+                return -1;
+            }
 
-    if(load_shader_uv(&self->shaders[1], self->params.egl, &self->rotation_uniforms[1]) != 0) {
-        fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load UV shader\n");
-        goto err;
+            if(load_shader_y(&self->shaders[0], self->params.egl, &self->rotation_uniforms[0]) != 0) {
+                fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load Y shader\n");
+                goto err;
+            }
+
+            if(load_shader_uv(&self->shaders[1], self->params.egl, &self->rotation_uniforms[1]) != 0) {
+                fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load UV shader\n");
+                goto err;
+            }
+            break;
+        }
     }
 
     if(loader_framebuffers(self) != 0)
@@ -274,7 +329,7 @@ int gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_i
         self->params.egl->glDrawArrays(GL_TRIANGLES, 0, 6);
     }
 
-    {
+    if(self->params.num_destination_textures > 1) {
         self->params.egl->glBindFramebuffer(GL_FRAMEBUFFER, self->framebuffers[1]);
         //cap_xcomp->egl.glClear(GL_COLOR_BUFFER_BIT);
 

@@ -6,13 +6,13 @@ This screen recorder can be used for recording your desktop offline, for live st
 where only the last few seconds are saved.
 
 ## Note
-This software works only on X11 (Wayland with Xwayland is NOT supported).\
+This software works with x11 and wayland, but when using wayland only monitors can be recorded and root access is needed.\
 If you are using a variable refresh rate monitor then choose to record "screen-direct-force". This will allow variable refresh rate to work when recording fullscreen applications. Note that some applications such as mpv will not work in fullscreen mode. A fix is being developed for this.\
 GPU Screen Recorder only supports h264 and hevc codecs at the moment which means that webm files are not supported.
 ### TEMPORARY ISSUES
 1) screen-direct capture has been temporary disabled as it causes issues with stuttering. This might be a nvfbc bug.
 2) Recording the monitor on steam deck might fail sometimes. This happens even when using ffmpeg directly. This might be a steam deck driver bug. Recording a single window doesn't have this issue.
-3) Videos created on AMD/Intel are in variable framerate format. Use MPV to play such videos, otherwise you might experience stuttering in the video if you are using a buggy video player.
+3) Videos created on AMD/Intel are in variable framerate format. Use MPV to play such videos, otherwise you might experience stuttering in the video if you are using a buggy video player. Try saving the video into a .mkv file instead when using AMD/Intel, as some software may have better support for .mkv files (such as kdenlive).
 ### AMD/Intel root permission
 When recording a window under AMD/Intel no special user permission is required, however when recording a monitor the program needs root permission (to access KMS).
 To make this safer, the part that needs root access has been moved to its own executable (to make it as small as possible) and a GUI sudo prompt is shown to run this executable as root. The executable is called "gsr-kms-server".
@@ -41,11 +41,11 @@ If you install GPU Screen Recorder flatpak, which is the gtk gui version then yo
 
 # Dependencies
 ## AMD
-`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libxfixes, libpulse, libva, libva-mesa-driver, libdrm, libcap, polkit (for pkexec)`.
+`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libxfixes, libpulse, libva, libva-mesa-driver, libdrm, libcap, polkit (for pkexec), wayland-client, wayland-elg`.
 ## Intel
-`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libxfixes, libpulse, libva, libva-intel-driver, libdrm, libcap, polkit (for pkexec)`.
+`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libxfixes, libpulse, libva, libva-intel-driver, libdrm, libcap, polkit (for pkexec), wayland-client, wayland-elg`.
 ## NVIDIA
-`libglvnd (which provides libgl and libegl), ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libxfixes, libpulse, cuda (libnvidia-compute), nvenc (libnvidia-encode), libva, libdrm, libcap`. Additionally, you need to have `nvfbc (libnvidia-fbc1)` installed when using nvfbc and `xnvctrl (libxnvctrl0)` when using the `-oc` option.
+`libglvnd (which provides libgl and libegl), ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libxfixes, libpulse, cuda (libnvidia-compute), nvenc (libnvidia-encode), libva, libdrm, libcap, polkit (for pkexec, only on wayland), wayland-client, wayland-elg`. Additionally, you need to have `nvfbc (libnvidia-fbc1)` installed when using nvfbc and `xnvctrl (libxnvctrl0)` when using the `-oc` option.
 
 # How to use
 Run `gpu-screen-recorder --help` to see all options.

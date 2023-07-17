@@ -9,6 +9,7 @@ typedef enum {
 } gsr_source_color;
 
 typedef enum {
+    GSR_DESTINATION_COLOR_RGB,
     GSR_DESTINATION_COLOR_NV12
 } gsr_destination_color;
 

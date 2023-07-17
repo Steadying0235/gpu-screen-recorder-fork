@@ -105,6 +105,40 @@ static void strncpy_safe(char *dst, const char *src, int len) {
     dst[min_len] = '\0';
 }
 
+static bool find_program_in_path(const char *program_name, char *filepath, int filepath_len) {
+    const char *path = getenv("PATH");
+    if(!path)
+        return false;
+
+    int program_name_len = strlen(program_name);
+    const char *end = path + strlen(path);
+    while(path != end) {
+        const char *part_end = strchr(path, ':');
+        const char *next = part_end;
+        if(part_end) {
+            next = part_end + 1;
+        } else {
+            part_end = end;
+            next = end;
+        }
+
+        int len = part_end - path;
+        if(len + 1 + program_name_len < filepath_len) {
+            memcpy(filepath, path, len);
+            filepath[len] = '/';
+            memcpy(filepath + len + 1, program_name, program_name_len);
+            filepath[len + 1 + program_name_len] = '\0';
+
+            if(access(filepath, F_OK) == 0)
+                return true;
+        }
+
+        path = next;
+    }
+
+    return false;
+}
+
 int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     self->kms_server_pid = -1;
     self->socket_fd = -1;
@@ -118,11 +152,12 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
         return -1;
     }
 
-    // This doesn't work on nixos, but we dont want to use $PATH because we want to make this as safe as possible by running pkexec
-    // on a path that only root can modify. If we use "gsr-kms-server" instead then $PATH can be modified in ~/.bashrc for example
-    // which will overwrite the path to gsr-kms-server and the user can end up running a malicious program that pretends to be gsr-kms-server.
-    // If there is a safe way to do this on nixos, then please tell me; or use gpu-screen-recorder flatpak instead.
-    const char *server_filepath = "/usr/bin/gsr-kms-server";
+    char server_filepath[PATH_MAX];
+    if(!find_program_in_path("gsr-kms-server", server_filepath, sizeof(server_filepath))) {
+        fprintf(stderr, "gsr error: gsr_kms_client_init: gsr-kms-server is not installed\n");
+        return -1;
+    }
+
     bool has_perm = 0;
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     if(!inside_flatpak) {

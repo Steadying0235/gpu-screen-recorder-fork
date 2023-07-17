@@ -134,21 +134,20 @@ static bool properties_has_atom(Atom *props, int nprop, Atom atom) {
     return false;
 }
 
-static void monitor_callback(const XRROutputInfo *output_info, const XRRCrtcInfo *crt_info, const XRRModeInfo *mode_info, void *userdata) {
-    (void)mode_info;
+static void monitor_callback(const gsr_monitor *monitor, void *userdata) {
     MonitorCallbackUserdata *monitor_callback_userdata = userdata;
     ++monitor_callback_userdata->num_monitors;
 
     if(strcmp(monitor_callback_userdata->monitor_to_capture, "screen") == 0)
-        monitor_callback_userdata->rotation = crt_info->rotation;
+        monitor_callback_userdata->rotation = monitor->crt_info->rotation;
 
-    if(monitor_callback_userdata->monitor_to_capture_len != output_info->nameLen || memcmp(monitor_callback_userdata->monitor_to_capture, output_info->name, output_info->nameLen) != 0)
+    if(monitor_callback_userdata->monitor_to_capture_len != monitor->name_len || memcmp(monitor_callback_userdata->monitor_to_capture, monitor->name, monitor->name_len) != 0)
         return;
 
-    monitor_callback_userdata->rotation = crt_info->rotation;
-    for(int i = 0; i < crt_info->noutput && monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids < MAX_CONNECTOR_IDS; ++i) {
+    monitor_callback_userdata->rotation = monitor->crt_info->rotation;
+    for(int i = 0; i < monitor->crt_info->noutput && monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids < MAX_CONNECTOR_IDS; ++i) {
         int nprop = 0;
-        Atom *props = XRRListOutputProperties(monitor_callback_userdata->cap_kms->dpy, crt_info->outputs[i], &nprop);
+        Atom *props = XRRListOutputProperties(monitor_callback_userdata->cap_kms->dpy, monitor->crt_info->outputs[i], &nprop);
         if(!props)
             continue;
 
@@ -162,7 +161,7 @@ static void monitor_callback(const XRROutputInfo *output_info, const XRRCrtcInfo
         unsigned long bytes_after = 0;
         unsigned long nitems = 0;
         unsigned char *prop = NULL;
-        XRRGetOutputProperty(monitor_callback_userdata->cap_kms->dpy, crt_info->outputs[i],
+        XRRGetOutputProperty(monitor_callback_userdata->cap_kms->dpy, monitor->crt_info->outputs[i],
             monitor_callback_userdata->randr_connector_id_atom,
             0, 128, false, false, AnyPropertyType,
             &type, &format, &nitems, &bytes_after, &prop);
@@ -186,6 +185,9 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         return -1;
     }
 
+    void *connection = cap_kms->params.wayland ? (void*)cap_kms->params.card_path : (void*)cap_kms->dpy;
+    const gsr_connection_type connection_type = cap_kms->params.wayland ? GSR_CONNECTION_DRM : GSR_CONNECTION_X11;
+
     const Atom randr_connector_id_atom = XInternAtom(cap_kms->dpy, "CONNECTOR_ID", False);
     cap_kms->monitor_id.num_connector_ids = 0;
     MonitorCallbackUserdata monitor_callback_userdata = {
@@ -194,7 +196,7 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         0,
         X11_ROT_0
     };
-    for_each_active_monitor_output(cap_kms->dpy, monitor_callback, &monitor_callback_userdata);
+    for_each_active_monitor_output(connection, connection_type, monitor_callback, &monitor_callback_userdata);
 
     cap_kms->screen_size.x = WidthOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
     cap_kms->screen_size.y = HeightOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
@@ -205,7 +207,7 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         monitor.pos.y = 0;
         monitor.size = cap_kms->screen_size;
         cap_kms->screen_capture = true;
-    } else if(!get_monitor_by_name(cap_kms->dpy, cap_kms->params.display_to_capture, &monitor)) {
+    } else if(!get_monitor_by_name(connection, connection_type, cap_kms->params.display_to_capture, &monitor)) {
         fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
         gsr_capture_kms_vaapi_stop(cap, video_codec_context);
         return -1;
@@ -225,7 +227,7 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
     cap_kms->capture_pos = monitor.pos;
     cap_kms->capture_size = monitor.size;
 
-    if(!gsr_egl_load(&cap_kms->egl, cap_kms->dpy)) {
+    if(!gsr_egl_load(&cap_kms->egl, cap_kms->dpy, cap_kms->params.wayland)) {
         fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to load opengl\n");
         gsr_capture_kms_vaapi_stop(cap, video_codec_context);
         return -1;
@@ -325,6 +327,7 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
                 const int plane = 0;
 
                 const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
+                //const uint64_t modifier = cap_kms->prime.objects[cap_kms->prime.layers[layer].object_index[plane]].drm_format_modifier;
 
                 const intptr_t img_attr[] = {
                     EGL_LINUX_DRM_FOURCC_EXT,       formats[i],
@@ -333,6 +336,9 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
                     EGL_DMA_BUF_PLANE0_FD_EXT,      cap_kms->prime.objects[cap_kms->prime.layers[layer].object_index[plane]].fd,
                     EGL_DMA_BUF_PLANE0_OFFSET_EXT,  cap_kms->prime.layers[layer].offset[plane],
                     EGL_DMA_BUF_PLANE0_PITCH_EXT,   cap_kms->prime.layers[layer].pitch[plane],
+                    // TODO:
+                    //EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier & 0xFFFFFFFFULL,
+                    //EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, modifier >> 32ULL,
                     EGL_NONE
                 };
 
@@ -355,6 +361,7 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
                 while(cap_kms->egl.eglGetError() != EGL_SUCCESS){}
                 cap_kms->egl.glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
                 if(cap_kms->egl.glGetError() != 0 || cap_kms->egl.eglGetError() != EGL_SUCCESS) {
+                    // TODO: Get the error properly
                     fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: failed to bind egl image to gl texture, error: %d\n", cap_kms->egl.eglGetError());
                     cap_kms->should_stop = true;
                     cap_kms->stop_is_error = true;
@@ -484,6 +491,9 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         }
     }
 
+    if(!drm_fd)
+        return -1;
+
     bool capture_is_combined_plane = drm_fd->is_combined_plane || ((int)drm_fd->width == cap_kms->screen_size.x && (int)drm_fd->height == cap_kms->screen_size.y);
 
     // TODO: This causes a crash sometimes on steam deck, why? is it a driver bug? a vaapi pure version doesn't cause a crash.
@@ -511,6 +521,9 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         EGL_DMA_BUF_PLANE0_FD_EXT,      drm_fd->fd,
         EGL_DMA_BUF_PLANE0_OFFSET_EXT,  drm_fd->offset,
         EGL_DMA_BUF_PLANE0_PITCH_EXT,   drm_fd->pitch,
+        // TODO:
+        //EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, drm_fd->modifier & 0xFFFFFFFFULL,
+        //EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, drm_fd->modifier >> 32ULL,
         EGL_NONE
     };
 

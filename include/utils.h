@@ -3,6 +3,7 @@
 
 #include "vec2.h"
 #include <stdbool.h>
+#include <stdint.h>
 #include <X11/extensions/Xrandr.h>
 
 typedef enum {
@@ -17,9 +18,19 @@ typedef struct {
 } gsr_gpu_info;
 
 typedef struct {
+    const char *name;
+    int name_len;
     vec2i pos;
     vec2i size;
+    XRRCrtcInfo *crt_info; /* Only on x11 */
+    uint32_t connector_id; /* Only on drm */
 } gsr_monitor;
+
+typedef enum {
+    GSR_CONNECTION_X11,
+    GSR_CONNECTION_WAYLAND,
+    GSR_CONNECTION_DRM
+} gsr_connection_type;
 
 typedef struct {
     const char *name;
@@ -30,11 +41,11 @@ typedef struct {
 
 double clock_get_monotonic_seconds(void);
 
-typedef void (*active_monitor_callback)(const XRROutputInfo *output_info, const XRRCrtcInfo *crt_info, const XRRModeInfo *mode_info, void *userdata);
-void for_each_active_monitor_output(Display *display, active_monitor_callback callback, void *userdata);
-bool get_monitor_by_name(Display *display, const char *name, gsr_monitor *monitor);
+typedef void (*active_monitor_callback)(const gsr_monitor *monitor, void *userdata);
+void for_each_active_monitor_output(void *connection, gsr_connection_type connection_type, active_monitor_callback callback, void *userdata);
+bool get_monitor_by_name(void *connection, gsr_connection_type connection_type, const char *name, gsr_monitor *monitor);
 
-bool gl_get_gpu_info(Display *dpy, gsr_gpu_info *info);
+bool gl_get_gpu_info(Display *dpy, gsr_gpu_info *info, bool wayland);
 
 /* |output| should be at least 128 bytes in size */
 bool gsr_get_valid_card_path(char *output);

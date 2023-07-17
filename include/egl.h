@@ -50,13 +50,24 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define EGL_DMA_BUF_PLANE0_FD_EXT               0x3272
 #define EGL_DMA_BUF_PLANE0_OFFSET_EXT           0x3273
 #define EGL_DMA_BUF_PLANE0_PITCH_EXT            0x3274
+#define EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT      0x3443
+#define EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT      0x3444
 #define EGL_LINUX_DMA_BUF_EXT                   0x3270
+#define EGL_OPENGL_API                          0x30A2
+#define EGL_OPENGL_ES_API                       0x30A0
+#define EGL_RED_SIZE                            0x3024
+#define EGL_ALPHA_SIZE                          0x3021
+#define EGL_BLUE_SIZE                           0x3022
+#define EGL_GREEN_SIZE                          0x3023
+#define EGL_SURFACE_TYPE                        0x3033
+#define EGL_PBUFFER_BIT                         0x0001
 
 #define GL_FLOAT                                0x1406
 #define GL_FALSE                                0
 #define GL_TRUE                                 1
 #define GL_TRIANGLES                            0x0004
 #define GL_TEXTURE_2D                           0x0DE1
+#define GL_TEXTURE_EXTERNAL_OES                 0x8D65 // TODO: Use this where applicable
 #define GL_RGB                                  0x1907
 #define GL_RGBA                                 0x1908
 #define GL_RGBA8                                0x8058
@@ -97,11 +108,27 @@ typedef void (*FUNC_glEGLImageTargetTexture2DOES)(unsigned int target, GLeglImag
 typedef struct {
     void *egl_library;
     void *gl_library;
-    Display *dpy;
+
     EGLDisplay egl_display;
     EGLSurface egl_surface;
     EGLContext egl_context;
-    Window window;
+
+    Display *x11_dpy;
+    Window x11_window;
+
+    void *wayland_dpy;
+    void *wayland_window;
+    void *wayland_registry;
+    void *wayland_surface;
+    void *wayland_compositor;
+
+    int fd;
+    uint32_t width;
+    uint32_t height;
+    uint32_t pitch;
+    uint32_t offset;
+    uint32_t pixel_format;
+    uint64_t modifier;
 
     int32_t (*eglGetError)(void);
     EGLDisplay (*eglGetDisplay)(EGLNativeDisplayType display_id);
@@ -117,6 +144,7 @@ typedef struct {
     unsigned int (*eglDestroyImage)(EGLDisplay dpy, EGLImage image);
     unsigned int (*eglSwapInterval)(EGLDisplay dpy, int32_t interval);
     unsigned int (*eglSwapBuffers)(EGLDisplay dpy, EGLSurface surface);
+    unsigned int (*eglBindAPI)(unsigned int api);
     __eglMustCastToProperFunctionPointerType (*eglGetProcAddress)(const char *procname);
 
     FUNC_eglExportDMABUFImageQueryMESA eglExportDMABUFImageQueryMESA;
@@ -173,7 +201,10 @@ typedef struct {
     void (*glUniform1f)(int location, float v0);
 } gsr_egl;
 
-bool gsr_egl_load(gsr_egl *self, Display *dpy);
+bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland);
 void gsr_egl_unload(gsr_egl *self);
+
+void gsr_egl_update(gsr_egl *self);
+void gsr_egl_cleanup_frame(gsr_egl *self);
 
 #endif /* GSR_EGL_H */

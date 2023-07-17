@@ -3,6 +3,7 @@ extern "C" {
 #include "../include/capture/xcomposite_cuda.h"
 #include "../include/capture/xcomposite_vaapi.h"
 #include "../include/capture/kms_vaapi.h"
+#include "../include/capture/kms_cuda.h"
 #include "../include/egl.h"
 #include "../include/utils.h"
 }
@@ -45,10 +46,9 @@ static const int VIDEO_STREAM_INDEX = 0;
 
 static thread_local char av_error_buffer[AV_ERROR_MAX_STRING_SIZE];
 
-static void monitor_output_callback_print(const XRROutputInfo *output_info, const XRRCrtcInfo *crt_info, const XRRModeInfo *mode_info, void *userdata) {
-    (void)mode_info;
+static void monitor_output_callback_print(const gsr_monitor *monitor, void *userdata) {
     (void)userdata;
-    fprintf(stderr, "    \"%.*s\"    (%dx%d+%d+%d)\n", output_info->nameLen, output_info->name, (int)crt_info->width, (int)crt_info->height, crt_info->x, crt_info->y);
+    fprintf(stderr, "    \"%.*s\"    (%dx%d+%d+%d)\n", monitor->name_len, monitor->name, monitor->size.x, monitor->size.y, monitor->pos.x, monitor->pos.y);
 }
 
 static char* av_error_to_string(int err) {
@@ -1056,9 +1056,11 @@ static int init_filter_graph(AVCodecContext *audio_codec_context, AVFilterGraph 
     return 0;
 }
 
-static void xwayland_check_callback(const XRROutputInfo *output_info, const XRRCrtcInfo*, const XRRModeInfo*, void *userdata) {
+static void xwayland_check_callback(const gsr_monitor *monitor, void *userdata) {
     bool *xwayland_found = (bool*)userdata;
-    if(output_info->nameLen >= 8 && strncmp(output_info->name, "XWAYLAND", 8) == 0)
+    if(monitor->name_len >= 8 && strncmp(monitor->name, "XWAYLAND", 8) == 0)
+        *xwayland_found = true;
+    else if(memmem(monitor->name, monitor->name_len, "X11", 3))
         *xwayland_found = true;
 }
 
@@ -1068,7 +1070,7 @@ static bool is_xwayland(Display *display) {
         return true;
 
     bool xwayland_found = false;
-    for_each_active_monitor_output(display, xwayland_check_callback, &xwayland_found);
+    for_each_active_monitor_output(display, GSR_CONNECTION_X11, xwayland_check_callback, &xwayland_found);
     return xwayland_found;
 }
 
@@ -1285,23 +1287,22 @@ int main(int argc, char **argv) {
         replay_buffer_size_secs += 5; // Add a few seconds to account of lost packets because of non-keyframe packets skipped
     }
 
+    bool wayland = false;
     Display *dpy = XOpenDisplay(nullptr);
     if (!dpy) {
-        fprintf(stderr, "Error: Failed to open display. Make sure you are running x11\n");
-        _exit(2);
+        wayland = true;
+        fprintf(stderr, "Warning: failed to connect to the X server. Assuming wayland is running without Xwayland\n");
     }
 
     XSetErrorHandler(x11_error_handler);
     XSetIOErrorHandler(x11_io_error_handler);
 
-    if(is_xwayland(dpy)) {
-        fprintf(stderr, "Error: GPU Screen Recorder only works in a pure X11 session. Xwayland is not supported\n");
-        _exit(2);
-    }
+    if(!wayland)
+        wayland = is_xwayland(dpy);
 
     gsr_gpu_info gpu_inf;
     bool very_old_gpu = false;
-    if(!gl_get_gpu_info(dpy, &gpu_inf))
+    if(!gl_get_gpu_info(dpy, &gpu_inf, wayland))
         _exit(2);
 
     if(gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA && gpu_inf.gpu_version != 0 && gpu_inf.gpu_version < 900) {
@@ -1315,7 +1316,7 @@ int main(int argc, char **argv) {
 
     char card_path[128];
     card_path[0] = '\0';
-    if(gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA) {
+    if(wayland || gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA) {
         // TODO: Allow specifying another card, and in other places
         if(!gsr_get_valid_card_path(card_path)) {
             fprintf(stderr, "Error: no /dev/dri/cardX device found\n");
@@ -1353,6 +1354,11 @@ int main(int argc, char **argv) {
 
     gsr_capture *capture = nullptr;
     if(strcmp(window_str, "focused") == 0) {
+        if(wayland) {
+            fprintf(stderr, "Error: GPU Screen Recorder window capture only works in a pure X11 session. Xwayland is not supported. You can record a monitor instead on wayland\n");
+            _exit(2);
+        }
+
         if(!screen_region) {
             fprintf(stderr, "Error: option -s is required when using -w focused\n");
             usage();
@@ -1370,44 +1376,69 @@ int main(int argc, char **argv) {
 
         follow_focused = true;
     } else if(contains_non_hex_number(window_str)) {
-        if(strcmp(window_str, "screen") != 0 && strcmp(window_str, "screen-direct") != 0 && strcmp(window_str, "screen-direct-force") != 0) {
+        // TODO: wayland, not only drm (if wlroots)
+        if(wayland) {
             gsr_monitor gmon;
-            if(!get_monitor_by_name(dpy, window_str, &gmon)) {
+            if(!get_monitor_by_name(card_path, GSR_CONNECTION_DRM, window_str, &gmon)) {
                 fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
-                fprintf(stderr, "    \"screen\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
-                fprintf(stderr, "    \"screen-direct\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
-                fprintf(stderr, "    \"screen-direct-force\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
-                for_each_active_monitor_output(dpy, monitor_output_callback_print, NULL);
+                for_each_active_monitor_output(card_path, GSR_CONNECTION_DRM, monitor_output_callback_print, NULL);
                 _exit(1);
+            }
+        } else {
+            if(strcmp(window_str, "screen") != 0 && strcmp(window_str, "screen-direct") != 0 && strcmp(window_str, "screen-direct-force") != 0) {
+                gsr_monitor gmon;
+                if(!get_monitor_by_name(dpy, GSR_CONNECTION_X11, window_str, &gmon)) {
+                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
+                    fprintf(stderr, "    \"screen\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
+                    fprintf(stderr, "    \"screen-direct\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
+                    fprintf(stderr, "    \"screen-direct-force\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
+                    for_each_active_monitor_output(dpy, GSR_CONNECTION_X11, monitor_output_callback_print, NULL);
+                    _exit(1);
+                }
             }
         }
 
         if(gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA) {
-            const char *capture_target = window_str;
-            bool direct_capture = strcmp(window_str, "screen-direct") == 0;
-            if(direct_capture) {
-                capture_target = "screen";
-                // TODO: Temporary disable direct capture because push model causes stuttering when it's direct capturing. This might be a nvfbc bug. This does not happen when using a compositor.
-                direct_capture = false;
-                fprintf(stderr, "Warning: screen-direct has temporary been disabled as it causes stuttering. This is likely a NvFBC bug. Falling back to \"screen\".\n");
-            }
+            if(wayland) {
+                const char *capture_target = window_str;
+                if(strcmp(window_str, "screen-direct") == 0 || strcmp(window_str, "screen-direct-force") == 0) {
+                    capture_target = "screen";
+                }
 
-            if(strcmp(window_str, "screen-direct-force") == 0) {
-                direct_capture = true;
-                capture_target = "screen";
-            }
+                gsr_capture_kms_cuda_params kms_params;
+                kms_params.display_to_capture = capture_target;
+                kms_params.gpu_inf = gpu_inf;
+                kms_params.card_path = card_path;
+                capture = gsr_capture_kms_cuda_create(&kms_params);
+                if(!capture)
+                    _exit(1);
+            } else {
+                const char *capture_target = window_str;
+                bool direct_capture = strcmp(window_str, "screen-direct") == 0;
+                if(direct_capture) {
+                    capture_target = "screen";
+                    // TODO: Temporary disable direct capture because push model causes stuttering when it's direct capturing. This might be a nvfbc bug. This does not happen when using a compositor.
+                    direct_capture = false;
+                    fprintf(stderr, "Warning: screen-direct has temporary been disabled as it causes stuttering. This is likely a NvFBC bug. Falling back to \"screen\".\n");
+                }
 
-            gsr_capture_nvfbc_params nvfbc_params;
-            nvfbc_params.dpy = dpy;
-            nvfbc_params.display_to_capture = capture_target;
-            nvfbc_params.fps = fps;
-            nvfbc_params.pos = { 0, 0 };
-            nvfbc_params.size = { 0, 0 };
-            nvfbc_params.direct_capture = direct_capture;
-            nvfbc_params.overclock = overclock;
-            capture = gsr_capture_nvfbc_create(&nvfbc_params);
-            if(!capture)
-                _exit(1);
+                if(strcmp(window_str, "screen-direct-force") == 0) {
+                    direct_capture = true;
+                    capture_target = "screen";
+                }
+
+                gsr_capture_nvfbc_params nvfbc_params;
+                nvfbc_params.dpy = dpy;
+                nvfbc_params.display_to_capture = capture_target;
+                nvfbc_params.fps = fps;
+                nvfbc_params.pos = { 0, 0 };
+                nvfbc_params.size = { 0, 0 };
+                nvfbc_params.direct_capture = direct_capture;
+                nvfbc_params.overclock = overclock;
+                capture = gsr_capture_nvfbc_create(&nvfbc_params);
+                if(!capture)
+                    _exit(1);
+            }
         } else {
             const char *capture_target = window_str;
             if(strcmp(window_str, "screen-direct") == 0 || strcmp(window_str, "screen-direct-force") == 0) {
@@ -1418,11 +1449,17 @@ int main(int argc, char **argv) {
             kms_params.display_to_capture = capture_target;
             kms_params.gpu_inf = gpu_inf;
             kms_params.card_path = card_path;
+            kms_params.wayland = false;//wayland;
             capture = gsr_capture_kms_vaapi_create(&kms_params);
             if(!capture)
                 _exit(1);
         }
     } else {
+        if(wayland) {
+            fprintf(stderr, "Error: GPU Screen Recorder window capture only works in a pure X11 session. Xwayland is not supported. You can record a monitor instead on wayland\n");
+            _exit(2);
+        }
+
         errno = 0;
         src_window_id = strtol(window_str, nullptr, 0);
         if(src_window_id == None || errno == EINVAL) {

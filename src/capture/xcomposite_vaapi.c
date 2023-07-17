@@ -147,7 +147,7 @@ static int gsr_capture_xcomposite_vaapi_start(gsr_capture *cap, AVCodecContext *
     // TODO: Get select and add these on top of it and then restore at the end. Also do the same in other xcomposite
     XSelectInput(cap_xcomp->dpy, cap_xcomp->params.window, StructureNotifyMask | ExposureMask);
 
-    if(!gsr_egl_load(&cap_xcomp->egl, cap_xcomp->dpy)) {
+    if(!gsr_egl_load(&cap_xcomp->egl, cap_xcomp->dpy, false)) {
         fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start: failed to load opengl\n");
         return -1;
     }
@@ -373,6 +373,7 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
             EGL_NONE,
         };
 
+        // TODO: Use the window texture egl image directly instead of exporting it to opengl texture and then importing it to egl image again
         EGLImage img = cap_xcomp->egl.eglCreateImage(cap_xcomp->egl.egl_display, cap_xcomp->egl.egl_context, EGL_GL_TEXTURE_2D, (EGLClientBuffer)(uint64_t)window_texture_get_opengl_texture_id(&cap_xcomp->window_texture), pixmap_attrs);
         if(!img) {
             fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: eglCreateImage failed\n");

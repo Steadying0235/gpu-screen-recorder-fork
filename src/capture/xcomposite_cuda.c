@@ -63,6 +63,8 @@ static bool cuda_register_opengl_texture(gsr_capture_xcomposite_cuda *cap_xcomp)
     CUresult res;
     CUcontext old_ctx;
     res = cap_xcomp->cuda.cuCtxPushCurrent_v2(cap_xcomp->cuda.cu_ctx);
+    // TODO: Use cuGraphicsEGLRegisterImage instead with the window egl image (dont use window_texture).
+    // That removes the need for an extra texture and texture copy
     res = cap_xcomp->cuda.cuGraphicsGLRegisterImage(
         &cap_xcomp->cuda_graphics_resource, cap_xcomp->target_texture_id, GL_TEXTURE_2D,
         CU_GRAPHICS_REGISTER_FLAGS_READ_ONLY);
@@ -122,6 +124,8 @@ static bool cuda_create_codec_context(gsr_capture_xcomposite_cuda *cap_xcomp, AV
     hw_frame_context->format = video_codec_context->pix_fmt;
     hw_frame_context->device_ref = device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
+
+    hw_frame_context->initial_pool_size = 1;
 
     if (av_hwframe_ctx_init(frame_context) < 0) {
         fprintf(stderr, "Error: Failed to initialize hardware frame context "
@@ -184,7 +188,7 @@ static int gsr_capture_xcomposite_cuda_start(gsr_capture *cap, AVCodecContext *v
 
     XSelectInput(cap_xcomp->dpy, cap_xcomp->window, StructureNotifyMask | ExposureMask);
 
-    if(!gsr_egl_load(&cap_xcomp->egl, cap_xcomp->dpy)) {
+    if(!gsr_egl_load(&cap_xcomp->egl, cap_xcomp->dpy, false)) {
         fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_start: failed to load opengl\n");
         return -1;
     }
@@ -244,6 +248,18 @@ static int gsr_capture_xcomposite_cuda_start(gsr_capture *cap, AVCodecContext *v
 static void gsr_capture_xcomposite_cuda_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_xcomposite_cuda *cap_xcomp = cap->priv;
 
+    if(cap_xcomp->cuda.cu_ctx) {
+        CUcontext old_ctx;
+        cap_xcomp->cuda.cuCtxPushCurrent_v2(cap_xcomp->cuda.cu_ctx);
+
+        if(cap_xcomp->cuda_graphics_resource) {
+            cap_xcomp->cuda.cuGraphicsUnmapResources(1, &cap_xcomp->cuda_graphics_resource, 0);
+            cap_xcomp->cuda.cuGraphicsUnregisterResource(cap_xcomp->cuda_graphics_resource);
+        }
+
+        cap_xcomp->cuda.cuCtxPopCurrent_v2(&old_ctx);
+    }
+
     window_texture_deinit(&cap_xcomp->window_texture);
 
     if(cap_xcomp->target_texture_id) {
@@ -256,14 +272,6 @@ static void gsr_capture_xcomposite_cuda_stop(gsr_capture *cap, AVCodecContext *v
     if(video_codec_context->hw_frames_ctx)
         av_buffer_unref(&video_codec_context->hw_frames_ctx);
 
-    if(cap_xcomp->cuda.cu_ctx) {
-        CUcontext old_ctx;
-        cap_xcomp->cuda.cuCtxPushCurrent_v2(cap_xcomp->cuda.cu_ctx);
-
-        cap_xcomp->cuda.cuGraphicsUnmapResources(1, &cap_xcomp->cuda_graphics_resource, 0);
-        cap_xcomp->cuda.cuGraphicsUnregisterResource(cap_xcomp->cuda_graphics_resource);
-        cap_xcomp->cuda.cuCtxPopCurrent_v2(&old_ctx);
-    }
     gsr_cuda_unload(&cap_xcomp->cuda);
 
     gsr_egl_unload(&cap_xcomp->egl);

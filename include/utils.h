@@ -50,4 +50,6 @@ bool gl_get_gpu_info(Display *dpy, gsr_gpu_info *info, bool wayland);
 /* |output| should be at least 128 bytes in size */
 bool gsr_get_valid_card_path(char *output);
 
+int even_number_ceil(int value);
+
 #endif /* GSR_UTILS_H */

@@ -257,8 +257,8 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
     /* Disable vsync */
     cap_kms->egl.eglSwapInterval(cap_kms->egl.egl_display, 0);
 
-    video_codec_context->width = max_int(2, cap_kms->capture_size.x & ~1);
-    video_codec_context->height = max_int(2, cap_kms->capture_size.y & ~1);
+    video_codec_context->width = max_int(2, even_number_ceil(cap_kms->capture_size.x));
+    video_codec_context->height = max_int(2, even_number_ceil(cap_kms->capture_size.y));
 
     if(!drm_create_codec_context(cap_kms, video_codec_context)) {
         gsr_capture_kms_vaapi_stop(cap, video_codec_context);

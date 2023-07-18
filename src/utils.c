@@ -271,3 +271,7 @@ bool gsr_get_valid_card_path(char *output) {
     }
     return false;
 }
+
+int even_number_ceil(int value) {
+    return value + (value & 1);
+}

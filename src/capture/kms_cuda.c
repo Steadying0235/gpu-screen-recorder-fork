@@ -152,8 +152,8 @@ static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_co
     cap_kms->capture_pos = monitor.pos;
     cap_kms->capture_size = monitor.size;
 
-    video_codec_context->width = max_int(2, cap_kms->capture_size.x & ~1);
-    video_codec_context->height = max_int(2, cap_kms->capture_size.y & ~1);
+    video_codec_context->width = max_int(2, even_number_ceil(cap_kms->capture_size.x));
+    video_codec_context->height = max_int(2, even_number_ceil(cap_kms->capture_size.y));
 
     if(!gsr_egl_load(&cap_kms->egl, NULL, true)) {
         fprintf(stderr, "gsr error: gsr_capture_kms_cuda_start: failed to load opengl\n");

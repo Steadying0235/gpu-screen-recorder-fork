@@ -176,21 +176,19 @@ static int gsr_capture_xcomposite_vaapi_start(gsr_capture *cap, AVCodecContext *
     cap_xcomp->texture_size.y = 0;
 
     cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
-    cap_xcomp->texture_size.x = 0;
-    cap_xcomp->texture_size.y = 0;
     cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &cap_xcomp->texture_size.x);
     cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
     cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
 
-    cap_xcomp->texture_size.x = max_int(2, cap_xcomp->texture_size.x & ~1);
-    cap_xcomp->texture_size.y = max_int(2, cap_xcomp->texture_size.y & ~1);
+    cap_xcomp->texture_size.x = max_int(2, even_number_ceil(cap_xcomp->texture_size.x));
+    cap_xcomp->texture_size.y = max_int(2, even_number_ceil(cap_xcomp->texture_size.y));
 
     video_codec_context->width = cap_xcomp->texture_size.x;
     video_codec_context->height = cap_xcomp->texture_size.y;
 
     if(cap_xcomp->params.region_size.x > 0 && cap_xcomp->params.region_size.y > 0) {
-        video_codec_context->width = max_int(2, cap_xcomp->params.region_size.x & ~1);
-        video_codec_context->height = max_int(2, cap_xcomp->params.region_size.y & ~1);
+        video_codec_context->width = max_int(2, even_number_ceil(cap_xcomp->params.region_size.x));
+        video_codec_context->height = max_int(2, even_number_ceil(cap_xcomp->params.region_size.y));
     }
 
     if(!drm_create_codec_context(cap_xcomp, video_codec_context)) {
@@ -282,8 +280,8 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
             cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
             cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
 
-            cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, cap_xcomp->texture_size.x & ~1));
-            cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, cap_xcomp->texture_size.y & ~1));
+            cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, even_number_ceil(cap_xcomp->texture_size.x)));
+            cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, even_number_ceil(cap_xcomp->texture_size.y)));
         }
     }
 
@@ -306,8 +304,8 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
         cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
         cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
 
-        cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, cap_xcomp->texture_size.x & ~1));
-        cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, cap_xcomp->texture_size.y & ~1));
+        cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, even_number_ceil(cap_xcomp->texture_size.x)));
+        cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, even_number_ceil(cap_xcomp->texture_size.y)));
 
         if(cap_xcomp->buffer_id) {
             vaDestroyBuffer(cap_xcomp->va_dpy, cap_xcomp->buffer_id);
@@ -565,6 +563,7 @@ static int gsr_capture_xcomposite_vaapi_capture(gsr_capture *cap, AVFrame *frame
 static void gsr_capture_xcomposite_vaapi_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
 
+    // TODO: buffer_id == 0 is valid.. may be same for some of these other values. Handle that! also in other files
     if(cap_xcomp->buffer_id) {
         vaDestroyBuffer(cap_xcomp->va_dpy, cap_xcomp->buffer_id);
         cap_xcomp->buffer_id = 0;

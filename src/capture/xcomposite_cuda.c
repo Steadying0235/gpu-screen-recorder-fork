@@ -208,15 +208,15 @@ static int gsr_capture_xcomposite_cuda_start(gsr_capture *cap, AVCodecContext *v
     cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
     cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
 
-    cap_xcomp->texture_size.x = max_int(2, cap_xcomp->texture_size.x & ~1);
-    cap_xcomp->texture_size.y = max_int(2, cap_xcomp->texture_size.y & ~1);
+    cap_xcomp->texture_size.x = max_int(2, even_number_ceil(cap_xcomp->texture_size.x));
+    cap_xcomp->texture_size.y = max_int(2, even_number_ceil(cap_xcomp->texture_size.y));
 
     video_codec_context->width = cap_xcomp->texture_size.x;
     video_codec_context->height = cap_xcomp->texture_size.y;
 
     if(cap_xcomp->params.region_size.x > 0 && cap_xcomp->params.region_size.y > 0) {
-        video_codec_context->width = max_int(2, cap_xcomp->params.region_size.x & ~1);
-        video_codec_context->height = max_int(2, cap_xcomp->params.region_size.y & ~1);
+        video_codec_context->width = max_int(2, even_number_ceil(cap_xcomp->params.region_size.x));
+        video_codec_context->height = max_int(2, even_number_ceil(cap_xcomp->params.region_size.y));
     }
 
     cap_xcomp->target_texture_id = gl_create_texture(cap_xcomp, video_codec_context->width, video_codec_context->height);
@@ -361,8 +361,8 @@ static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *v
             cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
             cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
 
-            cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, cap_xcomp->texture_size.x & ~1));
-            cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, cap_xcomp->texture_size.y & ~1));
+            cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, even_number_ceil(cap_xcomp->texture_size.x)));
+            cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, even_number_ceil(cap_xcomp->texture_size.y)));
         }
     }
 
@@ -384,8 +384,8 @@ static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *v
         cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
         cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
 
-        cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, cap_xcomp->texture_size.x & ~1));
-        cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, cap_xcomp->texture_size.y & ~1));
+        cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, even_number_ceil(cap_xcomp->texture_size.x)));
+        cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, even_number_ceil(cap_xcomp->texture_size.y)));
 
         if(!cap_xcomp->created_hw_frame) {
             cap_xcomp->created_hw_frame = true;

@@ -21,7 +21,7 @@ build_gsr_kms_server() {
     includes="$(pkg-config --cflags $dependencies)"
     libs="$(pkg-config --libs $dependencies) -ldl"
     $CC -c kms/server/kms_server.c $opts $extra_opts $includes
-    $CC -o gsr-kms-server -O2 kms_server.o $libs $opts $extra_opts
+    $CC -o gsr-kms-server kms_server.o $libs $opts $extra_opts
 }
 
 build_gsr() {
@@ -48,7 +48,7 @@ build_gsr() {
     #$CC -c external/wlr-export-dmabuf-unstable-v1-protocol.c $opts $includes
     $CXX -c src/sound.cpp $opts $includes
     $CXX -c src/main.cpp $opts $includes
-    $CXX -o gpu-screen-recorder -O2 capture.o nvfbc.o kms_client.o egl.o cuda.o xnvctrl.o overclock.o window_texture.o shader.o \
+    $CXX -o gpu-screen-recorder capture.o nvfbc.o kms_client.o egl.o cuda.o xnvctrl.o overclock.o window_texture.o shader.o \
         color_conversion.o cursor.o utils.o library_loader.o xcomposite_cuda.o xcomposite_vaapi.o kms_vaapi.o kms_cuda.o sound.o main.o $libs $opts
 }
 

@@ -1449,7 +1449,7 @@ int main(int argc, char **argv) {
             kms_params.display_to_capture = capture_target;
             kms_params.gpu_inf = gpu_inf;
             kms_params.card_path = card_path;
-            kms_params.wayland = false;//wayland;
+            kms_params.wayland = wayland;
             capture = gsr_capture_kms_vaapi_create(&kms_params);
             if(!capture)
                 _exit(1);

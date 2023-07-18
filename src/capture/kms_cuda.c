@@ -119,13 +119,12 @@ static void monitor_callback(const gsr_monitor *monitor, void *userdata) {
     if(monitor_callback_userdata->monitor_to_capture_len != monitor->name_len || memcmp(monitor_callback_userdata->monitor_to_capture, monitor->name, monitor->name_len) != 0)
         return;
 
-    const int connector_index = monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids;
-    if(connector_index < MAX_CONNECTOR_IDS) {
-        monitor_callback_userdata->cap_kms->monitor_id.connector_ids[connector_index] = monitor->connector_id;
+    if(monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids < MAX_CONNECTOR_IDS) {
+        monitor_callback_userdata->cap_kms->monitor_id.connector_ids[monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids] = monitor->connector_id;
         ++monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids;
     }
 
-    if(connector_index == MAX_CONNECTOR_IDS)
+    if(monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids == MAX_CONNECTOR_IDS)
         fprintf(stderr, "gsr warning: reached max connector ids\n");
 }
 

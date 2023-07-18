@@ -92,24 +92,25 @@ static bool plane_is_cursor_plane(int drmfd, uint32_t plane_id) {
 
     for(uint32_t i = 0; i < props->count_props; ++i) {
         drmModePropertyPtr prop = drmModeGetProperty(drmfd, props->props[i]);
-        if(prop) {
-            if(strcmp(prop->name, "type") == 0) {
-                const uint64_t current_enum_value = props->prop_values[i];
-                bool is_cursor = false;
+        if(!prop)
+            continue;
 
-                for(int j = 0; j < prop->count_enums; ++j) {
-                    if(prop->enums[j].value == current_enum_value && strcmp(prop->enums[j].name, "Cursor") == 0) {
-                        is_cursor = true;
-                        break;
-                    }
+        const uint32_t type = prop->flags & (DRM_MODE_PROP_LEGACY_TYPE | DRM_MODE_PROP_EXTENDED_TYPE);
+        if((type & DRM_MODE_PROP_ENUM) && strcmp(prop->name, "type") == 0) {
+            const uint64_t current_enum_value = props->prop_values[i];
+            bool is_cursor = false;
 
+            for(int j = 0; j < prop->count_enums; ++j) {
+                if(prop->enums[j].value == current_enum_value && strcmp(prop->enums[j].name, "Cursor") == 0) {
+                    is_cursor = true;
+                    break;
                 }
-
-                drmModeFreeProperty(prop);
-                return is_cursor;
             }
+
             drmModeFreeProperty(prop);
+            return is_cursor;
         }
+        drmModeFreeProperty(prop);
     }
 
     drmModeFreeObjectProperties(props);

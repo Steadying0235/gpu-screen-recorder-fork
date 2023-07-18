@@ -119,11 +119,12 @@ static bool drm_create_codec_context(gsr_capture_kms_vaapi *cap_kms, AVCodecCont
 
 typedef struct {
     gsr_capture_kms_vaapi *cap_kms;
-    const Atom randr_connector_id_atom;
+    Atom randr_connector_id_atom;
     const char *monitor_to_capture;
     int monitor_to_capture_len;
     int num_monitors;
     int rotation;
+    bool wayland;
 } MonitorCallbackUserdata;
 
 static bool properties_has_atom(Atom *props, int nprop, Atom atom) {
@@ -135,43 +136,51 @@ static bool properties_has_atom(Atom *props, int nprop, Atom atom) {
 }
 
 static void monitor_callback(const gsr_monitor *monitor, void *userdata) {
+    (void)monitor;
     MonitorCallbackUserdata *monitor_callback_userdata = userdata;
     ++monitor_callback_userdata->num_monitors;
-
-    if(strcmp(monitor_callback_userdata->monitor_to_capture, "screen") == 0)
-        monitor_callback_userdata->rotation = monitor->crt_info->rotation;
 
     if(monitor_callback_userdata->monitor_to_capture_len != monitor->name_len || memcmp(monitor_callback_userdata->monitor_to_capture, monitor->name, monitor->name_len) != 0)
         return;
 
-    monitor_callback_userdata->rotation = monitor->crt_info->rotation;
-    for(int i = 0; i < monitor->crt_info->noutput && monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids < MAX_CONNECTOR_IDS; ++i) {
-        int nprop = 0;
-        Atom *props = XRRListOutputProperties(monitor_callback_userdata->cap_kms->dpy, monitor->crt_info->outputs[i], &nprop);
-        if(!props)
-            continue;
-
-        if(!properties_has_atom(props, nprop, monitor_callback_userdata->randr_connector_id_atom)) {
-            XFree(props);
-            continue;
-        }
-
-        Atom type = 0;
-        int format = 0;
-        unsigned long bytes_after = 0;
-        unsigned long nitems = 0;
-        unsigned char *prop = NULL;
-        XRRGetOutputProperty(monitor_callback_userdata->cap_kms->dpy, monitor->crt_info->outputs[i],
-            monitor_callback_userdata->randr_connector_id_atom,
-            0, 128, false, false, AnyPropertyType,
-            &type, &format, &nitems, &bytes_after, &prop);
-
-        if(type == XA_INTEGER && format == 32) {
-            monitor_callback_userdata->cap_kms->monitor_id.connector_ids[monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids] = *(long*)prop;
+    if(monitor_callback_userdata->wayland) {
+        if(monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids < MAX_CONNECTOR_IDS) {
+            monitor_callback_userdata->cap_kms->monitor_id.connector_ids[monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids] = monitor->connector_id;
             ++monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids;
         }
+    } else {
+        if(strcmp(monitor_callback_userdata->monitor_to_capture, "screen") == 0)
+            monitor_callback_userdata->rotation = monitor->crt_info->rotation;
 
-        XFree(props);
+        monitor_callback_userdata->rotation = monitor->crt_info->rotation;
+        for(int i = 0; i < monitor->crt_info->noutput && monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids < MAX_CONNECTOR_IDS; ++i) {
+            int nprop = 0;
+            Atom *props = XRRListOutputProperties(monitor_callback_userdata->cap_kms->dpy, monitor->crt_info->outputs[i], &nprop);
+            if(!props)
+                continue;
+
+            if(!properties_has_atom(props, nprop, monitor_callback_userdata->randr_connector_id_atom)) {
+                XFree(props);
+                continue;
+            }
+
+            Atom type = 0;
+            int format = 0;
+            unsigned long bytes_after = 0;
+            unsigned long nitems = 0;
+            unsigned char *prop = NULL;
+            XRRGetOutputProperty(monitor_callback_userdata->cap_kms->dpy, monitor->crt_info->outputs[i],
+                monitor_callback_userdata->randr_connector_id_atom,
+                0, 128, false, false, AnyPropertyType,
+                &type, &format, &nitems, &bytes_after, &prop);
+
+            if(type == XA_INTEGER && format == 32) {
+                monitor_callback_userdata->cap_kms->monitor_id.connector_ids[monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids] = *(long*)prop;
+                ++monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids;
+            }
+
+            XFree(props);
+        }
     }
 
     if(monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids == MAX_CONNECTOR_IDS)
@@ -188,18 +197,30 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
     void *connection = cap_kms->params.wayland ? (void*)cap_kms->params.card_path : (void*)cap_kms->dpy;
     const gsr_connection_type connection_type = cap_kms->params.wayland ? GSR_CONNECTION_DRM : GSR_CONNECTION_X11;
 
-    const Atom randr_connector_id_atom = XInternAtom(cap_kms->dpy, "CONNECTOR_ID", False);
-    cap_kms->monitor_id.num_connector_ids = 0;
     MonitorCallbackUserdata monitor_callback_userdata = {
-        cap_kms, randr_connector_id_atom,
+        cap_kms, None,
         cap_kms->params.display_to_capture, strlen(cap_kms->params.display_to_capture),
         0,
-        X11_ROT_0
+        X11_ROT_0,
+        true
     };
-    for_each_active_monitor_output(connection, connection_type, monitor_callback, &monitor_callback_userdata);
 
-    cap_kms->screen_size.x = WidthOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
-    cap_kms->screen_size.y = HeightOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
+    if(cap_kms->params.wayland) {
+        cap_kms->monitor_id.num_connector_ids = 0;
+        for_each_active_monitor_output(connection, connection_type, monitor_callback, &monitor_callback_userdata);
+
+        cap_kms->screen_size.x = 0;
+        cap_kms->screen_size.y = 0;
+    } else {
+        const Atom randr_connector_id_atom = XInternAtom(cap_kms->dpy, "CONNECTOR_ID", False);
+        cap_kms->monitor_id.num_connector_ids = 0;
+        monitor_callback_userdata.randr_connector_id_atom = randr_connector_id_atom;
+        monitor_callback_userdata.wayland = false;
+        for_each_active_monitor_output(connection, connection_type, monitor_callback, &monitor_callback_userdata);
+
+        cap_kms->screen_size.x = WidthOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
+        cap_kms->screen_size.y = HeightOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
+    }
 
     gsr_monitor monitor;
     if(strcmp(cap_kms->params.display_to_capture, "screen") == 0) {
@@ -244,13 +265,15 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         return -1;
     }
 
-    if(gsr_cursor_init(&cap_kms->cursor, &cap_kms->egl, cap_kms->dpy) != 0) {
-        gsr_capture_kms_vaapi_stop(cap, video_codec_context);
-        return -1;
-    }
+    if(cap_kms->dpy) {
+        if(gsr_cursor_init(&cap_kms->cursor, &cap_kms->egl, cap_kms->dpy) != 0) {
+            gsr_capture_kms_vaapi_stop(cap, video_codec_context);
+            return -1;
+        }
 
-    gsr_cursor_change_window_target(&cap_kms->cursor, DefaultRootWindow(cap_kms->dpy));
-    gsr_cursor_update(&cap_kms->cursor, &cap_kms->xev);
+        gsr_cursor_change_window_target(&cap_kms->cursor, DefaultRootWindow(cap_kms->dpy));
+        gsr_cursor_update(&cap_kms->cursor, &cap_kms->xev);
+    }
 
     return 0;
 }
@@ -267,9 +290,11 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
     // TODO:
     cap_kms->egl.glClear(GL_COLOR_BUFFER_BIT);
 
-    while(XPending(cap_kms->dpy)) {
-        XNextEvent(cap_kms->dpy, &cap_kms->xev);
-        gsr_cursor_update(&cap_kms->cursor, &cap_kms->xev);
+    if(cap_kms->dpy) {
+        while(XPending(cap_kms->dpy)) {
+            XNextEvent(cap_kms->dpy, &cap_kms->xev);
+            gsr_cursor_update(&cap_kms->cursor, &cap_kms->xev);
+        }
     }
 
     if(!cap_kms->created_hw_frame) {
@@ -596,14 +621,16 @@ static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_c
         }
     }
 
-    if(cap_kms->input_texture) {
-        cap_kms->egl.glDeleteTextures(1, &cap_kms->input_texture);
-        cap_kms->input_texture = 0;
-    }
+    if(cap_kms->egl.egl_context) {
+        if(cap_kms->input_texture) {
+            cap_kms->egl.glDeleteTextures(1, &cap_kms->input_texture);
+            cap_kms->input_texture = 0;
+        }
 
-    cap_kms->egl.glDeleteTextures(2, cap_kms->target_textures);
-    cap_kms->target_textures[0] = 0;
-    cap_kms->target_textures[1] = 0;
+        cap_kms->egl.glDeleteTextures(2, cap_kms->target_textures);
+        cap_kms->target_textures[0] = 0;
+        cap_kms->target_textures[1] = 0;
+    }
 
     for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {
         if(cap_kms->kms_response.fds[i].fd > 0)
@@ -656,7 +683,7 @@ gsr_capture* gsr_capture_kms_vaapi_create(const gsr_capture_kms_vaapi_params *pa
     }
 
     Display *display = XOpenDisplay(NULL);
-    if(!display) {
+    if(!params->wayland && !display) {
         fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_create failed: XOpenDisplay failed\n");
         free(cap);
         free(cap_kms);

@@ -45,11 +45,11 @@ build_gsr() {
     $CC -c src/cursor.c $opts $includes
     $CC -c src/utils.c $opts $includes
     $CC -c src/library_loader.c $opts $includes
-    $CC -c external/wlr-export-dmabuf-unstable-v1-protocol.c $opts $includes
+    #$CC -c external/wlr-export-dmabuf-unstable-v1-protocol.c $opts $includes
     $CXX -c src/sound.cpp $opts $includes
     $CXX -c src/main.cpp $opts $includes
     $CXX -o gpu-screen-recorder -O2 capture.o nvfbc.o kms_client.o egl.o cuda.o xnvctrl.o overclock.o window_texture.o shader.o \
-        color_conversion.o cursor.o utils.o library_loader.o xcomposite_cuda.o xcomposite_vaapi.o kms_vaapi.o kms_cuda.o wlr-export-dmabuf-unstable-v1-protocol.o sound.o main.o $libs $opts
+        color_conversion.o cursor.o utils.o library_loader.o xcomposite_cuda.o xcomposite_vaapi.o kms_vaapi.o kms_cuda.o sound.o main.o $libs $opts
 }
 
 #build_wayland_protocol

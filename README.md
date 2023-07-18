@@ -41,11 +41,11 @@ If you install GPU Screen Recorder flatpak, which is the gtk gui version then yo
 
 # Dependencies
 ## AMD
-`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libxfixes, libpulse, libva, libva-mesa-driver, libdrm, libcap, polkit (for pkexec), wayland-client, wayland-elg`.
+`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libxfixes, libpulse, libva, libva-mesa-driver, libdrm, libcap, polkit (for pkexec), wayland-client, wayland-egl`.
 ## Intel
-`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libxfixes, libpulse, libva, libva-intel-driver, libdrm, libcap, polkit (for pkexec), wayland-client, wayland-elg`.
+`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libxfixes, libpulse, libva, libva-intel-driver, libdrm, libcap, polkit (for pkexec), wayland-client, wayland-egl`.
 ## NVIDIA
-`libglvnd (which provides libgl and libegl), ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libxfixes, libpulse, cuda (libnvidia-compute), nvenc (libnvidia-encode), libva, libdrm, libcap, polkit (for pkexec, only on wayland), wayland-client, wayland-elg`. Additionally, you need to have `nvfbc (libnvidia-fbc1)` installed when using nvfbc and `xnvctrl (libxnvctrl0)` when using the `-oc` option.
+`libglvnd (which provides libgl and libegl), ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libxfixes, libpulse, cuda (libnvidia-compute), nvenc (libnvidia-encode), libva, libdrm, libcap, polkit (for pkexec, only on wayland), wayland-client, wayland-egl`. Additionally, you need to have `nvfbc (libnvidia-fbc1)` installed when using nvfbc and `xnvctrl (libxnvctrl0)` when using the `-oc` option.
 
 # How to use
 Run `gpu-screen-recorder --help` to see all options.

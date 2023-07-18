@@ -576,7 +576,9 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         }
     }
 
-    gsr_cursor_tick(&cap_kms->cursor);
+    if(cap_kms->dpy) {
+        gsr_cursor_tick(&cap_kms->cursor);
+    }
 
     vec2i capture_pos = cap_kms->capture_pos;
     vec2i capture_size = cap_kms->capture_size;
@@ -591,10 +593,12 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         capture_pos, capture_size,
         texture_rotation);
 
-    gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->cursor.texture_id,
-        cursor_capture_pos, (vec2i){cap_kms->cursor.size.x, cap_kms->cursor.size.y},
-        (vec2i){0, 0}, (vec2i){cap_kms->cursor.size.x, cap_kms->cursor.size.y},
-        0.0f);
+    if(cap_kms->dpy) {
+        gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->cursor.texture_id,
+            cursor_capture_pos, (vec2i){cap_kms->cursor.size.x, cap_kms->cursor.size.y},
+            (vec2i){0, 0}, (vec2i){cap_kms->cursor.size.x, cap_kms->cursor.size.y},
+            0.0f);
+    }
 
     cap_kms->egl.eglSwapBuffers(cap_kms->egl.egl_display, cap_kms->egl.egl_surface);
 

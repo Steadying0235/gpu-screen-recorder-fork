@@ -85,4 +85,3 @@ When nvidia supports hardware cursor then capture the cursor. Right now the curs
 CPU usage is pretty high on AMD/Intel/(Nvidia(wayland)), why? opening and closing fds, creating egl, cuda association, is slow when done every frame. Test if desktop portal screencast has better performance.
 Cursor on amd/intel wayland only shows up when the cursor is above xwayland applications.
 
-Test if everything works fine on amd/intel, if it works fine with kms/wlroots, if it works fine with scaling and finally modify gtk gui to list monitors from wlroots/etc.

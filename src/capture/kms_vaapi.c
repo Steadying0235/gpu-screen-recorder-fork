@@ -32,7 +32,6 @@ typedef enum {
 
 typedef struct {
     gsr_capture_kms_vaapi_params params;
-    Display *dpy;
     XEvent xev;
 
     bool should_stop;
@@ -160,7 +159,7 @@ static void monitor_callback(const gsr_monitor *monitor, void *userdata) {
         monitor_callback_userdata->rotation = monitor->crt_info->rotation;
         for(int i = 0; i < monitor->crt_info->noutput && monitor_callback_userdata->cap_kms->monitor_id.num_connector_ids < MAX_CONNECTOR_IDS; ++i) {
             int nprop = 0;
-            Atom *props = XRRListOutputProperties(monitor_callback_userdata->cap_kms->dpy, monitor->crt_info->outputs[i], &nprop);
+            Atom *props = XRRListOutputProperties(monitor_callback_userdata->cap_kms->params.dpy, monitor->crt_info->outputs[i], &nprop);
             if(!props)
                 continue;
 
@@ -174,7 +173,7 @@ static void monitor_callback(const gsr_monitor *monitor, void *userdata) {
             unsigned long bytes_after = 0;
             unsigned long nitems = 0;
             unsigned char *prop = NULL;
-            XRRGetOutputProperty(monitor_callback_userdata->cap_kms->dpy, monitor->crt_info->outputs[i],
+            XRRGetOutputProperty(monitor_callback_userdata->cap_kms->params.dpy, monitor->crt_info->outputs[i],
                 monitor_callback_userdata->randr_connector_id_atom,
                 0, 128, false, false, AnyPropertyType,
                 &type, &format, &nitems, &bytes_after, &prop);
@@ -212,7 +211,7 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
             return -1;
         }
 
-        void *connection = cap_kms->params.wayland ? (void*)cap_kms->params.card_path : (void*)cap_kms->dpy;
+        void *connection = cap_kms->params.wayland ? (void*)cap_kms->params.card_path : (void*)cap_kms->params.dpy;
         const gsr_connection_type connection_type = cap_kms->params.wayland ? GSR_CONNECTION_DRM : GSR_CONNECTION_X11;
 
         MonitorCallbackUserdata monitor_callback_userdata = {
@@ -229,13 +228,13 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
             cap_kms->screen_size.x = 0;
             cap_kms->screen_size.y = 0;
         } else {
-            const Atom randr_connector_id_atom = XInternAtom(cap_kms->dpy, "CONNECTOR_ID", False);
+            const Atom randr_connector_id_atom = XInternAtom(cap_kms->params.dpy, "CONNECTOR_ID", False);
             monitor_callback_userdata.randr_connector_id_atom = randr_connector_id_atom;
             monitor_callback_userdata.wayland = false;
             for_each_active_monitor_output(connection, connection_type, monitor_callback, &monitor_callback_userdata);
 
-            cap_kms->screen_size.x = WidthOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
-            cap_kms->screen_size.y = HeightOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
+            cap_kms->screen_size.x = WidthOfScreen(DefaultScreenOfDisplay(cap_kms->params.dpy));
+            cap_kms->screen_size.y = HeightOfScreen(DefaultScreenOfDisplay(cap_kms->params.dpy));
         }
 
         gsr_monitor monitor;
@@ -276,13 +275,13 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         return -1;
     }
 
-    if(cap_kms->dpy && !cap_kms->params.wayland) {
-        if(gsr_cursor_init(&cap_kms->cursor, cap_kms->params.egl, cap_kms->dpy) != 0) {
+    if(cap_kms->params.dpy && !cap_kms->params.wayland) {
+        if(gsr_cursor_init(&cap_kms->cursor, cap_kms->params.egl, cap_kms->params.dpy) != 0) {
             gsr_capture_kms_vaapi_stop(cap, video_codec_context);
             return -1;
         }
 
-        gsr_cursor_change_window_target(&cap_kms->cursor, DefaultRootWindow(cap_kms->dpy));
+        gsr_cursor_change_window_target(&cap_kms->cursor, DefaultRootWindow(cap_kms->params.dpy));
         gsr_cursor_update(&cap_kms->cursor, &cap_kms->xev);
     }
 
@@ -301,9 +300,9 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
     // TODO:
     cap_kms->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
-    if(cap_kms->dpy && !cap_kms->params.wayland) {
-        while(XPending(cap_kms->dpy)) {
-            XNextEvent(cap_kms->dpy, &cap_kms->xev);
+    if(cap_kms->params.dpy && !cap_kms->params.wayland) {
+        while(XPending(cap_kms->params.dpy)) {
+            XNextEvent(cap_kms->params.dpy, &cap_kms->xev);
             gsr_cursor_update(&cap_kms->cursor, &cap_kms->xev);
         }
     }
@@ -610,7 +609,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
             }
         }
 
-        if(cap_kms->dpy && !cap_kms->params.wayland) {
+        if(cap_kms->params.dpy && !cap_kms->params.wayland) {
             gsr_cursor_tick(&cap_kms->cursor);
         }
 
@@ -627,7 +626,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
             capture_pos, capture_size,
             texture_rotation);
 
-        if(cap_kms->dpy && !cap_kms->params.wayland) {
+        if(cap_kms->params.dpy && !cap_kms->params.wayland) {
             gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->cursor.texture_id,
                 cursor_capture_pos, (vec2i){cap_kms->cursor.size.x, cap_kms->cursor.size.y},
                 (vec2i){0, 0}, (vec2i){cap_kms->cursor.size.x, cap_kms->cursor.size.y},
@@ -686,11 +685,6 @@ static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_c
         av_buffer_unref(&video_codec_context->hw_frames_ctx);
 
     gsr_kms_client_deinit(&cap_kms->kms_client);
-    if(cap_kms->dpy) {
-        // TODO: This causes a crash, why? maybe some other library dlclose xlib and that also happened to unload this???
-        //XCloseDisplay(cap_kms->dpy);
-        cap_kms->dpy = NULL;
-    }
 }
 
 static void gsr_capture_kms_vaapi_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
@@ -722,14 +716,6 @@ gsr_capture* gsr_capture_kms_vaapi_create(const gsr_capture_kms_vaapi_params *pa
         return NULL;
     }
 
-    Display *display = XOpenDisplay(NULL);
-    if(!params->wayland && !display) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_create failed: XOpenDisplay failed\n");
-        free(cap);
-        free(cap_kms);
-        return NULL;
-    }
-
     const char *display_to_capture = strdup(params->display_to_capture);
     if(!display_to_capture) {
         /* TODO XCloseDisplay */
@@ -738,7 +724,6 @@ gsr_capture* gsr_capture_kms_vaapi_create(const gsr_capture_kms_vaapi_params *pa
         return NULL;
     }
 
-    cap_kms->dpy = display;
     cap_kms->params = *params;
     cap_kms->params.display_to_capture = display_to_capture;
     

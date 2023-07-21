@@ -13,7 +13,6 @@
 
 typedef struct {
     gsr_capture_xcomposite_vaapi_params params;
-    Display *dpy;
     XEvent xev;
 
     bool should_stop;
@@ -123,12 +122,12 @@ static int gsr_capture_xcomposite_vaapi_start(gsr_capture *cap, AVCodecContext *
     gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
 
     if(cap_xcomp->params.follow_focused) {
-        cap_xcomp->net_active_window_atom = XInternAtom(cap_xcomp->dpy, "_NET_ACTIVE_WINDOW", False);
+        cap_xcomp->net_active_window_atom = XInternAtom(cap_xcomp->params.dpy, "_NET_ACTIVE_WINDOW", False);
         if(!cap_xcomp->net_active_window_atom) {
             fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start failed: failed to get _NET_ACTIVE_WINDOW atom\n");
             return -1;
         }
-        cap_xcomp->window = get_focused_window(cap_xcomp->dpy, cap_xcomp->net_active_window_atom);
+        cap_xcomp->window = get_focused_window(cap_xcomp->params.dpy, cap_xcomp->net_active_window_atom);
     } else {
         cap_xcomp->window = cap_xcomp->params.window;
     }
@@ -136,7 +135,7 @@ static int gsr_capture_xcomposite_vaapi_start(gsr_capture *cap, AVCodecContext *
     /* TODO: Do these in tick, and allow error if follow_focused */
 
     XWindowAttributes attr;
-    if(!XGetWindowAttributes(cap_xcomp->dpy, cap_xcomp->params.window, &attr) && !cap_xcomp->params.follow_focused) {
+    if(!XGetWindowAttributes(cap_xcomp->params.dpy, cap_xcomp->params.window, &attr) && !cap_xcomp->params.follow_focused) {
         fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start failed: invalid window id: %lu\n", cap_xcomp->params.window);
         return -1;
     }
@@ -145,10 +144,10 @@ static int gsr_capture_xcomposite_vaapi_start(gsr_capture *cap, AVCodecContext *
     cap_xcomp->window_size.y = max_int(attr.height, 0);
 
     if(cap_xcomp->params.follow_focused)
-        XSelectInput(cap_xcomp->dpy, DefaultRootWindow(cap_xcomp->dpy), PropertyChangeMask);
+        XSelectInput(cap_xcomp->params.dpy, DefaultRootWindow(cap_xcomp->params.dpy), PropertyChangeMask);
 
     // TODO: Get select and add these on top of it and then restore at the end. Also do the same in other xcomposite
-    XSelectInput(cap_xcomp->dpy, cap_xcomp->params.window, StructureNotifyMask | ExposureMask);
+    XSelectInput(cap_xcomp->params.dpy, cap_xcomp->params.window, StructureNotifyMask | ExposureMask);
 
     if(!cap_xcomp->params.egl->eglExportDMABUFImageQueryMESA) {
         fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start: could not find eglExportDMABUFImageQueryMESA\n");
@@ -162,8 +161,8 @@ static int gsr_capture_xcomposite_vaapi_start(gsr_capture *cap, AVCodecContext *
 
     /* Disable vsync */
     cap_xcomp->params.egl->eglSwapInterval(cap_xcomp->params.egl->egl_display, 0);
-    if(window_texture_init(&cap_xcomp->window_texture, cap_xcomp->dpy, cap_xcomp->params.window, cap_xcomp->params.egl) != 0 && !cap_xcomp->params.follow_focused) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start: failed get window texture for window %ld\n", cap_xcomp->params.window);
+    if(window_texture_init(&cap_xcomp->window_texture, cap_xcomp->params.dpy, cap_xcomp->params.window, cap_xcomp->params.egl) != 0 && !cap_xcomp->params.follow_focused) {
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start: failed to get window texture for window %ld\n", cap_xcomp->params.window);
         return -1;
     }
 
@@ -202,8 +201,8 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
     //cap_xcomp->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
     bool init_new_window = false;
-    while(XPending(cap_xcomp->dpy)) {
-        XNextEvent(cap_xcomp->dpy, &cap_xcomp->xev);
+    while(XPending(cap_xcomp->params.dpy)) {
+        XNextEvent(cap_xcomp->params.dpy, &cap_xcomp->xev);
 
         switch(cap_xcomp->xev.type) {
             case DestroyNotify: {
@@ -247,17 +246,17 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
     }
 
     if(init_new_window) {
-        Window focused_window = get_focused_window(cap_xcomp->dpy, cap_xcomp->net_active_window_atom);
+        Window focused_window = get_focused_window(cap_xcomp->params.dpy, cap_xcomp->net_active_window_atom);
         if(focused_window != cap_xcomp->window || !cap_xcomp->follow_focused_initialized) {
             cap_xcomp->follow_focused_initialized = true;
-            XSelectInput(cap_xcomp->dpy, cap_xcomp->window, 0);
+            XSelectInput(cap_xcomp->params.dpy, cap_xcomp->window, 0);
             cap_xcomp->window = focused_window;
-            XSelectInput(cap_xcomp->dpy, cap_xcomp->window, StructureNotifyMask | ExposureMask);
+            XSelectInput(cap_xcomp->params.dpy, cap_xcomp->window, StructureNotifyMask | ExposureMask);
 
             XWindowAttributes attr;
             attr.width = 0;
             attr.height = 0;
-            if(!XGetWindowAttributes(cap_xcomp->dpy, cap_xcomp->window, &attr))
+            if(!XGetWindowAttributes(cap_xcomp->params.dpy, cap_xcomp->window, &attr))
                 fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick failed: invalid window id: %lu\n", cap_xcomp->window);
 
             cap_xcomp->window_size.x = max_int(attr.width, 0);
@@ -265,7 +264,7 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
             cap_xcomp->window_resized = true;
 
             window_texture_deinit(&cap_xcomp->window_texture);
-            window_texture_init(&cap_xcomp->window_texture, cap_xcomp->dpy, cap_xcomp->window, cap_xcomp->params.egl); // TODO: Do not do the below window_texture_on_resize after this
+            window_texture_init(&cap_xcomp->window_texture, cap_xcomp->params.dpy, cap_xcomp->window, cap_xcomp->params.egl); // TODO: Do not do the below window_texture_on_resize after this
             
             cap_xcomp->texture_size.x = 0;
             cap_xcomp->texture_size.y = 0;
@@ -590,12 +589,6 @@ static void gsr_capture_xcomposite_vaapi_stop(gsr_capture *cap, AVCodecContext *
         av_buffer_unref(&video_codec_context->hw_device_ctx);
     if(video_codec_context->hw_frames_ctx)
         av_buffer_unref(&video_codec_context->hw_frames_ctx);
-
-    if(cap_xcomp->dpy) {
-        // TODO: This causes a crash, why? maybe some other library dlclose xlib and that also happened to unload this???
-        //XCloseDisplay(cap_xcomp->dpy);
-        cap_xcomp->dpy = NULL;
-    }
 }
 
 static void gsr_capture_xcomposite_vaapi_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
@@ -624,15 +617,6 @@ gsr_capture* gsr_capture_xcomposite_vaapi_create(const gsr_capture_xcomposite_va
         return NULL;
     }
 
-    Display *display = XOpenDisplay(NULL);
-    if(!display) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_create failed: XOpenDisplay failed\n");
-        free(cap);
-        free(cap_xcomp);
-        return NULL;
-    }
-
-    cap_xcomp->dpy = display;
     cap_xcomp->params = *params;
     
     *cap = (gsr_capture) {

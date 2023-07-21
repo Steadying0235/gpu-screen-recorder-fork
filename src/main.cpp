@@ -1450,6 +1450,8 @@ int main(int argc, char **argv) {
                     capture_target = "screen";
                 }
 
+                gsr_egl_unload(&egl);
+
                 gsr_capture_nvfbc_params nvfbc_params;
                 nvfbc_params.dpy = dpy;
                 nvfbc_params.display_to_capture = capture_target;
@@ -1497,6 +1499,7 @@ int main(int argc, char **argv) {
             case GSR_GPU_VENDOR_AMD: {
                 gsr_capture_xcomposite_vaapi_params xcomposite_params;
                 xcomposite_params.egl = &egl;
+                xcomposite_params.dpy = dpy;
                 xcomposite_params.window = src_window_id;
                 xcomposite_params.follow_focused = follow_focused;
                 xcomposite_params.region_size = region_size;
@@ -1509,6 +1512,7 @@ int main(int argc, char **argv) {
             case GSR_GPU_VENDOR_INTEL: {
                 gsr_capture_xcomposite_vaapi_params xcomposite_params;
                 xcomposite_params.egl = &egl;
+                xcomposite_params.dpy = dpy;
                 xcomposite_params.window = src_window_id;
                 xcomposite_params.follow_focused = follow_focused;
                 xcomposite_params.region_size = region_size;
@@ -1521,6 +1525,7 @@ int main(int argc, char **argv) {
             case GSR_GPU_VENDOR_NVIDIA: {
                 gsr_capture_xcomposite_cuda_params xcomposite_params;
                 xcomposite_params.egl = &egl;
+                xcomposite_params.dpy = dpy;
                 xcomposite_params.window = src_window_id;
                 xcomposite_params.follow_focused = follow_focused;
                 xcomposite_params.region_size = region_size;

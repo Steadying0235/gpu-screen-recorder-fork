@@ -163,8 +163,8 @@ static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_co
     cap_kms->capture_pos = monitor.pos;
     cap_kms->capture_size = monitor.size;
 
-    video_codec_context->width = max_int(2, even_number_ceil(cap_kms->capture_size.x));
-    video_codec_context->height = max_int(2, even_number_ceil(cap_kms->capture_size.y));
+    video_codec_context->width = max_int(2, cap_kms->capture_size.x & ~1);
+    video_codec_context->height = max_int(2, cap_kms->capture_size.y & ~1);
 
     /* Disable vsync */
     cap_kms->params.egl->eglSwapInterval(cap_kms->params.egl->egl_display, 0);

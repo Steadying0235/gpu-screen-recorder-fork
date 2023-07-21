@@ -1326,10 +1326,11 @@ int main(int argc, char **argv) {
 
     // TODO: Fix constant framerate not working properly on amd/intel because capture framerate gets locked to the same framerate as
     // game framerate, which doesn't work well when you need to encode multiple duplicate frames (AMD/Intel is slow at encoding!).
+    // It also appears to skip audio frames on nvidia wayland? why? that should be fine, but it causes video stuttering because of audio/video sync.
     FramerateMode framerate_mode;
     const char *framerate_mode_str = args["-fm"].value();
     if(!framerate_mode_str)
-        framerate_mode_str = gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA ? "cfr" : "vfr";
+        framerate_mode_str = (gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA && !wayland) ? "cfr" : "vfr";
 
     if(strcmp(framerate_mode_str, "cfr") == 0) {
         framerate_mode = FramerateMode::CONSTANT;

@@ -249,7 +249,7 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
         }
     }
 
-    self->eglBindAPI(EGL_OPENGL_ES_API);
+    self->eglBindAPI(EGL_OPENGL_ES2_BIT);
 
     self->egl_display = self->eglGetDisplay(self->wayland.dpy ? (EGLNativeDisplayType)self->wayland.dpy : (EGLNativeDisplayType)self->x11.dpy);
     if(!self->egl_display) {

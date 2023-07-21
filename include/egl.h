@@ -55,7 +55,6 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT      0x3444
 #define EGL_LINUX_DMA_BUF_EXT                   0x3270
 #define EGL_OPENGL_API                          0x30A2
-#define EGL_OPENGL_ES_API                       0x30A0
 #define EGL_RED_SIZE                            0x3024
 #define EGL_ALPHA_SIZE                          0x3021
 #define EGL_BLUE_SIZE                           0x3022

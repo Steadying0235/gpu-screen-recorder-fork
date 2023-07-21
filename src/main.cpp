@@ -374,8 +374,14 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
 }
 
 static bool vaapi_create_codec_context(AVCodecContext *video_codec_context, const char *card_path) {
+    char render_path[128];
+    if(!gsr_card_path_get_render_path(card_path, render_path)) {
+        fprintf(stderr, "gsr error: failed to get /dev/dri/renderDXXX file from %s\n", card_path);
+        return false;
+    }
+
     AVBufferRef *device_ctx;
-    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, card_path, NULL, 0) < 0) {
+    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, render_path, NULL, 0) < 0) {
         fprintf(stderr, "Error: Failed to create hardware device context\n");
         return false;
     }
@@ -1300,9 +1306,15 @@ int main(int argc, char **argv) {
     if(!wayland)
         wayland = is_xwayland(dpy);
 
+    gsr_egl egl;
+    if(!gsr_egl_load(&egl, dpy, wayland)) {
+        fprintf(stderr, "gsr error: failed to load opengl\n");
+        _exit(1);
+    }
+
     gsr_gpu_info gpu_inf;
     bool very_old_gpu = false;
-    if(!gl_get_gpu_info(dpy, &gpu_inf, wayland))
+    if(!gl_get_gpu_info(&egl, &gpu_inf))
         _exit(2);
 
     if(gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA && gpu_inf.gpu_version != 0 && gpu_inf.gpu_version < 900) {
@@ -1379,12 +1391,6 @@ int main(int argc, char **argv) {
     } else if(contains_non_hex_number(window_str)) {
         // TODO: wayland, not only drm (if wlroots)
         if(wayland) {
-            gsr_egl egl;
-            if(!gsr_egl_load(&egl, NULL, true)) {
-                fprintf(stderr, "gsr error: failed to load opengl\n");
-                _exit(1);
-            }
-
             if(gsr_egl_supports_wayland_capture(&egl)) {
                 gsr_monitor gmon;
                 if(!get_monitor_by_name(&egl, GSR_CONNECTION_WAYLAND, window_str, &gmon)) {
@@ -1400,7 +1406,6 @@ int main(int argc, char **argv) {
                     _exit(1);
                 }
             }
-            gsr_egl_unload(&egl);
         } else {
             if(strcmp(window_str, "screen") != 0 && strcmp(window_str, "screen-direct") != 0 && strcmp(window_str, "screen-direct-force") != 0) {
                 gsr_monitor gmon;
@@ -1423,6 +1428,7 @@ int main(int argc, char **argv) {
                 }
 
                 gsr_capture_kms_cuda_params kms_params;
+                kms_params.egl = &egl;
                 kms_params.display_to_capture = capture_target;
                 kms_params.gpu_inf = gpu_inf;
                 kms_params.card_path = card_path;
@@ -1463,6 +1469,7 @@ int main(int argc, char **argv) {
             }
 
             gsr_capture_kms_vaapi_params kms_params;
+            kms_params.egl = &egl;
             kms_params.display_to_capture = capture_target;
             kms_params.gpu_inf = gpu_inf;
             kms_params.card_path = card_path;
@@ -1489,6 +1496,7 @@ int main(int argc, char **argv) {
         switch(gpu_inf.vendor) {
             case GSR_GPU_VENDOR_AMD: {
                 gsr_capture_xcomposite_vaapi_params xcomposite_params;
+                xcomposite_params.egl = &egl;
                 xcomposite_params.window = src_window_id;
                 xcomposite_params.follow_focused = follow_focused;
                 xcomposite_params.region_size = region_size;
@@ -1500,6 +1508,7 @@ int main(int argc, char **argv) {
             }
             case GSR_GPU_VENDOR_INTEL: {
                 gsr_capture_xcomposite_vaapi_params xcomposite_params;
+                xcomposite_params.egl = &egl;
                 xcomposite_params.window = src_window_id;
                 xcomposite_params.follow_focused = follow_focused;
                 xcomposite_params.region_size = region_size;
@@ -1511,6 +1520,7 @@ int main(int argc, char **argv) {
             }
             case GSR_GPU_VENDOR_NVIDIA: {
                 gsr_capture_xcomposite_cuda_params xcomposite_params;
+                xcomposite_params.egl = &egl;
                 xcomposite_params.window = src_window_id;
                 xcomposite_params.follow_focused = follow_focused;
                 xcomposite_params.region_size = region_size;

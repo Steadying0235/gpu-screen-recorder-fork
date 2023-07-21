@@ -1,5 +1,4 @@
 #include "../../include/capture/xcomposite_vaapi.h"
-#include "../../include/egl.h"
 #include "../../include/window_texture.h"
 #include "../../include/utils.h"
 #include <stdlib.h>
@@ -29,8 +28,6 @@ typedef struct {
     double window_resize_timer;
     
     WindowTexture window_texture;
-
-    gsr_egl egl;
 
     int fourcc;
     int num_planes;
@@ -74,8 +71,14 @@ static Window get_focused_window(Display *display, Atom net_active_window_atom) 
 }
 
 static bool drm_create_codec_context(gsr_capture_xcomposite_vaapi *cap_xcomp, AVCodecContext *video_codec_context) {
+    char render_path[128];
+    if(!gsr_card_path_get_render_path(cap_xcomp->params.card_path, render_path)) {
+        fprintf(stderr, "gsr error: failed to get /dev/dri/renderDXXX file from %s\n", cap_xcomp->params.card_path);
+        return false;
+    }
+
     AVBufferRef *device_ctx;
-    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, cap_xcomp->params.card_path, NULL, 0) < 0) {
+    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, render_path, NULL, 0) < 0) {
         fprintf(stderr, "Error: Failed to create hardware device context\n");
         return false;
     }
@@ -147,38 +150,30 @@ static int gsr_capture_xcomposite_vaapi_start(gsr_capture *cap, AVCodecContext *
     // TODO: Get select and add these on top of it and then restore at the end. Also do the same in other xcomposite
     XSelectInput(cap_xcomp->dpy, cap_xcomp->params.window, StructureNotifyMask | ExposureMask);
 
-    if(!gsr_egl_load(&cap_xcomp->egl, cap_xcomp->dpy, false)) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start: failed to load opengl\n");
-        return -1;
-    }
-
-    if(!cap_xcomp->egl.eglExportDMABUFImageQueryMESA) {
+    if(!cap_xcomp->params.egl->eglExportDMABUFImageQueryMESA) {
         fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start: could not find eglExportDMABUFImageQueryMESA\n");
-        gsr_egl_unload(&cap_xcomp->egl);
         return -1;
     }
 
-    if(!cap_xcomp->egl.eglExportDMABUFImageMESA) {
+    if(!cap_xcomp->params.egl->eglExportDMABUFImageMESA) {
         fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start: could not find eglExportDMABUFImageMESA\n");
-        gsr_egl_unload(&cap_xcomp->egl);
         return -1;
     }
 
     /* Disable vsync */
-    cap_xcomp->egl.eglSwapInterval(cap_xcomp->egl.egl_display, 0);
-    if(window_texture_init(&cap_xcomp->window_texture, cap_xcomp->dpy, cap_xcomp->params.window, &cap_xcomp->egl) != 0 && !cap_xcomp->params.follow_focused) {
+    cap_xcomp->params.egl->eglSwapInterval(cap_xcomp->params.egl->egl_display, 0);
+    if(window_texture_init(&cap_xcomp->window_texture, cap_xcomp->dpy, cap_xcomp->params.window, cap_xcomp->params.egl) != 0 && !cap_xcomp->params.follow_focused) {
         fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_start: failed get window texture for window %ld\n", cap_xcomp->params.window);
-        gsr_egl_unload(&cap_xcomp->egl);
         return -1;
     }
 
     cap_xcomp->texture_size.x = 0;
     cap_xcomp->texture_size.y = 0;
 
-    cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
-    cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &cap_xcomp->texture_size.x);
-    cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
-    cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
+    cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
+    cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &cap_xcomp->texture_size.x);
+    cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
+    cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
     cap_xcomp->texture_size.x = max_int(2, even_number_ceil(cap_xcomp->texture_size.x));
     cap_xcomp->texture_size.y = max_int(2, even_number_ceil(cap_xcomp->texture_size.y));
@@ -204,7 +199,7 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
     gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
 
     // TODO:
-    //cap_xcomp->egl.glClear(GL_COLOR_BUFFER_BIT);
+    //cap_xcomp->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
     bool init_new_window = false;
     while(XPending(cap_xcomp->dpy)) {
@@ -270,15 +265,15 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
             cap_xcomp->window_resized = true;
 
             window_texture_deinit(&cap_xcomp->window_texture);
-            window_texture_init(&cap_xcomp->window_texture, cap_xcomp->dpy, cap_xcomp->window, &cap_xcomp->egl); // TODO: Do not do the below window_texture_on_resize after this
+            window_texture_init(&cap_xcomp->window_texture, cap_xcomp->dpy, cap_xcomp->window, cap_xcomp->params.egl); // TODO: Do not do the below window_texture_on_resize after this
             
             cap_xcomp->texture_size.x = 0;
             cap_xcomp->texture_size.y = 0;
 
-            cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
-            cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &cap_xcomp->texture_size.x);
-            cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
-            cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
+            cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
+            cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &cap_xcomp->texture_size.x);
+            cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
+            cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
             cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, even_number_ceil(cap_xcomp->texture_size.x)));
             cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, even_number_ceil(cap_xcomp->texture_size.y)));
@@ -299,10 +294,10 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
         cap_xcomp->texture_size.x = 0;
         cap_xcomp->texture_size.y = 0;
 
-        cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
-        cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &cap_xcomp->texture_size.x);
-        cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
-        cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
+        cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
+        cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &cap_xcomp->texture_size.x);
+        cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
+        cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
         cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, even_number_ceil(cap_xcomp->texture_size.x)));
         cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, even_number_ceil(cap_xcomp->texture_size.y)));
@@ -361,10 +356,10 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
         }
 
         int xx = 0, yy = 0;
-        cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
-        cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &xx);
-        cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &yy);
-        cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
+        cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
+        cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &xx);
+        cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &yy);
+        cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
         const intptr_t pixmap_attrs[] = {
             EGL_IMAGE_PRESERVED_KHR, EGL_TRUE,
@@ -372,7 +367,7 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
         };
 
         // TODO: Use the window texture egl image directly instead of exporting it to opengl texture and then importing it to egl image again
-        EGLImage img = cap_xcomp->egl.eglCreateImage(cap_xcomp->egl.egl_display, cap_xcomp->egl.egl_context, EGL_GL_TEXTURE_2D, (EGLClientBuffer)(uint64_t)window_texture_get_opengl_texture_id(&cap_xcomp->window_texture), pixmap_attrs);
+        EGLImage img = cap_xcomp->params.egl->eglCreateImage(cap_xcomp->params.egl->egl_display, cap_xcomp->params.egl->egl_context, EGL_GL_TEXTURE_2D, (EGLClientBuffer)(uint64_t)window_texture_get_opengl_texture_id(&cap_xcomp->window_texture), pixmap_attrs);
         if(!img) {
             fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: eglCreateImage failed\n");
             cap_xcomp->should_stop = true;
@@ -380,11 +375,11 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
             return;
         }
 
-        if(!cap_xcomp->egl.eglExportDMABUFImageQueryMESA(cap_xcomp->egl.egl_display, img, &cap_xcomp->fourcc, &cap_xcomp->num_planes, &cap_xcomp->modifiers)) {
+        if(!cap_xcomp->params.egl->eglExportDMABUFImageQueryMESA(cap_xcomp->params.egl->egl_display, img, &cap_xcomp->fourcc, &cap_xcomp->num_planes, &cap_xcomp->modifiers)) {
             fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: eglExportDMABUFImageQueryMESA failed\n");
             cap_xcomp->should_stop = true;
             cap_xcomp->stop_is_error = true;
-            cap_xcomp->egl.eglDestroyImage(cap_xcomp->egl.egl_display, img);
+            cap_xcomp->params.egl->eglDestroyImage(cap_xcomp->params.egl->egl_display, img);
             return;
         }
 
@@ -392,19 +387,19 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
             fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: expected 1 plane for drm buf, got %d planes\n", cap_xcomp->num_planes);
             cap_xcomp->should_stop = true;
             cap_xcomp->stop_is_error = true;
-            cap_xcomp->egl.eglDestroyImage(cap_xcomp->egl.egl_display, img);
+            cap_xcomp->params.egl->eglDestroyImage(cap_xcomp->params.egl->egl_display, img);
             return;
         }
 
-        if(!cap_xcomp->egl.eglExportDMABUFImageMESA(cap_xcomp->egl.egl_display, img, &cap_xcomp->dmabuf_fd, &cap_xcomp->pitch, &cap_xcomp->offset)) {
+        if(!cap_xcomp->params.egl->eglExportDMABUFImageMESA(cap_xcomp->params.egl->egl_display, img, &cap_xcomp->dmabuf_fd, &cap_xcomp->pitch, &cap_xcomp->offset)) {
             fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: eglExportDMABUFImageMESA failed\n");
             cap_xcomp->should_stop = true;
             cap_xcomp->stop_is_error = true;
-            cap_xcomp->egl.eglDestroyImage(cap_xcomp->egl.egl_display, img);
+            cap_xcomp->params.egl->eglDestroyImage(cap_xcomp->params.egl->egl_display, img);
             return;
         }
 
-        cap_xcomp->egl.eglDestroyImage(cap_xcomp->egl.egl_display, img);
+        cap_xcomp->params.egl->eglDestroyImage(cap_xcomp->params.egl->egl_display, img);
 
         uintptr_t dmabuf = cap_xcomp->dmabuf_fd;
 
@@ -498,7 +493,7 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
         // Clear texture with black background because the source texture (window_texture_get_opengl_texture_id(&cap_xcomp->window_texture))
         // might be smaller than cap_xcomp->target_texture_id
         // TODO:
-        //cap_xcomp->egl.glClearTexImage(cap_xcomp->target_texture_id, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        //cap_xcomp->params.egl->glClearTexImage(cap_xcomp->target_texture_id, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     }
 }
 
@@ -555,7 +550,7 @@ static int gsr_capture_xcomposite_vaapi_capture(gsr_capture *cap, AVFrame *frame
     //vaSyncSurface(cap_xcomp->va_dpy, target_surface_id);
 
     // TODO: Remove
-    //cap_xcomp->egl.eglSwapBuffers(cap_xcomp->egl.egl_display, cap_xcomp->egl.egl_surface);
+    //cap_xcomp->params.egl->eglSwapBuffers(cap_xcomp->params.egl->egl_display, cap_xcomp->params.egl->egl_surface);
 
     return 0;
 }
@@ -596,7 +591,6 @@ static void gsr_capture_xcomposite_vaapi_stop(gsr_capture *cap, AVCodecContext *
     if(video_codec_context->hw_frames_ctx)
         av_buffer_unref(&video_codec_context->hw_frames_ctx);
 
-    gsr_egl_unload(&cap_xcomp->egl);
     if(cap_xcomp->dpy) {
         // TODO: This causes a crash, why? maybe some other library dlclose xlib and that also happened to unload this???
         //XCloseDisplay(cap_xcomp->dpy);

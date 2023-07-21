@@ -1,5 +1,4 @@
 #include "../include/utils.h"
-#include "../include/egl.h"
 #include <time.h>
 #include <string.h>
 #include <stdio.h>
@@ -7,6 +6,7 @@
 #include <fcntl.h>
 #include <xf86drmMode.h>
 #include <xf86drm.h>
+#include <stdlib.h>
 
 double clock_get_monotonic_seconds(void) {
     struct timespec ts;
@@ -209,16 +209,10 @@ bool get_monitor_by_name(void *connection, gsr_connection_type connection_type, 
     return userdata.found_monitor;
 }
 
-bool gl_get_gpu_info(Display *dpy, gsr_gpu_info *info, bool wayland) {
-    gsr_egl gl;
-    if(!gsr_egl_load(&gl, dpy, wayland)) {
-        fprintf(stderr, "gsr error: failed to load opengl\n");
-        return false;
-    }
-
+bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info) {
     bool supported = true;
-    const unsigned char *gl_vendor = gl.glGetString(GL_VENDOR);
-    const unsigned char *gl_renderer = gl.glGetString(GL_RENDERER);
+    const unsigned char *gl_vendor = egl->glGetString(GL_VENDOR);
+    const unsigned char *gl_renderer = egl->glGetString(GL_RENDERER);
 
     info->gpu_version = 0;
 
@@ -252,26 +246,30 @@ bool gl_get_gpu_info(Display *dpy, gsr_gpu_info *info, bool wayland) {
     }
 
     end:
-    gsr_egl_unload(&gl);
     return supported;
 }
 
 bool gsr_get_valid_card_path(char *output) {
     for(int i = 0; i < 10; ++i) {
-        sprintf(output, "/dev/dri/card%d", i);
+        drmVersion *ver = NULL;
+        drmModePlaneResPtr planes = NULL;
+        bool found_screen_card = false;
+
+        sprintf(output, DRM_DEV_NAME, DRM_DIR_NAME, i);
         int fd = open(output, O_RDONLY);
         if(fd == -1)
             continue;
 
+        ver = drmGetVersion(fd);
+        if(!ver || strstr(ver->name, "nouveau"))
+            goto next;
+
         drmSetClientCap(fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1);
 
-        drmModePlaneResPtr planes = drmModeGetPlaneResources(fd);
-        if(!planes) {
-            close(fd);
-            continue;
-        }
+        planes = drmModeGetPlaneResources(fd);
+        if(!planes)
+            goto next;
 
-        bool found_screen_card = false;
         for(uint32_t i = 0; i < planes->count_planes; ++i) {
             drmModePlanePtr plane = drmModeGetPlane(fd, planes->planes[i]);
             if(!plane)
@@ -285,10 +283,32 @@ bool gsr_get_valid_card_path(char *output) {
                 break;
         }
 
+        next:
+        if(planes)
+            drmModeFreePlaneResources(planes);
+        if(ver)
+            drmFreeVersion(ver);
         close(fd);
         if(found_screen_card)
             return true;
     }
+    return false;
+}
+
+bool gsr_card_path_get_render_path(const char *card_path, char *render_path) {
+    int fd = open(card_path, O_RDONLY);
+    if(fd == -1)
+        return false;
+
+    char *render_path_tmp = drmGetRenderDeviceNameFromFd(fd);
+    if(render_path_tmp) {
+        strncpy(render_path, render_path_tmp, 128);
+        free(render_path_tmp);
+        close(fd);
+        return true;
+    }
+
+    close(fd);
     return false;
 }
 

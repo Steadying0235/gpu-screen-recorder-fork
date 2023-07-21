@@ -1,5 +1,4 @@
 #include "../../include/capture/xcomposite_cuda.h"
-#include "../../include/egl.h"
 #include "../../include/cuda.h"
 #include "../../include/window_texture.h"
 #include "../../include/utils.h"
@@ -31,7 +30,6 @@ typedef struct {
     CUgraphicsResource cuda_graphics_resource;
     CUarray mapped_array;
 
-    gsr_egl egl;
     gsr_cuda cuda;
 } gsr_capture_xcomposite_cuda;
 
@@ -143,16 +141,16 @@ static bool cuda_create_codec_context(gsr_capture_xcomposite_cuda *cap_xcomp, AV
 
 static unsigned int gl_create_texture(gsr_capture_xcomposite_cuda *cap_xcomp, int width, int height) {
     unsigned int texture_id = 0;
-    cap_xcomp->egl.glGenTextures(1, &texture_id);
-    cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, texture_id);
-    cap_xcomp->egl.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    cap_xcomp->params.egl->glGenTextures(1, &texture_id);
+    cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, texture_id);
+    cap_xcomp->params.egl->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
 
-    cap_xcomp->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    cap_xcomp->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    cap_xcomp->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    cap_xcomp->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    cap_xcomp->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    cap_xcomp->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    cap_xcomp->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    cap_xcomp->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 
-    cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
+    cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
     return texture_id;
 }
 
@@ -188,25 +186,19 @@ static int gsr_capture_xcomposite_cuda_start(gsr_capture *cap, AVCodecContext *v
 
     XSelectInput(cap_xcomp->dpy, cap_xcomp->window, StructureNotifyMask | ExposureMask);
 
-    if(!gsr_egl_load(&cap_xcomp->egl, cap_xcomp->dpy, false)) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_start: failed to load opengl\n");
-        return -1;
-    }
-
-    cap_xcomp->egl.eglSwapInterval(cap_xcomp->egl.egl_display, 0);
-    if(window_texture_init(&cap_xcomp->window_texture, cap_xcomp->dpy, cap_xcomp->window, &cap_xcomp->egl) != 0 && !cap_xcomp->params.follow_focused) {
+    cap_xcomp->params.egl->eglSwapInterval(cap_xcomp->params.egl->egl_display, 0);
+    if(window_texture_init(&cap_xcomp->window_texture, cap_xcomp->dpy, cap_xcomp->window, cap_xcomp->params.egl) != 0 && !cap_xcomp->params.follow_focused) {
         fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_start: failed get window texture for window %ld\n", cap_xcomp->window);
-        gsr_egl_unload(&cap_xcomp->egl);
         return -1;
     }
 
     cap_xcomp->texture_size.x = 0;
     cap_xcomp->texture_size.y = 0;
 
-    cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
-    cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &cap_xcomp->texture_size.x);
-    cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
-    cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
+    cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
+    cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &cap_xcomp->texture_size.x);
+    cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
+    cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
     cap_xcomp->texture_size.x = max_int(2, even_number_ceil(cap_xcomp->texture_size.x));
     cap_xcomp->texture_size.y = max_int(2, even_number_ceil(cap_xcomp->texture_size.y));
@@ -263,7 +255,7 @@ static void gsr_capture_xcomposite_cuda_stop(gsr_capture *cap, AVCodecContext *v
     window_texture_deinit(&cap_xcomp->window_texture);
 
     if(cap_xcomp->target_texture_id) {
-        cap_xcomp->egl.glDeleteTextures(1, &cap_xcomp->target_texture_id);
+        cap_xcomp->params.egl->glDeleteTextures(1, &cap_xcomp->target_texture_id);
         cap_xcomp->target_texture_id = 0;
     }
 
@@ -274,7 +266,6 @@ static void gsr_capture_xcomposite_cuda_stop(gsr_capture *cap, AVCodecContext *v
 
     gsr_cuda_unload(&cap_xcomp->cuda);
 
-    gsr_egl_unload(&cap_xcomp->egl);
     if(cap_xcomp->dpy) {
         // TODO: This causes a crash, why? maybe some other library dlclose xlib and that also happened to unload this???
         //XCloseDisplay(cap_xcomp->dpy);
@@ -285,7 +276,7 @@ static void gsr_capture_xcomposite_cuda_stop(gsr_capture *cap, AVCodecContext *v
 static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame **frame) {
     gsr_capture_xcomposite_cuda *cap_xcomp = cap->priv;
 
-    cap_xcomp->egl.glClear(GL_COLOR_BUFFER_BIT);
+    cap_xcomp->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
     bool init_new_window = false;
     while(XPending(cap_xcomp->dpy)) {
@@ -351,15 +342,15 @@ static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *v
             cap_xcomp->window_resized = true;
 
             window_texture_deinit(&cap_xcomp->window_texture);
-            window_texture_init(&cap_xcomp->window_texture, cap_xcomp->dpy, cap_xcomp->window, &cap_xcomp->egl); // TODO: Do not do the below window_texture_on_resize after this
+            window_texture_init(&cap_xcomp->window_texture, cap_xcomp->dpy, cap_xcomp->window, cap_xcomp->params.egl); // TODO: Do not do the below window_texture_on_resize after this
             
             cap_xcomp->texture_size.x = 0;
             cap_xcomp->texture_size.y = 0;
 
-            cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
-            cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &cap_xcomp->texture_size.x);
-            cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
-            cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
+            cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
+            cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &cap_xcomp->texture_size.x);
+            cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
+            cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
             cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, even_number_ceil(cap_xcomp->texture_size.x)));
             cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, even_number_ceil(cap_xcomp->texture_size.y)));
@@ -379,10 +370,10 @@ static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *v
         cap_xcomp->texture_size.x = 0;
         cap_xcomp->texture_size.y = 0;
 
-        cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
-        cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &cap_xcomp->texture_size.x);
-        cap_xcomp->egl.glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
-        cap_xcomp->egl.glBindTexture(GL_TEXTURE_2D, 0);
+        cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
+        cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &cap_xcomp->texture_size.x);
+        cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &cap_xcomp->texture_size.y);
+        cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
         cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, even_number_ceil(cap_xcomp->texture_size.x)));
         cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, even_number_ceil(cap_xcomp->texture_size.y)));
@@ -416,7 +407,7 @@ static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *v
 
         // Clear texture with black background because the source texture (window_texture_get_opengl_texture_id(&cap_xcomp->window_texture))
         // might be smaller than cap_xcomp->target_texture_id
-        cap_xcomp->egl.glClearTexImage(cap_xcomp->target_texture_id, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+        cap_xcomp->params.egl->glClearTexImage(cap_xcomp->target_texture_id, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
     }
 }
 
@@ -440,13 +431,13 @@ static int gsr_capture_xcomposite_cuda_capture(gsr_capture *cap, AVFrame *frame)
     vec2i source_size = cap_xcomp->texture_size;
 
     if(cap_xcomp->window_texture.texture_id != 0) {
-        while(cap_xcomp->egl.glGetError()) {}
+        while(cap_xcomp->params.egl->glGetError()) {}
         /* TODO: Remove this copy, which is only possible by using nvenc directly and encoding window_pixmap.target_texture_id */
-        cap_xcomp->egl.glCopyImageSubData(
+        cap_xcomp->params.egl->glCopyImageSubData(
             window_texture_get_opengl_texture_id(&cap_xcomp->window_texture), GL_TEXTURE_2D, 0, source_pos.x, source_pos.y, 0,
             cap_xcomp->target_texture_id, GL_TEXTURE_2D, 0, 0, 0, 0,
             source_size.x, source_size.y, 1);
-        unsigned int err = cap_xcomp->egl.glGetError();
+        unsigned int err = cap_xcomp->params.egl->glGetError();
         if(err != 0) {
             static bool error_shown = false;
             if(!error_shown) {
@@ -455,7 +446,7 @@ static int gsr_capture_xcomposite_cuda_capture(gsr_capture *cap, AVFrame *frame)
             }
         }
     }
-    cap_xcomp->egl.eglSwapBuffers(cap_xcomp->egl.egl_display, cap_xcomp->egl.egl_surface);
+    cap_xcomp->params.egl->eglSwapBuffers(cap_xcomp->params.egl->egl_display, cap_xcomp->params.egl->egl_surface);
 
     frame->linesize[0] = frame->width * 4;
     //frame->linesize[0] = frame->width * 1;

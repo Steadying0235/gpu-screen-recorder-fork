@@ -1,6 +1,5 @@
 #include "../../include/capture/kms_cuda.h"
 #include "../../kms/client/kms_client.h"
-#include "../../include/egl.h"
 #include "../../include/utils.h"
 #include "../../include/cuda.h"
 #include <stdlib.h>
@@ -29,7 +28,6 @@ typedef struct {
     bool stop_is_error;
     bool created_hw_frame;
 
-    gsr_egl egl;
     gsr_cuda cuda;
     
     gsr_kms_client kms_client;
@@ -133,16 +131,10 @@ static void monitor_callback(const gsr_monitor *monitor, void *userdata) {
 static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_kms_cuda *cap_kms = cap->priv;
 
-    if(!gsr_egl_load(&cap_kms->egl, NULL, true)) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_cuda_start: failed to load opengl\n");
-        gsr_capture_kms_cuda_stop(cap, video_codec_context);
-        return -1;
-    }
-
     gsr_monitor monitor;
     cap_kms->monitor_id.num_connector_ids = 0;
-    if(gsr_egl_start_capture(&cap_kms->egl, cap_kms->params.display_to_capture)) {
-        if(!get_monitor_by_name(&cap_kms->egl, GSR_CONNECTION_WAYLAND, cap_kms->params.display_to_capture, &monitor)) {
+    if(gsr_egl_start_capture(cap_kms->params.egl, cap_kms->params.display_to_capture)) {
+        if(!get_monitor_by_name(cap_kms->params.egl, GSR_CONNECTION_WAYLAND, cap_kms->params.display_to_capture, &monitor)) {
             fprintf(stderr, "gsr error: gsr_capture_kms_cuda_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
             gsr_capture_kms_cuda_stop(cap, video_codec_context);
             return -1;
@@ -175,7 +167,7 @@ static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_co
     video_codec_context->height = max_int(2, even_number_ceil(cap_kms->capture_size.y));
 
     /* Disable vsync */
-    cap_kms->egl.eglSwapInterval(cap_kms->egl.egl_display, 0);
+    cap_kms->params.egl->eglSwapInterval(cap_kms->params.egl->egl_display, 0);
 
     // TODO: overclocking is not supported on wayland...
     if(!gsr_cuda_load(&cap_kms->cuda, NULL, false)) {
@@ -200,7 +192,7 @@ static void gsr_capture_kms_cuda_tick(gsr_capture *cap, AVCodecContext *video_co
     gsr_capture_kms_cuda *cap_kms = cap->priv;
 
     // TODO:
-    cap_kms->egl.glClear(GL_COLOR_BUFFER_BIT);
+    cap_kms->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
     if(!cap_kms->created_hw_frame) {
         cap_kms->created_hw_frame = true;
@@ -333,14 +325,14 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
 
     gsr_kms_response_fd *drm_fd = NULL;
     if(cap_kms->using_wayland_capture) {
-        gsr_egl_update(&cap_kms->egl);
-        cap_kms->wayland_kms_data.fd = cap_kms->egl.fd;
-        cap_kms->wayland_kms_data.width = cap_kms->egl.width;
-        cap_kms->wayland_kms_data.height = cap_kms->egl.height;
-        cap_kms->wayland_kms_data.pitch = cap_kms->egl.pitch;
-        cap_kms->wayland_kms_data.offset = cap_kms->egl.offset;
-        cap_kms->wayland_kms_data.pixel_format = cap_kms->egl.pixel_format;
-        cap_kms->wayland_kms_data.modifier = cap_kms->egl.modifier;
+        gsr_egl_update(cap_kms->params.egl);
+        cap_kms->wayland_kms_data.fd = cap_kms->params.egl->fd;
+        cap_kms->wayland_kms_data.width = cap_kms->params.egl->width;
+        cap_kms->wayland_kms_data.height = cap_kms->params.egl->height;
+        cap_kms->wayland_kms_data.pitch = cap_kms->params.egl->pitch;
+        cap_kms->wayland_kms_data.offset = cap_kms->params.egl->offset;
+        cap_kms->wayland_kms_data.pixel_format = cap_kms->params.egl->pixel_format;
+        cap_kms->wayland_kms_data.modifier = cap_kms->params.egl->modifier;
         cap_kms->wayland_kms_data.connector_id = 0;
         cap_kms->wayland_kms_data.is_combined_plane = false;
 
@@ -383,28 +375,28 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
 
     const intptr_t img_attr[] = {
         //EGL_IMAGE_PRESERVED_KHR, EGL_TRUE,
-        EGL_LINUX_DRM_FOURCC_EXT,       fourcc('A', 'R', '2', '4'),//cap_kms->egl.pixel_format, ARGB8888
-        EGL_WIDTH,                      drm_fd->width,//cap_kms->egl.width,
-        EGL_HEIGHT,                     drm_fd->height,//cap_kms->egl.height,
-        EGL_DMA_BUF_PLANE0_FD_EXT,      drm_fd->fd,//cap_kms->egl.fd,
-        EGL_DMA_BUF_PLANE0_OFFSET_EXT,  drm_fd->offset,//cap_kms->egl.offset,
-        EGL_DMA_BUF_PLANE0_PITCH_EXT,   drm_fd->pitch,//cap_kms->egl.pitch,
-        EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, drm_fd->modifier & 0xFFFFFFFFULL,//cap_kms->egl.modifier & 0xFFFFFFFFULL,
-        EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, drm_fd->modifier >> 32ULL,//cap_kms->egl.modifier >> 32ULL,
+        EGL_LINUX_DRM_FOURCC_EXT,       fourcc('A', 'R', '2', '4'),//cap_kms->params.egl->pixel_format, ARGB8888
+        EGL_WIDTH,                      drm_fd->width,//cap_kms->params.egl->width,
+        EGL_HEIGHT,                     drm_fd->height,//cap_kms->params.egl->height,
+        EGL_DMA_BUF_PLANE0_FD_EXT,      drm_fd->fd,//cap_kms->params.egl->fd,
+        EGL_DMA_BUF_PLANE0_OFFSET_EXT,  drm_fd->offset,//cap_kms->params.egl->offset,
+        EGL_DMA_BUF_PLANE0_PITCH_EXT,   drm_fd->pitch,//cap_kms->params.egl->pitch,
+        EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, drm_fd->modifier & 0xFFFFFFFFULL,//cap_kms->params.egl->modifier & 0xFFFFFFFFULL,
+        EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, drm_fd->modifier >> 32ULL,//cap_kms->params.egl->modifier >> 32ULL,
         EGL_NONE
     };
 
-    while(cap_kms->egl.glGetError()) {}
-    while(cap_kms->egl.eglGetError() != EGL_SUCCESS){}
-    EGLImage image = cap_kms->egl.eglCreateImage(cap_kms->egl.egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
-    if(cap_kms->egl.glGetError() != 0 || cap_kms->egl.eglGetError() != EGL_SUCCESS) {
+    while(cap_kms->params.egl->glGetError()) {}
+    while(cap_kms->params.egl->eglGetError() != EGL_SUCCESS){}
+    EGLImage image = cap_kms->params.egl->eglCreateImage(cap_kms->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+    if(cap_kms->params.egl->glGetError() != 0 || cap_kms->params.egl->eglGetError() != EGL_SUCCESS) {
         fprintf(stderr, "egl error!\n");
     }
 
     gsr_capture_kms_register_egl_image_in_cuda(cap_kms, image);
-    cap_kms->egl.eglDestroyImage(cap_kms->egl.egl_display, image);
+    cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, image);
 
-    cap_kms->egl.eglSwapBuffers(cap_kms->egl.egl_display, cap_kms->egl.egl_surface);
+    cap_kms->params.egl->eglSwapBuffers(cap_kms->params.egl->egl_display, cap_kms->params.egl->egl_surface);
 
     frame->linesize[0] = frame->width * 4;
 
@@ -427,7 +419,7 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
 
     gsr_capture_kms_unload_cuda_graphics(cap_kms);
 
-    gsr_egl_cleanup_frame(&cap_kms->egl);
+    gsr_egl_cleanup_frame(cap_kms->params.egl);
 
     for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {
         if(cap_kms->kms_response.fds[i].fd > 0)
@@ -457,7 +449,6 @@ static void gsr_capture_kms_cuda_stop(gsr_capture *cap, AVCodecContext *video_co
         av_buffer_unref(&video_codec_context->hw_frames_ctx);
 
     gsr_cuda_unload(&cap_kms->cuda);
-    gsr_egl_unload(&cap_kms->egl);
     gsr_kms_client_deinit(&cap_kms->kms_client);
 }
 

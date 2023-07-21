@@ -1,6 +1,5 @@
 #include "../../include/capture/kms_vaapi.h"
 #include "../../kms/client/kms_client.h"
-#include "../../include/egl.h"
 #include "../../include/utils.h"
 #include "../../include/color_conversion.h"
 #include "../../include/cursor.h"
@@ -39,8 +38,6 @@ typedef struct {
     bool should_stop;
     bool stop_is_error;
     bool created_hw_frame;
-
-    gsr_egl egl;
     
     gsr_kms_client kms_client;
     gsr_kms_response kms_response;
@@ -75,8 +72,14 @@ static int max_int(int a, int b) {
 static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_codec_context);
 
 static bool drm_create_codec_context(gsr_capture_kms_vaapi *cap_kms, AVCodecContext *video_codec_context) {
+    char render_path[128];
+    if(!gsr_card_path_get_render_path(cap_kms->params.card_path, render_path)) {
+        fprintf(stderr, "gsr error: failed to get /dev/dri/renderDXXX file from %s\n", cap_kms->params.card_path);
+        return false;
+    }
+
     AVBufferRef *device_ctx;
-    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, cap_kms->params.card_path, NULL, 0) < 0) {
+    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, render_path, NULL, 0) < 0) {
         fprintf(stderr, "Error: Failed to create hardware device context\n");
         return false;
     }
@@ -194,16 +197,10 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
 
     cap_kms->x11_rot = X11_ROT_0;
 
-    if(!gsr_egl_load(&cap_kms->egl, cap_kms->dpy, cap_kms->params.wayland)) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to load opengl\n");
-        gsr_capture_kms_vaapi_stop(cap, video_codec_context);
-        return -1;
-    }
-
     gsr_monitor monitor;
     cap_kms->monitor_id.num_connector_ids = 0;
-    if(cap_kms->params.wayland && gsr_egl_start_capture(&cap_kms->egl, cap_kms->params.display_to_capture)) {
-        if(!get_monitor_by_name(&cap_kms->egl, GSR_CONNECTION_WAYLAND, cap_kms->params.display_to_capture, &monitor)) {
+    if(gsr_egl_start_capture(cap_kms->params.egl, cap_kms->params.display_to_capture)) {
+        if(!get_monitor_by_name(cap_kms->params.egl, GSR_CONNECTION_WAYLAND, cap_kms->params.display_to_capture, &monitor)) {
             fprintf(stderr, "gsr error: gsr_capture_kms_cuda_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
             gsr_capture_kms_vaapi_stop(cap, video_codec_context);
             return -1;
@@ -269,7 +266,7 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
     cap_kms->capture_size = monitor.size;
 
     /* Disable vsync */
-    cap_kms->egl.eglSwapInterval(cap_kms->egl.egl_display, 0);
+    cap_kms->params.egl->eglSwapInterval(cap_kms->params.egl->egl_display, 0);
 
     video_codec_context->width = max_int(2, even_number_ceil(cap_kms->capture_size.x));
     video_codec_context->height = max_int(2, even_number_ceil(cap_kms->capture_size.y));
@@ -280,7 +277,7 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
     }
 
     if(cap_kms->dpy && !cap_kms->params.wayland) {
-        if(gsr_cursor_init(&cap_kms->cursor, &cap_kms->egl, cap_kms->dpy) != 0) {
+        if(gsr_cursor_init(&cap_kms->cursor, cap_kms->params.egl, cap_kms->dpy) != 0) {
             gsr_capture_kms_vaapi_stop(cap, video_codec_context);
             return -1;
         }
@@ -302,7 +299,7 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
     // TODO:
-    cap_kms->egl.glClear(GL_COLOR_BUFFER_BIT);
+    cap_kms->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
     if(cap_kms->dpy && !cap_kms->params.wayland) {
         while(XPending(cap_kms->dpy)) {
@@ -350,16 +347,16 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
         }
         vaSyncSurface(cap_kms->va_dpy, target_surface_id);
 
-        cap_kms->egl.glGenTextures(1, &cap_kms->input_texture);
-        cap_kms->egl.glBindTexture(GL_TEXTURE_2D, cap_kms->input_texture);
-        cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        cap_kms->egl.glBindTexture(GL_TEXTURE_2D, 0);
+        cap_kms->params.egl->glGenTextures(1, &cap_kms->input_texture);
+        cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, cap_kms->input_texture);
+        cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
         if(cap_kms->prime.fourcc == FOURCC_NV12) {
-            cap_kms->egl.glGenTextures(2, cap_kms->target_textures);
+            cap_kms->params.egl->glGenTextures(2, cap_kms->target_textures);
             for(int i = 0; i < 2; ++i) {
                 const uint32_t formats[2] = { fourcc('R', '8', ' ', ' '), fourcc('G', 'R', '8', '8') };
                 const int layer = i;
@@ -381,40 +378,40 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
                     EGL_NONE
                 };
 
-                while(cap_kms->egl.eglGetError() != EGL_SUCCESS){}
-                EGLImage image = cap_kms->egl.eglCreateImage(cap_kms->egl.egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+                while(cap_kms->params.egl->eglGetError() != EGL_SUCCESS){}
+                EGLImage image = cap_kms->params.egl->eglCreateImage(cap_kms->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
                 if(!image) {
-                    fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: failed to create egl image from drm fd for output drm fd, error: %d\n", cap_kms->egl.eglGetError());
+                    fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: failed to create egl image from drm fd for output drm fd, error: %d\n", cap_kms->params.egl->eglGetError());
                     cap_kms->should_stop = true;
                     cap_kms->stop_is_error = true;
                     return;
                 }
 
-                cap_kms->egl.glBindTexture(GL_TEXTURE_2D, cap_kms->target_textures[i]);
-                cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-                cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-                cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                cap_kms->egl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, cap_kms->target_textures[i]);
+                cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-                while(cap_kms->egl.glGetError()) {}
-                while(cap_kms->egl.eglGetError() != EGL_SUCCESS){}
-                cap_kms->egl.glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
-                if(cap_kms->egl.glGetError() != 0 || cap_kms->egl.eglGetError() != EGL_SUCCESS) {
+                while(cap_kms->params.egl->glGetError()) {}
+                while(cap_kms->params.egl->eglGetError() != EGL_SUCCESS){}
+                cap_kms->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+                if(cap_kms->params.egl->glGetError() != 0 || cap_kms->params.egl->eglGetError() != EGL_SUCCESS) {
                     // TODO: Get the error properly
-                    fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: failed to bind egl image to gl texture, error: %d\n", cap_kms->egl.eglGetError());
+                    fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: failed to bind egl image to gl texture, error: %d\n", cap_kms->params.egl->eglGetError());
                     cap_kms->should_stop = true;
                     cap_kms->stop_is_error = true;
-                    cap_kms->egl.eglDestroyImage(cap_kms->egl.egl_display, image);
-                    cap_kms->egl.glBindTexture(GL_TEXTURE_2D, 0);
+                    cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, image);
+                    cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
                     return;
                 }
 
-                cap_kms->egl.eglDestroyImage(cap_kms->egl.egl_display, image);
-                cap_kms->egl.glBindTexture(GL_TEXTURE_2D, 0);
+                cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, image);
+                cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
             }
 
             gsr_color_conversion_params color_conversion_params = {0};
-            color_conversion_params.egl = &cap_kms->egl;
+            color_conversion_params.egl = cap_kms->params.egl;
             color_conversion_params.source_color = GSR_SOURCE_COLOR_RGB;
             color_conversion_params.destination_color = GSR_DESTINATION_COLOR_NV12;
 
@@ -496,14 +493,14 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_kms_response_fd *drm_fd = NULL;
     bool requires_rotation = cap_kms->requires_rotation;
     if(cap_kms->using_wayland_capture) {
-        gsr_egl_update(&cap_kms->egl);
-        cap_kms->wayland_kms_data.fd = cap_kms->egl.fd;
-        cap_kms->wayland_kms_data.width = cap_kms->egl.width;
-        cap_kms->wayland_kms_data.height = cap_kms->egl.height;
-        cap_kms->wayland_kms_data.pitch = cap_kms->egl.pitch;
-        cap_kms->wayland_kms_data.offset = cap_kms->egl.offset;
-        cap_kms->wayland_kms_data.pixel_format = cap_kms->egl.pixel_format;
-        cap_kms->wayland_kms_data.modifier = cap_kms->egl.modifier;
+        gsr_egl_update(cap_kms->params.egl);
+        cap_kms->wayland_kms_data.fd = cap_kms->params.egl->fd;
+        cap_kms->wayland_kms_data.width = cap_kms->params.egl->width;
+        cap_kms->wayland_kms_data.height = cap_kms->params.egl->height;
+        cap_kms->wayland_kms_data.pitch = cap_kms->params.egl->pitch;
+        cap_kms->wayland_kms_data.offset = cap_kms->params.egl->offset;
+        cap_kms->wayland_kms_data.pixel_format = cap_kms->params.egl->pixel_format;
+        cap_kms->wayland_kms_data.modifier = cap_kms->params.egl->modifier;
         cap_kms->wayland_kms_data.connector_id = 0;
         cap_kms->wayland_kms_data.is_combined_plane = false;
 
@@ -583,11 +580,11 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         EGL_NONE
     };
 
-    EGLImage image = cap_kms->egl.eglCreateImage(cap_kms->egl.egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
-    cap_kms->egl.glBindTexture(GL_TEXTURE_2D, cap_kms->input_texture);
-    cap_kms->egl.glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
-    cap_kms->egl.eglDestroyImage(cap_kms->egl.egl_display, image);
-    cap_kms->egl.glBindTexture(GL_TEXTURE_2D, 0);
+    EGLImage image = cap_kms->params.egl->eglCreateImage(cap_kms->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+    cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, cap_kms->input_texture);
+    cap_kms->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+    cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, image);
+    cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
     if(cap_kms->using_wayland_capture) {
         gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
@@ -638,9 +635,9 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         }
     }
 
-    cap_kms->egl.eglSwapBuffers(cap_kms->egl.egl_display, cap_kms->egl.egl_surface);
+    cap_kms->params.egl->eglSwapBuffers(cap_kms->params.egl->egl_display, cap_kms->params.egl->egl_surface);
 
-    gsr_egl_cleanup_frame(&cap_kms->egl);
+    gsr_egl_cleanup_frame(cap_kms->params.egl);
 
     for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {
         if(cap_kms->kms_response.fds[i].fd > 0)
@@ -665,13 +662,13 @@ static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_c
         }
     }
 
-    if(cap_kms->egl.egl_context) {
+    if(cap_kms->params.egl->egl_context) {
         if(cap_kms->input_texture) {
-            cap_kms->egl.glDeleteTextures(1, &cap_kms->input_texture);
+            cap_kms->params.egl->glDeleteTextures(1, &cap_kms->input_texture);
             cap_kms->input_texture = 0;
         }
 
-        cap_kms->egl.glDeleteTextures(2, cap_kms->target_textures);
+        cap_kms->params.egl->glDeleteTextures(2, cap_kms->target_textures);
         cap_kms->target_textures[0] = 0;
         cap_kms->target_textures[1] = 0;
     }
@@ -688,7 +685,6 @@ static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_c
     if(video_codec_context->hw_frames_ctx)
         av_buffer_unref(&video_codec_context->hw_frames_ctx);
 
-    gsr_egl_unload(&cap_kms->egl);
     gsr_kms_client_deinit(&cap_kms->kms_client);
     if(cap_kms->dpy) {
         // TODO: This causes a crash, why? maybe some other library dlclose xlib and that also happened to unload this???

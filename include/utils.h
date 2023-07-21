@@ -2,6 +2,7 @@
 #define GSR_UTILS_H
 
 #include "vec2.h"
+#include "../include/egl.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <X11/extensions/Xrandr.h>
@@ -45,10 +46,12 @@ typedef void (*active_monitor_callback)(const gsr_monitor *monitor, void *userda
 void for_each_active_monitor_output(void *connection, gsr_connection_type connection_type, active_monitor_callback callback, void *userdata);
 bool get_monitor_by_name(void *connection, gsr_connection_type connection_type, const char *name, gsr_monitor *monitor);
 
-bool gl_get_gpu_info(Display *dpy, gsr_gpu_info *info, bool wayland);
+bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info);
 
 /* |output| should be at least 128 bytes in size */
 bool gsr_get_valid_card_path(char *output);
+/* |render_path| should be at least 128 bytes in size */
+bool gsr_card_path_get_render_path(const char *card_path, char *render_path);
 
 int even_number_ceil(int value);
 

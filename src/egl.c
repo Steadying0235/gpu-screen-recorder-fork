@@ -2,156 +2,212 @@
 #include "../include/library_loader.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <dlfcn.h>
 #include <assert.h>
 
 #include <wayland-client.h>
 #include <wayland-egl.h>
-//#include "../external/wlr-export-dmabuf-unstable-v1-client-protocol.h"
+#include "../external/wlr-export-dmabuf-unstable-v1-client-protocol.h"
 #include <unistd.h>
 
-#if 0
-static struct wl_compositor *compositor = NULL;
-static struct wl_output *output = NULL;
-static struct zwlr_export_dmabuf_manager_v1 *export_manager = NULL;
-static struct zwlr_export_dmabuf_frame_v1 *current_frame = NULL;
-//static struct wl_shell *shell = NULL;
-
-struct window {
-	EGLContext egl_context;
-	struct wl_surface *surface;
-	//struct wl_shell_surface *shell_surface;
-	struct wl_egl_window *egl_window;
-	EGLSurface egl_surface;
-};
-
 static void output_handle_geometry(void *data, struct wl_output *wl_output,
-		int32_t x, int32_t y, int32_t phys_width, int32_t phys_height,
-		int32_t subpixel, const char *make, const char *model,
-		int32_t transform) {
-	fprintf(stderr, "output geometry, make: %s, model: %s\n", make, model);
+        int32_t x, int32_t y, int32_t phys_width, int32_t phys_height,
+        int32_t subpixel, const char *make, const char *model,
+        int32_t transform) {
+    (void)wl_output;
+    (void)phys_width;
+    (void)phys_height;
+    (void)subpixel;
+    (void)make;
+    (void)model;
+    (void)transform;
+    gsr_wayland_output *gsr_output = data;
+    gsr_output->pos.x = x;
+    gsr_output->pos.y = y;
 }
 
-static void output_handle_mode(void *data, struct wl_output *wl_output,
-		uint32_t flags, int32_t width, int32_t height, int32_t refresh) {
-	
+static void output_handle_mode(void *data, struct wl_output *wl_output, uint32_t flags, int32_t width, int32_t height, int32_t refresh) {
+    (void)wl_output;
+    (void)flags;
+    (void)refresh;
+    gsr_wayland_output *gsr_output = data;
+    gsr_output->size.x = width;
+    gsr_output->size.y = height;
 }
 
-static void output_handle_done(void* data, struct wl_output *wl_output) {
-	/* Nothing to do */
+static void output_handle_done(void *data, struct wl_output *wl_output) {
+    (void)data;
+    (void)wl_output;
 }
 
-static void output_handle_scale(void* data, struct wl_output *wl_output,
-		int32_t factor) {
-	/* Nothing to do */
+static void output_handle_scale(void* data, struct wl_output *wl_output, int32_t factor) {
+    (void)data;
+    (void)wl_output;
+    (void)factor;
+}
+
+static void output_handle_name(void *data, struct wl_output *wl_output, const char *name) {
+    (void)wl_output;
+    gsr_wayland_output *gsr_output = data;
+    if(gsr_output->name) {
+        free(gsr_output->name);
+        gsr_output->name = NULL;
+    }
+    gsr_output->name = strdup(name);
+}
+
+static void output_handle_description(void *data, struct wl_output *wl_output, const char *description) {
+    (void)data;
+    (void)wl_output;
+    (void)description;
 }
 
 static const struct wl_output_listener output_listener = {
-	.geometry = output_handle_geometry,
-	.mode = output_handle_mode,
-	.done = output_handle_done,
-	.scale = output_handle_scale,
+    .geometry = output_handle_geometry,
+    .mode = output_handle_mode,
+    .done = output_handle_done,
+    .scale = output_handle_scale,
+    .name = output_handle_name,
+    .description = output_handle_description,
 };
-#endif
 
-static void registry_add_object (void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version) {
+static void registry_add_object(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version) {
     (void)version;
-    struct wl_compositor **wayland_compositor = data;
-	if (strcmp(interface, "wl_compositor") == 0) {
-        if(*wayland_compositor) {
-            wl_compositor_destroy(*wayland_compositor);
-            *wayland_compositor = NULL;
+    gsr_egl *egl = data;
+    if (strcmp(interface, "wl_compositor") == 0) {
+        if(egl->wayland.compositor) {
+            wl_compositor_destroy(egl->wayland.compositor);
+            egl->wayland.compositor = NULL;
         }
-		*wayland_compositor = wl_registry_bind(registry, name, &wl_compositor_interface, 1);
-    }/* else if(strcmp(interface, wl_output_interface.name) == 0) {
-        fprintf(stderr, "wayland output, name: %u\n", name);
-        output = wl_registry_bind(registry, name, &wl_output_interface, 1);
-        wl_output_add_listener(output, &output_listener, NULL);
-	} else if(strcmp(interface, zwlr_export_dmabuf_manager_v1_interface.name) == 0) {
-        export_manager = wl_registry_bind(registry, name, &zwlr_export_dmabuf_manager_v1_interface, 1);
-    }*/
-    //fprintf(stderr, "interface: %s\n", interface);
+        egl->wayland.compositor = wl_registry_bind(registry, name, &wl_compositor_interface, 1);
+    } else if(strcmp(interface, wl_output_interface.name) == 0) {
+        if(version < 4) {
+            fprintf(stderr, "gsr warning: wl output interface version is < 4, expected >= 4 to capture a monitor. Using KMS capture instead\n");
+            return;
+        }
+
+        if(egl->wayland.num_outputs == GSR_MAX_OUTPUTS) {
+            fprintf(stderr, "gsr warning: reached maximum outputs (32), ignoring output %u\n", name);
+            return;
+        }
+
+        gsr_wayland_output *gsr_output = &egl->wayland.outputs[egl->wayland.num_outputs];
+        egl->wayland.num_outputs++;
+        *gsr_output = (gsr_wayland_output) {
+            .wl_name = name,
+            .output = wl_registry_bind(registry, name, &wl_output_interface, 4),
+            .pos = { .x = 0, .y = 0 },
+            .size = { .x = 0, .y = 0 },
+            .name = NULL,
+        };
+        wl_output_add_listener(gsr_output->output, &output_listener, gsr_output);
+    } else if(strcmp(interface, zwlr_export_dmabuf_manager_v1_interface.name) == 0) {
+        if(egl->wayland.export_manager) {
+            zwlr_export_dmabuf_manager_v1_destroy(egl->wayland.export_manager);
+            egl->wayland.export_manager = NULL;
+        }
+        egl->wayland.export_manager = wl_registry_bind(registry, name, &zwlr_export_dmabuf_manager_v1_interface, 1);
+    }
 }
 
-static void registry_remove_object (void *data, struct wl_registry *registry, uint32_t name) {
-	(void)data;
+static void registry_remove_object(void *data, struct wl_registry *registry, uint32_t name) {
+    (void)data;
     (void)registry;
     (void)name;
 }
 
-static struct wl_registry_listener registry_listener = {&registry_add_object, &registry_remove_object};
+static struct wl_registry_listener registry_listener = {
+    .global = registry_add_object,
+    .global_remove = registry_remove_object,
+};
 
-#if 0
-static void register_cb(gsr_egl *egl);
+static void frame_capture_output(gsr_egl *egl);
 
 static void frame_start(void *data, struct zwlr_export_dmabuf_frame_v1 *frame,
-		uint32_t width, uint32_t height, uint32_t offset_x, uint32_t offset_y,
-		uint32_t buffer_flags, uint32_t flags, uint32_t format,
-		uint32_t mod_high, uint32_t mod_low, uint32_t num_objects) {
+        uint32_t width, uint32_t height, uint32_t offset_x, uint32_t offset_y,
+        uint32_t buffer_flags, uint32_t flags, uint32_t format,
+        uint32_t mod_high, uint32_t mod_low, uint32_t num_objects) {
+    (void)offset_x;
+    (void)offset_y;
+    (void)buffer_flags;
+    (void)flags;
+    (void)num_objects;
     gsr_egl *egl = data;
-	//fprintf(stderr, "frame start, width: %u, height: %u, offset x: %u, offset y: %u, format: %u, num objects: %u\n", width, height, offset_x, offset_y, format, num_objects);
+    //fprintf(stderr, "frame start %p, width: %u, height: %u, offset x: %u, offset y: %u, format: %u, num objects: %u\n", (void*)frame, width, height, offset_x, offset_y, format, num_objects);
     egl->width = width;
     egl->height = height;
     egl->pixel_format = format;
-    egl->modifier = ((uint64_t)mod_high << 32) | mod_low;
-    current_frame = frame;
+    egl->modifier = ((uint64_t)mod_high << 32) | (uint64_t)mod_low;
+    egl->wayland.current_frame = frame;
 }
 
 static void frame_object(void *data, struct zwlr_export_dmabuf_frame_v1 *frame,
-		uint32_t index, int32_t fd, uint32_t size, uint32_t offset,
-		uint32_t stride, uint32_t plane_index) {
+        uint32_t index, int32_t fd, uint32_t size, uint32_t offset,
+        uint32_t stride, uint32_t plane_index) {
     // TODO: What if we get multiple objects? then we get multiple fd per frame
+    (void)frame;
+    (void)index;
+    (void)size;
+    (void)plane_index;
     gsr_egl *egl = data;
-    //egl->fd = fd;
+    if(egl->fd > 0) {
+        close(egl->fd);
+        egl->fd = 0;
+    }
+    egl->fd = fd;
     egl->pitch = stride;
     egl->offset = offset;
-	//fprintf(stderr, "new frame, fd: %d, index: %u, size: %u, offset: %u, stride: %u, plane_index: %u\n", fd, index, size, offset, stride, plane_index);
-    close(fd);
+    //fprintf(stderr, "new frame %p, fd: %d, index: %u, size: %u, offset: %u, stride: %u, plane_index: %u\n", (void*)frame, fd, index, size, offset, stride, plane_index);
 }
 
-
-static void frame_ready(void *data, struct zwlr_export_dmabuf_frame_v1 *frame,
-		uint32_t tv_sec_hi, uint32_t tv_sec_lo, uint32_t tv_nsec) {
-	register_cb(data);
+static void frame_ready(void *data, struct zwlr_export_dmabuf_frame_v1 *frame, uint32_t tv_sec_hi, uint32_t tv_sec_lo, uint32_t tv_nsec) {
+    (void)frame;
+    (void)tv_sec_hi;
+    (void)tv_sec_lo;
+    (void)tv_nsec;
+    frame_capture_output(data);
 }
 
-static void frame_cancel(void *data, struct zwlr_export_dmabuf_frame_v1 *frame,
-		uint32_t reason) {
-    register_cb(data);
+static void frame_cancel(void *data, struct zwlr_export_dmabuf_frame_v1 *frame, uint32_t reason) {
+    (void)frame;
+    (void)reason;
+    frame_capture_output(data);
 }
-
 
 static const struct zwlr_export_dmabuf_frame_v1_listener frame_listener = {
-	.frame = frame_start,
-	.object = frame_object,
-	.ready = frame_ready,
-	.cancel = frame_cancel,
+    .frame = frame_start,
+    .object = frame_object,
+    .ready = frame_ready,
+    .cancel = frame_cancel,
 };
 
-static struct zwlr_export_dmabuf_frame_v1 *frame_callback = NULL;
-static void register_cb(gsr_egl *egl) {
-    bool with_cursor = false;
-    frame_callback = zwlr_export_dmabuf_manager_v1_capture_output(export_manager, with_cursor, output);
-    zwlr_export_dmabuf_frame_v1_add_listener(frame_callback, &frame_listener, egl);
+static void frame_capture_output(gsr_egl *egl) {
+    assert(egl->wayland.output_to_capture);
+    bool with_cursor = true;
+
+    if(egl->wayland.frame_callback) {
+        zwlr_export_dmabuf_frame_v1_destroy(egl->wayland.frame_callback);
+        egl->wayland.frame_callback = NULL;
+    }
+
+    egl->wayland.frame_callback = zwlr_export_dmabuf_manager_v1_capture_output(egl->wayland.export_manager, with_cursor, egl->wayland.output_to_capture->output);
+    zwlr_export_dmabuf_frame_v1_add_listener(egl->wayland.frame_callback, &frame_listener, egl);
 }
-#endif
+
+static gsr_wayland_output* get_wayland_output_by_name(gsr_egl *egl, const char *name) {
+    assert(name);
+    for(int i = 0; i < egl->wayland.num_outputs; ++i) {
+        if(egl->wayland.outputs[i].name && strcmp(egl->wayland.outputs[i].name, name) == 0)
+            return &egl->wayland.outputs[i];
+    }
+    return NULL;
+}
 
 // TODO: Create egl context without surface (in other words, x11/wayland agnostic, doesn't require x11/wayland dependency)
 static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
     EGLConfig  ecfg;
     int32_t    num_config = 0;
-
-    EGLDisplay egl_display = NULL;
-    EGLSurface egl_surface = NULL;
-    EGLContext egl_context = NULL;
-
-    Window x11_window = None;
-
-    struct wl_registry *wayland_registry = NULL;
-    struct wl_compositor *wayland_compositor = NULL;
-    struct wl_surface *wayland_surface = NULL;
-    void *wayland_dpy = NULL;
-    void *wayland_window = NULL;
 
     const int32_t attr[] = {
         EGL_BUFFER_SIZE, 24,
@@ -165,39 +221,29 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
     };
 
     if(wayland) {
-        wayland_dpy = wl_display_connect(NULL);
-        if(!wayland_dpy) {
+        self->wayland.dpy = wl_display_connect(NULL);
+        if(!self->wayland.dpy) {
             fprintf(stderr, "gsr error: gsr_egl_create_window failed: wl_display_connect failed\n");
             goto fail;
         }
 
-        wayland_registry = wl_display_get_registry(wayland_dpy); // TODO: Error checking
-        wl_registry_add_listener(wayland_registry, &registry_listener, &wayland_compositor); // TODO: Error checking
+        self->wayland.registry = wl_display_get_registry(self->wayland.dpy); // TODO: Error checking
+        wl_registry_add_listener(self->wayland.registry, &registry_listener, self); // TODO: Error checking
 
         // Fetch globals
-        wl_display_roundtrip(wayland_dpy);
+        wl_display_roundtrip(self->wayland.dpy);
 
         // fetch wl_output
-        wl_display_roundtrip(wayland_dpy);
+        wl_display_roundtrip(self->wayland.dpy);
 
-        if(!wayland_compositor) {
+        if(!self->wayland.compositor) {
             fprintf(stderr, "gsr error: gsr_gl_create_window failed: failed to find compositor\n");
             goto fail;
         }
-
-        /*if(!output) {
-            fprintf(stderr, "gsr error: gsr_gl_create_window failed: failed to find output\n");
-            goto fail;
-        }
-
-        if(!export_manager) {
-            fprintf(stderr, "gsr error: gsr_gl_create_window failed: failed to find export manager\n");
-            goto fail;
-        }*/
     } else {
-        x11_window = XCreateWindow(self->x11_dpy, DefaultRootWindow(self->x11_dpy), 0, 0, 16, 16, 0, CopyFromParent, InputOutput, CopyFromParent, 0, NULL);
+        self->x11.window = XCreateWindow(self->x11.dpy, DefaultRootWindow(self->x11.dpy), 0, 0, 16, 16, 0, CopyFromParent, InputOutput, CopyFromParent, 0, NULL);
 
-        if(!x11_window) {
+        if(!self->x11.window) {
             fprintf(stderr, "gsr error: gsr_gl_create_window failed: failed to create gl window\n");
             goto fail;
         }
@@ -205,78 +251,50 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
 
     self->eglBindAPI(EGL_OPENGL_ES_API);
 
-    egl_display = self->eglGetDisplay(wayland_dpy ? (EGLNativeDisplayType)wayland_dpy : (EGLNativeDisplayType)self->x11_dpy);
-    if(!egl_display) {
+    self->egl_display = self->eglGetDisplay(self->wayland.dpy ? (EGLNativeDisplayType)self->wayland.dpy : (EGLNativeDisplayType)self->x11.dpy);
+    if(!self->egl_display) {
         fprintf(stderr, "gsr error: gsr_egl_create_window failed: eglGetDisplay failed\n");
         goto fail;
     }
 
-    if(!self->eglInitialize(egl_display, NULL, NULL)) {
+    if(!self->eglInitialize(self->egl_display, NULL, NULL)) {
         fprintf(stderr, "gsr error: gsr_egl_create_window failed: eglInitialize failed\n");
         goto fail;
     }
     
-    if(!self->eglChooseConfig(egl_display, attr, &ecfg, 1, &num_config) || num_config != 1) {
+    if(!self->eglChooseConfig(self->egl_display, attr, &ecfg, 1, &num_config) || num_config != 1) {
         fprintf(stderr, "gsr error: gsr_egl_create_window failed: failed to find a matching config\n");
         goto fail;
     }
     
-    egl_context = self->eglCreateContext(egl_display, ecfg, NULL, ctxattr);
-    if(!egl_context) {
+    self->egl_context = self->eglCreateContext(self->egl_display, ecfg, NULL, ctxattr);
+    if(!self->egl_context) {
         fprintf(stderr, "gsr error: gsr_egl_create_window failed: failed to create egl context\n");
         goto fail;
     }
 
     if(wayland) {
-        wayland_surface = wl_compositor_create_surface(wayland_compositor);
-        wayland_window = wl_egl_window_create(wayland_surface, 16, 16);
-        egl_surface = self->eglCreateWindowSurface(egl_display, ecfg, (EGLNativeWindowType)wayland_window, NULL);
+        self->wayland.surface = wl_compositor_create_surface(self->wayland.compositor);
+        self->wayland.window = wl_egl_window_create(self->wayland.surface, 16, 16);
+        self->egl_surface = self->eglCreateWindowSurface(self->egl_display, ecfg, (EGLNativeWindowType)self->wayland.window, NULL);
     } else {
-        egl_surface = self->eglCreateWindowSurface(egl_display, ecfg, (EGLNativeWindowType)x11_window, NULL);
+        self->egl_surface = self->eglCreateWindowSurface(self->egl_display, ecfg, (EGLNativeWindowType)self->x11.window, NULL);
     }
 
-    if(!egl_surface) {
+    if(!self->egl_surface) {
         fprintf(stderr, "gsr error: gsr_egl_create_window failed: failed to create window surface\n");
         goto fail;
     }
 
-    if(!self->eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context)) {
+    if(!self->eglMakeCurrent(self->egl_display, self->egl_surface, self->egl_surface, self->egl_context)) {
         fprintf(stderr, "gsr error: gsr_egl_create_window failed: failed to make context current\n");
         goto fail;
     }
 
-    self->egl_display = egl_display;
-    self->egl_surface = egl_surface;
-    self->egl_context = egl_context;
-
-    self->x11_window = x11_window;
-
-    self->wayland_dpy = wayland_dpy;
-    self->wayland_window = wayland_window;
-    self->wayland_surface = wayland_surface;
-    self->wayland_compositor = wayland_compositor;
-    self->wayland_registry = wayland_registry;
     return true;
 
     fail:
-    if(egl_context)
-        self->eglDestroyContext(egl_display, egl_context);
-    if(egl_surface)
-        self->eglDestroySurface(egl_display, egl_surface);
-    if(egl_display)
-        self->eglTerminate(egl_display);
-    if(x11_window)
-        XDestroyWindow(self->x11_dpy, x11_window);
-    if(wayland_window)
-        wl_egl_window_destroy(wayland_window);
-    if(wayland_surface)
-        wl_surface_destroy(wayland_surface);
-    if(wayland_compositor)
-        wl_compositor_destroy(wayland_compositor);
-    if(wayland_registry)
-        wl_registry_destroy(wayland_registry);
-    if(wayland_dpy)
-        wl_display_disconnect(wayland_dpy);
+    gsr_egl_unload(self);
     return false;
 }
 
@@ -387,7 +405,7 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
 
 bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland) {
     memset(self, 0, sizeof(gsr_egl));
-    self->x11_dpy = dpy;
+    self->x11.dpy = dpy;
 
     void *egl_lib = NULL;
     void *gl_lib = NULL;
@@ -449,34 +467,59 @@ void gsr_egl_unload(gsr_egl *self) {
         self->egl_display = NULL;
     }
 
-    if(self->x11_window) {
-        XDestroyWindow(self->x11_dpy, self->x11_window);
-        self->x11_window = None;
+    if(self->x11.window) {
+        XDestroyWindow(self->x11.dpy, self->x11.window);
+        self->x11.window = None;
     }
 
-    if(self->wayland_window) {
-        wl_egl_window_destroy(self->wayland_window);
-        self->wayland_window = NULL;
+    gsr_egl_cleanup_frame(self);
+
+    if(self->wayland.frame_callback) {
+        zwlr_export_dmabuf_frame_v1_destroy(self->wayland.frame_callback);
+        self->wayland.frame_callback = NULL;
     }
 
-    if(self->wayland_surface) {
-        wl_surface_destroy(self->wayland_surface);
-        self->wayland_surface = NULL;
+    if(self->wayland.export_manager) {
+        zwlr_export_dmabuf_manager_v1_destroy(self->wayland.export_manager);
+        self->wayland.export_manager = NULL;
     }
 
-    if(self->wayland_compositor) {
-        wl_compositor_destroy(self->wayland_compositor);
-        self->wayland_compositor = NULL;
+    if(self->wayland.window) {
+        wl_egl_window_destroy(self->wayland.window);
+        self->wayland.window = NULL;
     }
 
-    if(self->wayland_registry) {
-        wl_registry_destroy(self->wayland_registry);
-        self->wayland_registry = NULL;
+    if(self->wayland.surface) {
+        wl_surface_destroy(self->wayland.surface);
+        self->wayland.surface = NULL;
     }
 
-    if(self->wayland_dpy) {
-        wl_display_disconnect(self->wayland_dpy);
-        self->wayland_dpy = NULL;
+    for(int i = 0; i < self->wayland.num_outputs; ++i) {
+        if(self->wayland.outputs[i].output) {
+            wl_output_destroy(self->wayland.outputs[i].output);
+            self->wayland.outputs[i].output = NULL;
+        }
+
+        if(self->wayland.outputs[i].name) {
+            free(self->wayland.outputs[i].name);
+            self->wayland.outputs[i].name = NULL;
+        }
+    }
+    self->wayland.num_outputs = 0;
+
+    if(self->wayland.compositor) {
+        wl_compositor_destroy(self->wayland.compositor);
+        self->wayland.compositor = NULL;
+    }
+
+    if(self->wayland.registry) {
+        wl_registry_destroy(self->wayland.registry);
+        self->wayland.registry = NULL;
+    }
+
+    if(self->wayland.dpy) {
+        wl_display_disconnect(self->wayland.dpy);
+        self->wayland.dpy = NULL;
     }
 
     if(self->egl_library) {
@@ -492,15 +535,38 @@ void gsr_egl_unload(gsr_egl *self) {
     memset(self, 0, sizeof(gsr_egl));
 }
 
+bool gsr_egl_supports_wayland_capture(gsr_egl *self) {
+    return !!self->wayland.export_manager && self->wayland.num_outputs > 0;
+}
+
+bool gsr_egl_start_capture(gsr_egl *self, const char *monitor_to_capture) {
+    assert(monitor_to_capture);
+    if(!monitor_to_capture)
+        return false;
+
+    if(!self->wayland.dpy)
+        return false;
+
+    if(!gsr_egl_supports_wayland_capture(self))
+        return false;
+
+    self->wayland.output_to_capture = get_wayland_output_by_name(self, monitor_to_capture);
+    if(!self->wayland.output_to_capture)
+        return false;
+
+    frame_capture_output(self);
+    return true;
+}
+
 void gsr_egl_update(gsr_egl *self) {
-    if(!self->wayland_dpy)
+    if(!self->wayland.dpy)
         return;
 
-    wl_display_dispatch(self->wayland_dpy);
+    wl_display_dispatch(self->wayland.dpy);
 }
 
 void gsr_egl_cleanup_frame(gsr_egl *self) {
-    if(!self->wayland_dpy)
+    if(!self->wayland.dpy)
         return;
 
     if(self->fd > 0) {
@@ -508,8 +574,8 @@ void gsr_egl_cleanup_frame(gsr_egl *self) {
         self->fd = 0;
     }
 
-    /*if(current_frame) {
-        zwlr_export_dmabuf_frame_v1_destroy(current_frame);
-        current_frame = NULL;
-    }*/
+    if(self->wayland.current_frame) {
+        //zwlr_export_dmabuf_frame_v1_destroy(self->wayland.current_frame);
+        self->wayland.current_frame = NULL;
+    }
 }

@@ -44,6 +44,8 @@ typedef struct {
     
     gsr_kms_client kms_client;
     gsr_kms_response kms_response;
+    gsr_kms_response_fd wayland_kms_data;
+    bool using_wayland_capture;
 
     vec2i screen_size;
     vec2i capture_pos;
@@ -190,69 +192,81 @@ static void monitor_callback(const gsr_monitor *monitor, void *userdata) {
 static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
-    if(gsr_kms_client_init(&cap_kms->kms_client, cap_kms->params.card_path) != 0) {
-        return -1;
-    }
-
-    void *connection = cap_kms->params.wayland ? (void*)cap_kms->params.card_path : (void*)cap_kms->dpy;
-    const gsr_connection_type connection_type = cap_kms->params.wayland ? GSR_CONNECTION_DRM : GSR_CONNECTION_X11;
-
-    MonitorCallbackUserdata monitor_callback_userdata = {
-        cap_kms, None,
-        cap_kms->params.display_to_capture, strlen(cap_kms->params.display_to_capture),
-        0,
-        X11_ROT_0,
-        true
-    };
-
-    if(cap_kms->params.wayland) {
-        cap_kms->monitor_id.num_connector_ids = 0;
-        for_each_active_monitor_output(connection, connection_type, monitor_callback, &monitor_callback_userdata);
-
-        cap_kms->screen_size.x = 0;
-        cap_kms->screen_size.y = 0;
-    } else {
-        const Atom randr_connector_id_atom = XInternAtom(cap_kms->dpy, "CONNECTOR_ID", False);
-        cap_kms->monitor_id.num_connector_ids = 0;
-        monitor_callback_userdata.randr_connector_id_atom = randr_connector_id_atom;
-        monitor_callback_userdata.wayland = false;
-        for_each_active_monitor_output(connection, connection_type, monitor_callback, &monitor_callback_userdata);
-
-        cap_kms->screen_size.x = WidthOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
-        cap_kms->screen_size.y = HeightOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
-    }
-
-    gsr_monitor monitor;
-    if(strcmp(cap_kms->params.display_to_capture, "screen") == 0) {
-        monitor.pos.x = 0;
-        monitor.pos.y = 0;
-        monitor.size = cap_kms->screen_size;
-        cap_kms->screen_capture = true;
-    } else if(!get_monitor_by_name(connection, connection_type, cap_kms->params.display_to_capture, &monitor)) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
-        gsr_capture_kms_vaapi_stop(cap, video_codec_context);
-        return -1;
-    }
-
-    // TODO: Find a better way to do this. Is this info available somewhere in drm? it should be!
-
-    // Note: workaround AMD/Intel issue. If there is one monitor enabled and it's rotated then
-    // the drm buf will also be rotated. This only happens when you only have one monitor enabled.
-    cap_kms->x11_rot = monitor_callback_userdata.rotation;
-    if(monitor_callback_userdata.num_monitors == 1 && cap_kms->x11_rot != X11_ROT_0) {
-        cap_kms->requires_rotation = true;
-    } else {
-        cap_kms->requires_rotation = false;
-    }
-
-    cap_kms->capture_pos = monitor.pos;
-    cap_kms->capture_size = monitor.size;
+    cap_kms->x11_rot = X11_ROT_0;
 
     if(!gsr_egl_load(&cap_kms->egl, cap_kms->dpy, cap_kms->params.wayland)) {
         fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to load opengl\n");
         gsr_capture_kms_vaapi_stop(cap, video_codec_context);
         return -1;
     }
+
+    gsr_monitor monitor;
+    cap_kms->monitor_id.num_connector_ids = 0;
+    if(cap_kms->params.wayland && gsr_egl_start_capture(&cap_kms->egl, cap_kms->params.display_to_capture)) {
+        if(!get_monitor_by_name(&cap_kms->egl, GSR_CONNECTION_WAYLAND, cap_kms->params.display_to_capture, &monitor)) {
+            fprintf(stderr, "gsr error: gsr_capture_kms_cuda_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
+            gsr_capture_kms_vaapi_stop(cap, video_codec_context);
+            return -1;
+        }
+        cap_kms->using_wayland_capture = true;
+    } else {
+        if(gsr_kms_client_init(&cap_kms->kms_client, cap_kms->params.card_path) != 0) {
+            gsr_capture_kms_vaapi_stop(cap, video_codec_context);
+            return -1;
+        }
+
+        void *connection = cap_kms->params.wayland ? (void*)cap_kms->params.card_path : (void*)cap_kms->dpy;
+        const gsr_connection_type connection_type = cap_kms->params.wayland ? GSR_CONNECTION_DRM : GSR_CONNECTION_X11;
+
+        MonitorCallbackUserdata monitor_callback_userdata = {
+            cap_kms, None,
+            cap_kms->params.display_to_capture, strlen(cap_kms->params.display_to_capture),
+            0,
+            X11_ROT_0,
+            true
+        };
+
+        if(cap_kms->params.wayland) {
+            for_each_active_monitor_output(connection, connection_type, monitor_callback, &monitor_callback_userdata);
+
+            cap_kms->screen_size.x = 0;
+            cap_kms->screen_size.y = 0;
+        } else {
+            const Atom randr_connector_id_atom = XInternAtom(cap_kms->dpy, "CONNECTOR_ID", False);
+            monitor_callback_userdata.randr_connector_id_atom = randr_connector_id_atom;
+            monitor_callback_userdata.wayland = false;
+            for_each_active_monitor_output(connection, connection_type, monitor_callback, &monitor_callback_userdata);
+
+            cap_kms->screen_size.x = WidthOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
+            cap_kms->screen_size.y = HeightOfScreen(DefaultScreenOfDisplay(cap_kms->dpy));
+        }
+
+        gsr_monitor monitor;
+        if(strcmp(cap_kms->params.display_to_capture, "screen") == 0) {
+            monitor.pos.x = 0;
+            monitor.pos.y = 0;
+            monitor.size = cap_kms->screen_size;
+            cap_kms->screen_capture = true;
+        } else if(!get_monitor_by_name(connection, connection_type, cap_kms->params.display_to_capture, &monitor)) {
+            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
+            gsr_capture_kms_vaapi_stop(cap, video_codec_context);
+            return -1;
+        }
+
+        // TODO: Find a better way to do this. Is this info available somewhere in drm? it should be!
+
+        // Note: workaround AMD/Intel issue. If there is one monitor enabled and it's rotated then
+        // the drm buf will also be rotated. This only happens when you only have one monitor enabled.
+        cap_kms->x11_rot = monitor_callback_userdata.rotation;
+        if(monitor_callback_userdata.num_monitors == 1 && cap_kms->x11_rot != X11_ROT_0) {
+            cap_kms->requires_rotation = true;
+        } else {
+            cap_kms->requires_rotation = false;
+        }
+    }
+
+    cap_kms->capture_pos = monitor.pos;
+    cap_kms->capture_size = monitor.size;
 
     /* Disable vsync */
     cap_kms->egl.eglSwapInterval(cap_kms->egl.egl_display, 0);
@@ -265,7 +279,7 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         return -1;
     }
 
-    if(cap_kms->dpy) {
+    if(cap_kms->dpy && !cap_kms->params.wayland) {
         if(gsr_cursor_init(&cap_kms->cursor, &cap_kms->egl, cap_kms->dpy) != 0) {
             gsr_capture_kms_vaapi_stop(cap, video_codec_context);
             return -1;
@@ -290,7 +304,7 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
     // TODO:
     cap_kms->egl.glClear(GL_COLOR_BUFFER_BIT);
 
-    if(cap_kms->dpy) {
+    if(cap_kms->dpy && !cap_kms->params.wayland) {
         while(XPending(cap_kms->dpy)) {
             XNextEvent(cap_kms->dpy, &cap_kms->xev);
             gsr_cursor_update(&cap_kms->cursor, &cap_kms->xev);
@@ -479,40 +493,57 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     }
     cap_kms->kms_response.num_fds = 0;
 
-    if(gsr_kms_client_get_kms(&cap_kms->kms_client, &cap_kms->kms_response) != 0) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: failed to get kms, error: %d (%s)\n", cap_kms->kms_response.result, cap_kms->kms_response.err_msg);
-        return -1;
-    }
-
-    if(cap_kms->kms_response.num_fds == 0) {
-        static bool error_shown = false;
-        if(!error_shown) {
-            error_shown = true;
-            fprintf(stderr, "gsr error: no drm found, capture will fail\n");
-        }
-        return -1;
-    }
-
-    bool requires_rotation = cap_kms->requires_rotation;
-
     gsr_kms_response_fd *drm_fd = NULL;
-    if(cap_kms->screen_capture) {
-        drm_fd = find_first_combined_drm(&cap_kms->kms_response);
-        if(!drm_fd)
-            drm_fd = find_largest_drm(&cap_kms->kms_response);
+    bool requires_rotation = cap_kms->requires_rotation;
+    if(cap_kms->using_wayland_capture) {
+        gsr_egl_update(&cap_kms->egl);
+        cap_kms->wayland_kms_data.fd = cap_kms->egl.fd;
+        cap_kms->wayland_kms_data.width = cap_kms->egl.width;
+        cap_kms->wayland_kms_data.height = cap_kms->egl.height;
+        cap_kms->wayland_kms_data.pitch = cap_kms->egl.pitch;
+        cap_kms->wayland_kms_data.offset = cap_kms->egl.offset;
+        cap_kms->wayland_kms_data.pixel_format = cap_kms->egl.pixel_format;
+        cap_kms->wayland_kms_data.modifier = cap_kms->egl.modifier;
+        cap_kms->wayland_kms_data.connector_id = 0;
+        cap_kms->wayland_kms_data.is_combined_plane = false;
+
+        if(cap_kms->wayland_kms_data.fd <= 0)
+            return -1;
+
+        drm_fd = &cap_kms->wayland_kms_data;
     } else {
-        for(int i = 0; i < cap_kms->monitor_id.num_connector_ids; ++i) {
-            drm_fd = find_drm_by_connector_id(&cap_kms->kms_response, cap_kms->monitor_id.connector_ids[i]);
-            if(drm_fd) {
-                requires_rotation = cap_kms->x11_rot != X11_ROT_0;
-                break;
-            }
+        if(gsr_kms_client_get_kms(&cap_kms->kms_client, &cap_kms->kms_response) != 0) {
+            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: failed to get kms, error: %d (%s)\n", cap_kms->kms_response.result, cap_kms->kms_response.err_msg);
+            return -1;
         }
 
-        if(!drm_fd) {
+        if(cap_kms->kms_response.num_fds == 0) {
+            static bool error_shown = false;
+            if(!error_shown) {
+                error_shown = true;
+                fprintf(stderr, "gsr error: no drm found, capture will fail\n");
+            }
+            return -1;
+        }
+
+        if(cap_kms->screen_capture) {
             drm_fd = find_first_combined_drm(&cap_kms->kms_response);
             if(!drm_fd)
                 drm_fd = find_largest_drm(&cap_kms->kms_response);
+        } else {
+            for(int i = 0; i < cap_kms->monitor_id.num_connector_ids; ++i) {
+                drm_fd = find_drm_by_connector_id(&cap_kms->kms_response, cap_kms->monitor_id.connector_ids[i]);
+                if(drm_fd) {
+                    requires_rotation = cap_kms->x11_rot != X11_ROT_0;
+                    break;
+                }
+            }
+
+            if(!drm_fd) {
+                drm_fd = find_first_combined_drm(&cap_kms->kms_response);
+                if(!drm_fd)
+                    drm_fd = find_largest_drm(&cap_kms->kms_response);
+            }
         }
     }
 
@@ -558,49 +589,58 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     cap_kms->egl.eglDestroyImage(cap_kms->egl.egl_display, image);
     cap_kms->egl.glBindTexture(GL_TEXTURE_2D, 0);
 
-    float texture_rotation = 0.0f;
-    if(requires_rotation) {
-        switch(cap_kms->x11_rot) {
-            case X11_ROT_90:
-                texture_rotation = M_PI*0.5f;
-                break;
-            case X11_ROT_180:
-                texture_rotation = M_PI;
-                break;
-            case X11_ROT_270:
-                texture_rotation = M_PI*1.5f;
-                break;
-            default:
-                texture_rotation = 0.0f;
-                break;
+    if(cap_kms->using_wayland_capture) {
+        gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
+            (vec2i){0, 0}, cap_kms->capture_size,
+            cap_kms->capture_pos, cap_kms->capture_size,
+            0.0f);
+    } else {
+        float texture_rotation = 0.0f;
+        if(requires_rotation) {
+            switch(cap_kms->x11_rot) {
+                case X11_ROT_90:
+                    texture_rotation = M_PI*0.5f;
+                    break;
+                case X11_ROT_180:
+                    texture_rotation = M_PI;
+                    break;
+                case X11_ROT_270:
+                    texture_rotation = M_PI*1.5f;
+                    break;
+                default:
+                    texture_rotation = 0.0f;
+                    break;
+            }
+        }
+
+        if(cap_kms->dpy && !cap_kms->params.wayland) {
+            gsr_cursor_tick(&cap_kms->cursor);
+        }
+
+        vec2i capture_pos = cap_kms->capture_pos;
+        vec2i capture_size = cap_kms->capture_size;
+        vec2i cursor_capture_pos = (vec2i){cap_kms->cursor.position.x - cap_kms->cursor.hotspot.x - capture_pos.x, cap_kms->cursor.position.y - cap_kms->cursor.hotspot.y - capture_pos.y};
+        if(!capture_is_combined_plane) {
+            capture_pos = (vec2i){0, 0};
+            //cursor_capture_pos = (vec2i){cap_kms->cursor.position.x - cap_kms->cursor.hotspot.x, cap_kms->cursor.position.y - cap_kms->cursor.hotspot.y};
+        }
+
+        gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
+            (vec2i){0, 0}, capture_size,
+            capture_pos, capture_size,
+            texture_rotation);
+
+        if(cap_kms->dpy && !cap_kms->params.wayland) {
+            gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->cursor.texture_id,
+                cursor_capture_pos, (vec2i){cap_kms->cursor.size.x, cap_kms->cursor.size.y},
+                (vec2i){0, 0}, (vec2i){cap_kms->cursor.size.x, cap_kms->cursor.size.y},
+                0.0f);
         }
     }
 
-    if(cap_kms->dpy) {
-        gsr_cursor_tick(&cap_kms->cursor);
-    }
-
-    vec2i capture_pos = cap_kms->capture_pos;
-    vec2i capture_size = cap_kms->capture_size;
-    vec2i cursor_capture_pos = (vec2i){cap_kms->cursor.position.x - cap_kms->cursor.hotspot.x - capture_pos.x, cap_kms->cursor.position.y - cap_kms->cursor.hotspot.y - capture_pos.y};
-    if(!capture_is_combined_plane) {
-        capture_pos = (vec2i){0, 0};
-        //cursor_capture_pos = (vec2i){cap_kms->cursor.position.x - cap_kms->cursor.hotspot.x, cap_kms->cursor.position.y - cap_kms->cursor.hotspot.y};
-    }
-
-    gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
-        (vec2i){0, 0}, capture_size,
-        capture_pos, capture_size,
-        texture_rotation);
-
-    if(cap_kms->dpy) {
-        gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->cursor.texture_id,
-            cursor_capture_pos, (vec2i){cap_kms->cursor.size.x, cap_kms->cursor.size.y},
-            (vec2i){0, 0}, (vec2i){cap_kms->cursor.size.x, cap_kms->cursor.size.y},
-            0.0f);
-    }
-
     cap_kms->egl.eglSwapBuffers(cap_kms->egl.egl_display, cap_kms->egl.egl_surface);
+
+    gsr_egl_cleanup_frame(&cap_kms->egl);
 
     for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {
         if(cap_kms->kms_response.fds[i].fd > 0)

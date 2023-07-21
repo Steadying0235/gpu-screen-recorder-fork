@@ -7,6 +7,7 @@
 #include <X11/Xutil.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include "vec2.h"
 
 #ifdef _WIN64
 typedef signed   long long int khronos_intptr_t;
@@ -105,6 +106,35 @@ typedef unsigned int (*FUNC_eglExportDMABUFImageQueryMESA)(EGLDisplay dpy, EGLIm
 typedef unsigned int (*FUNC_eglExportDMABUFImageMESA)(EGLDisplay dpy, EGLImageKHR image, int *fds, int32_t *strides, int32_t *offsets);
 typedef void (*FUNC_glEGLImageTargetTexture2DOES)(unsigned int target, GLeglImageOES image);
 
+#define GSR_MAX_OUTPUTS 32
+
+typedef struct {
+    Display *dpy;
+    Window window;
+} gsr_x11;
+
+typedef struct {
+    uint32_t wl_name;
+    void *output;
+    vec2i pos;
+    vec2i size;
+    char *name;
+} gsr_wayland_output;
+
+typedef struct {
+    void *dpy;
+    void *window;
+    void *registry;
+    void *surface;
+    void *compositor;
+    void *export_manager;
+    void *current_frame;
+    void *frame_callback;
+    gsr_wayland_output outputs[GSR_MAX_OUTPUTS];
+    int num_outputs;
+    gsr_wayland_output *output_to_capture;
+} gsr_wayland;
+
 typedef struct {
     void *egl_library;
     void *gl_library;
@@ -113,14 +143,8 @@ typedef struct {
     EGLSurface egl_surface;
     EGLContext egl_context;
 
-    Display *x11_dpy;
-    Window x11_window;
-
-    void *wayland_dpy;
-    void *wayland_window;
-    void *wayland_registry;
-    void *wayland_surface;
-    void *wayland_compositor;
+    gsr_x11 x11;
+    gsr_wayland wayland;
 
     int fd;
     uint32_t width;
@@ -204,6 +228,9 @@ typedef struct {
 bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland);
 void gsr_egl_unload(gsr_egl *self);
 
+/* wayland protocol capture, does not include kms capture */
+bool gsr_egl_supports_wayland_capture(gsr_egl *self);
+bool gsr_egl_start_capture(gsr_egl *self, const char *monitor_to_capture);
 void gsr_egl_update(gsr_egl *self);
 void gsr_egl_cleanup_frame(gsr_egl *self);
 

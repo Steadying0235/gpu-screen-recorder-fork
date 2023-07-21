@@ -1378,12 +1378,28 @@ int main(int argc, char **argv) {
     } else if(contains_non_hex_number(window_str)) {
         // TODO: wayland, not only drm (if wlroots)
         if(wayland) {
-            gsr_monitor gmon;
-            if(!get_monitor_by_name(card_path, GSR_CONNECTION_DRM, window_str, &gmon)) {
-                fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
-                for_each_active_monitor_output(card_path, GSR_CONNECTION_DRM, monitor_output_callback_print, NULL);
+            gsr_egl egl;
+            if(!gsr_egl_load(&egl, NULL, true)) {
+                fprintf(stderr, "gsr error: failed to load opengl\n");
                 _exit(1);
             }
+
+            if(gsr_egl_supports_wayland_capture(&egl)) {
+                gsr_monitor gmon;
+                if(!get_monitor_by_name(&egl, GSR_CONNECTION_WAYLAND, window_str, &gmon)) {
+                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
+                    for_each_active_monitor_output(&egl, GSR_CONNECTION_WAYLAND, monitor_output_callback_print, NULL);
+                    _exit(1);
+                }
+            } else {
+                gsr_monitor gmon;
+                if(!get_monitor_by_name(card_path, GSR_CONNECTION_DRM, window_str, &gmon)) {
+                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
+                    for_each_active_monitor_output(card_path, GSR_CONNECTION_DRM, monitor_output_callback_print, NULL);
+                    _exit(1);
+                }
+            }
+            gsr_egl_unload(&egl);
         } else {
             if(strcmp(window_str, "screen") != 0 && strcmp(window_str, "screen-direct") != 0 && strcmp(window_str, "screen-direct-force") != 0) {
                 gsr_monitor gmon;

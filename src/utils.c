@@ -99,6 +99,26 @@ static bool connector_get_property_by_name(int drmfd, drmModeConnectorPtr props,
     return false;
 }
 
+static void for_each_active_monitor_output_wayland(gsr_egl *egl, active_monitor_callback callback, void *userdata) {
+    if(!gsr_egl_supports_wayland_capture(egl))
+        return;
+
+    for(int i = 0; i < egl->wayland.num_outputs; ++i) {
+        if(!egl->wayland.outputs[i].name)
+            continue;
+
+        gsr_monitor monitor = {
+            .name = egl->wayland.outputs[i].name,
+            .name_len = strlen(egl->wayland.outputs[i].name),
+            .pos = { .x = egl->wayland.outputs[i].pos.x, .y = egl->wayland.outputs[i].pos.y },
+            .size = { .x = egl->wayland.outputs[i].size.x, .y = egl->wayland.outputs[i].size.y },
+            .crt_info = NULL,
+            .connector_id = 0
+        };
+        callback(&monitor, userdata);
+    }
+}
+
 static void for_each_active_monitor_output_drm(const char *drm_card_path, active_monitor_callback callback, void *userdata) {
     int fd = open(drm_card_path, O_RDONLY);
     if(fd == -1)
@@ -162,7 +182,7 @@ void for_each_active_monitor_output(void *connection, gsr_connection_type connec
             for_each_active_monitor_output_x11(connection, callback, userdata);
             break;
         case GSR_CONNECTION_WAYLAND:
-            // TODO: use gsr_egl here (connection)
+            for_each_active_monitor_output_wayland(connection, callback, userdata);
             break;
         case GSR_CONNECTION_DRM:
             for_each_active_monitor_output_drm(connection, callback, userdata);

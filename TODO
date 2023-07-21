@@ -80,7 +80,6 @@ Support "screen" (all monitors) capture on wayland. This should be done by getti
 
 Support pipewire screen capture?
 Support screen rotation in amd/intel/nvidia wayland.
-Support wlroots dmabuf screen recording, because it doesn't require root access unlike kms grab.
 Capture cursor on amd/intel wayland without xwayland.
 When nvidia supports hardware cursor then capture the cursor. Right now the cursor is captured because it's a software cursor so it's composed on the dma buf.
 CPU usage is pretty high on AMD/Intel/(Nvidia(wayland)), why? opening and closing fds, creating egl, cuda association, is slow when done every frame. Test if desktop portal screencast has better performance.

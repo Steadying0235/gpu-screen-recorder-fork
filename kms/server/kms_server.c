@@ -315,9 +315,9 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response) {
         response->fds[response->num_fds].pixel_format = drmfb->pixel_format;
         response->fds[response->num_fds].modifier = drmfb->modifier;
         response->fds[response->num_fds].connector_id = drm->connector_ids[i];
-        response->fds[response->num_fds].is_combined_plane = drmfb_has_multiple_handles(drmfb);
         response->fds[response->num_fds].is_cursor = is_cursor;
-        if(response->fds[response->num_fds].is_cursor) {
+        response->fds[response->num_fds].is_combined_plane = !is_cursor && drmfb_has_multiple_handles(drmfb);
+        if(is_cursor) {
             response->fds[response->num_fds].x = x;
             response->fds[response->num_fds].y = y;
             response->fds[response->num_fds].src_w = 0;

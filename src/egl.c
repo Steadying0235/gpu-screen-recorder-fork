@@ -128,13 +128,13 @@ static void frame_start(void *data, struct zwlr_export_dmabuf_frame_v1 *frame,
         uint32_t width, uint32_t height, uint32_t offset_x, uint32_t offset_y,
         uint32_t buffer_flags, uint32_t flags, uint32_t format,
         uint32_t mod_high, uint32_t mod_low, uint32_t num_objects) {
-    (void)offset_x;
-    (void)offset_y;
     (void)buffer_flags;
     (void)flags;
     (void)num_objects;
     gsr_egl *egl = data;
     //fprintf(stderr, "frame start %p, width: %u, height: %u, offset x: %u, offset y: %u, format: %u, num objects: %u\n", (void*)frame, width, height, offset_x, offset_y, format, num_objects);
+    egl->x = offset_x;
+    egl->y = offset_y;
     egl->width = width;
     egl->height = height;
     egl->pixel_format = format;

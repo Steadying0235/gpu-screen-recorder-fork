@@ -333,6 +333,11 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
         cap_kms->wayland_kms_data.modifier = cap_kms->params.egl->modifier;
         cap_kms->wayland_kms_data.connector_id = 0;
         cap_kms->wayland_kms_data.is_combined_plane = false;
+        cap_kms->wayland_kms_data.is_cursor = false;
+        cap_kms->wayland_kms_data.x = cap_kms->wayland_kms_data.x; // TODO: Use these
+        cap_kms->wayland_kms_data.y = cap_kms->wayland_kms_data.y;
+        cap_kms->wayland_kms_data.src_w = cap_kms->wayland_kms_data.width;
+        cap_kms->wayland_kms_data.src_h = cap_kms->wayland_kms_data.height;
 
         if(cap_kms->wayland_kms_data.fd <= 0)
             return -1;
@@ -368,8 +373,6 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
 
     if(!drm_fd)
         return -1;
-
-    //bool capture_is_combined_plane = drm_fd->is_combined_plane || ((int)drm_fd->width == cap_kms->screen_size.x && (int)drm_fd->height == cap_kms->screen_size.y);
 
     const intptr_t img_attr[] = {
         //EGL_IMAGE_PRESERVED_KHR, EGL_TRUE,

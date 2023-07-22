@@ -152,8 +152,7 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
             cap_kms->params.display_to_capture, strlen(cap_kms->params.display_to_capture),
             0,
         };
-        
-    for_each_active_monitor_output((void*)cap_kms->params.card_path, GSR_CONNECTION_DRM, monitor_callback, &monitor_callback_userdata);
+        for_each_active_monitor_output((void*)cap_kms->params.card_path, GSR_CONNECTION_DRM, monitor_callback, &monitor_callback_userdata);
 
         gsr_monitor monitor;
         if(!get_monitor_by_name((void*)cap_kms->params.card_path, GSR_CONNECTION_DRM, cap_kms->params.display_to_capture, &monitor)) {
@@ -379,6 +378,15 @@ static gsr_kms_response_fd* find_cursor_drm(gsr_kms_response *kms_response) {
     return NULL;
 }
 
+static int count_non_cursor_planes(gsr_kms_response *kms_response) {
+    int result = 0;
+    for(int i = 0; i < kms_response->num_fds; ++i) {
+        if(!kms_response->fds[i].is_cursor)
+            result++;
+    }
+    return result;
+}
+
 static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     (void)frame;
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
@@ -392,6 +400,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
 
     gsr_kms_response_fd *drm_fd = NULL;
     gsr_kms_response_fd *cursor_drm_fd = NULL;
+    bool capture_is_combined_plane = false;
     if(cap_kms->using_wayland_capture) {
         gsr_egl_update(cap_kms->params.egl);
         cap_kms->wayland_kms_data.fd = cap_kms->params.egl->fd;
@@ -403,6 +412,14 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         cap_kms->wayland_kms_data.modifier = cap_kms->params.egl->modifier;
         cap_kms->wayland_kms_data.connector_id = 0;
         cap_kms->wayland_kms_data.is_combined_plane = false;
+        cap_kms->wayland_kms_data.is_cursor = false;
+        cap_kms->wayland_kms_data.x = cap_kms->wayland_kms_data.x; // TODO: Use these
+        cap_kms->wayland_kms_data.y = cap_kms->wayland_kms_data.y;
+        cap_kms->wayland_kms_data.src_w = cap_kms->wayland_kms_data.width;
+        cap_kms->wayland_kms_data.src_h = cap_kms->wayland_kms_data.height;
+
+        cap_kms->capture_pos.x = cap_kms->wayland_kms_data.x;
+        cap_kms->capture_pos.y = cap_kms->wayland_kms_data.y;
 
         if(cap_kms->wayland_kms_data.fd <= 0)
             return -1;
@@ -436,12 +453,11 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         }
 
         cursor_drm_fd = find_cursor_drm(&cap_kms->kms_response);
+        capture_is_combined_plane = (drm_fd && drm_fd->is_combined_plane) || count_non_cursor_planes(&cap_kms->kms_response) == 1;
     }
 
     if(!drm_fd)
         return -1;
-
-    //bool capture_is_combined_plane = drm_fd->is_combined_plane || ((int)drm_fd->width == cap_kms->screen_size.x && (int)drm_fd->height == cap_kms->screen_size.y);
 
     // TODO: This causes a crash sometimes on steam deck, why? is it a driver bug? a vaapi pure version doesn't cause a crash.
     // Even ffmpeg kmsgrab causes this crash. The error is:
@@ -480,22 +496,22 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, image);
     cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
+    vec2i capture_pos = cap_kms->capture_pos;
+    if(capture_is_combined_plane) {
+        capture_pos = (vec2i){ 0, 0 };
+    }
+
     if(cap_kms->using_wayland_capture) {
         gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
             (vec2i){0, 0}, cap_kms->capture_size,
-            cap_kms->capture_pos, cap_kms->capture_size,
+            capture_pos, cap_kms->capture_size,
             0.0f);
     } else {
         float texture_rotation = 0.0f;
 
-        vec2i capture_pos = cap_kms->capture_pos;
-        vec2i capture_size = cap_kms->capture_size;
-    capture_pos = (vec2i){drm_fd->x, drm_fd->y};
-    capture_size = (vec2i){drm_fd->src_w, drm_fd->src_h};
-
         gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
-            (vec2i){0, 0}, capture_size,
-            capture_pos, capture_size,
+            (vec2i){0, 0}, cap_kms->capture_size,
+            capture_pos, cap_kms->capture_size,
             texture_rotation);
 
         if(cursor_drm_fd) {

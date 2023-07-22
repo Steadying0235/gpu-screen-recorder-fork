@@ -388,15 +388,6 @@ static gsr_kms_response_fd* find_cursor_drm(gsr_kms_response *kms_response) {
     return NULL;
 }
 
-static int count_non_cursor_planes(gsr_kms_response *kms_response) {
-    int result = 0;
-    for(int i = 0; i < kms_response->num_fds; ++i) {
-        if(!kms_response->fds[i].is_cursor)
-            result++;
-    }
-    return result;
-}
-
 static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     (void)frame;
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
@@ -460,19 +451,17 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
             drm_fd = find_first_combined_drm(&cap_kms->kms_response);
             if(!drm_fd)
                 drm_fd = find_largest_drm(&cap_kms->kms_response);
+            capture_is_combined_plane = true;
         }
 
         cursor_drm_fd = find_cursor_drm(&cap_kms->kms_response);
-        capture_is_combined_plane = (drm_fd && drm_fd->is_combined_plane) || count_non_cursor_planes(&cap_kms->kms_response) == 1;
     }
 
     if(!drm_fd)
         return -1;
 
-    /* Hide cursor when it's on another display */
-    // TODO:
-    //if(!capture_is_combined_plane && cursor_drm_fd && cursor_drm_fd->connector_id != drm_fd->connector_id)
-    //    cursor_drm_fd = NULL;
+    if(!capture_is_combined_plane && cursor_drm_fd && cursor_drm_fd->connector_id != drm_fd->connector_id)
+        cursor_drm_fd = NULL;
 
     // TODO: This causes a crash sometimes on steam deck, why? is it a driver bug? a vaapi pure version doesn't cause a crash.
     // Even ffmpeg kmsgrab causes this crash. The error is:

@@ -19,9 +19,6 @@
 
 typedef struct {
     int drmfd;
-    uint32_t plane_ids[GSR_KMS_MAX_PLANES];
-    uint32_t connector_ids[GSR_KMS_MAX_PLANES];
-    size_t num_plane_ids;
 } gsr_drm;
 
 typedef struct {
@@ -163,88 +160,6 @@ static uint32_t get_connector_by_crtc_id(const connector_to_crtc_map *c2crtc_map
     return 0;
 }
 
-static int kms_get_plane_ids(gsr_drm *drm) {
-    drmModePlaneResPtr planes = NULL;
-    drmModeResPtr resources = NULL;
-    int result = -1;
-
-    connector_to_crtc_map c2crtc_map;
-    c2crtc_map.num_maps = 0;
-
-    if(drmSetClientCap(drm->drmfd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1) != 0) {
-        fprintf(stderr, "kms server error: drmSetClientCap DRM_CLIENT_CAP_UNIVERSAL_PLANES failed, error: %s\n", strerror(errno));
-        goto error;
-    }
-
-    if(drmSetClientCap(drm->drmfd, DRM_CLIENT_CAP_ATOMIC, 1) != 0) {
-        fprintf(stderr, "kms server warning: drmSetClientCap DRM_CLIENT_CAP_ATOMIC failed, error: %s. The wrong monitor may be captured as a result\n", strerror(errno));
-    }
-
-    planes = drmModeGetPlaneResources(drm->drmfd);
-    if(!planes) {
-        fprintf(stderr, "kms server error: failed to access planes, error: %s\n", strerror(errno));
-        goto error;
-    }
-
-    resources = drmModeGetResources(drm->drmfd);
-    if(resources) {
-        for(int i = 0; i < resources->count_connectors && c2crtc_map.num_maps < MAX_CONNECTORS; ++i) {
-            drmModeConnectorPtr connector = drmModeGetConnectorCurrent(drm->drmfd, resources->connectors[i]);
-            if(connector) {
-                uint64_t crtc_id = 0;
-                connector_get_property_by_name(drm->drmfd, connector, "CRTC_ID", &crtc_id);
-
-                c2crtc_map.maps[c2crtc_map.num_maps].connector_id = connector->connector_id;
-                c2crtc_map.maps[c2crtc_map.num_maps].crtc_id = crtc_id;
-                ++c2crtc_map.num_maps;
-
-                drmModeFreeConnector(connector);
-            }
-        }
-        drmModeFreeResources(resources);
-    }
-
-    for(uint32_t i = 0; i < planes->count_planes && drm->num_plane_ids < GSR_KMS_MAX_PLANES; ++i) {
-        drmModeFB2Ptr drmfb = NULL;
-        drmModePlanePtr plane = drmModeGetPlane(drm->drmfd, planes->planes[i]);
-        if(!plane) {
-            fprintf(stderr, "kms server warning: failed to get drmModePlanePtr for plane %#x: %s (%d)\n", planes->planes[i], strerror(errno), errno);
-            continue;
-        }
-
-        if(plane->fb_id) {
-            // TODO: Fallback to getfb(1)?
-            drmfb = drmModeGetFB2(drm->drmfd, plane->fb_id);
-            if(drmfb) {
-                drm->plane_ids[drm->num_plane_ids] = plane->plane_id;
-                drm->connector_ids[drm->num_plane_ids] = get_connector_by_crtc_id(&c2crtc_map, plane->crtc_id);
-                ++drm->num_plane_ids;
-                if(drmfb)
-                    drmModeFreeFB2(drmfb);
-            }
-        } else {
-            bool is_cursor = false;
-            int x = 0, y = 0, src_x = 0, src_y = 0, src_w = 0, src_h = 0;
-            plane_get_properties(drm->drmfd, plane->plane_id, &is_cursor, &x, &y, &src_x, &src_y, &src_w, &src_h);
-            if(is_cursor) {
-                drm->plane_ids[drm->num_plane_ids] = plane->plane_id;
-                drm->connector_ids[drm->num_plane_ids] = 0;
-                ++drm->num_plane_ids;
-            }
-        }
-
-        drmModeFreePlane(plane);
-    }
-
-    result = 0;
-
-    error:
-    if(planes)
-        drmModeFreePlaneResources(planes);
-
-    return result;
-}
-
 static bool drmfb_has_multiple_handles(drmModeFB2 *drmfb) {
     int num_handles = 0;
     for(uint32_t handle_index = 0; handle_index < 4 && drmfb->handles[handle_index]; ++handle_index) {
@@ -253,21 +168,52 @@ static bool drmfb_has_multiple_handles(drmModeFB2 *drmfb) {
     return num_handles > 1;
 }
 
-static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response) {
+static void map_crtc_to_connector_ids(gsr_drm *drm, connector_to_crtc_map *c2crtc_map) {
+    c2crtc_map->num_maps = 0;
+    drmModeResPtr resources = drmModeGetResources(drm->drmfd);
+    if(!resources)
+        return;
+
+    for(int i = 0; i < resources->count_connectors && c2crtc_map->num_maps < MAX_CONNECTORS; ++i) {
+        drmModeConnectorPtr connector = drmModeGetConnectorCurrent(drm->drmfd, resources->connectors[i]);
+        if(!connector)
+            continue;
+
+        uint64_t crtc_id = 0;
+        connector_get_property_by_name(drm->drmfd, connector, "CRTC_ID", &crtc_id);
+
+        c2crtc_map->maps[c2crtc_map->num_maps].connector_id = connector->connector_id;
+        c2crtc_map->maps[c2crtc_map->num_maps].crtc_id = crtc_id;
+        ++c2crtc_map->num_maps;
+
+        drmModeFreeConnector(connector);
+    }
+    drmModeFreeResources(resources);
+}
+
+static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crtc_map *c2crtc_map) {
     int result = -1;
 
     response->result = KMS_RESULT_OK;
     response->err_msg[0] = '\0';
     response->num_fds = 0;
 
-    for(size_t i = 0; i < drm->num_plane_ids && response->num_fds < GSR_KMS_MAX_PLANES; ++i) {
+    drmModePlaneResPtr planes = drmModeGetPlaneResources(drm->drmfd);
+    if(!planes) {
+        response->result = KMS_RESULT_FAILED_TO_GET_PLANES;
+        snprintf(response->err_msg, sizeof(response->err_msg), "failed to get drm planes, error: %s\n", strerror(errno));
+        fprintf(stderr, "kms server error: %s\n", response->err_msg);
+        return result;
+    }
+
+    for(uint32_t i = 0; i < planes->count_planes && response->num_fds < GSR_KMS_MAX_PLANES; ++i) {
         drmModePlanePtr plane = NULL;
         drmModeFB2 *drmfb = NULL;
 
-        plane = drmModeGetPlane(drm->drmfd, drm->plane_ids[i]);
+        plane = drmModeGetPlane(drm->drmfd, planes->planes[i]);
         if(!plane) {
             response->result = KMS_RESULT_FAILED_TO_GET_PLANE;
-            snprintf(response->err_msg, sizeof(response->err_msg), "failed to get drm plane with id %u, error: %s\n", drm->plane_ids[i], strerror(errno));
+            snprintf(response->err_msg, sizeof(response->err_msg), "failed to get drm plane with id %u, error: %s\n", planes->planes[i], strerror(errno));
             fprintf(stderr, "kms server error: %s\n", response->err_msg);
             goto next;
         }
@@ -300,7 +246,7 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response) {
             response->result = KMS_RESULT_FAILED_TO_GET_PLANE;
             snprintf(response->err_msg, sizeof(response->err_msg), "failed to get fd from drm handle, error: %s", strerror(errno));
             fprintf(stderr, "kms server error: %s\n", response->err_msg);
-            continue;
+            goto next;
         }
 
         bool is_cursor = false;
@@ -314,9 +260,9 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response) {
         response->fds[response->num_fds].offset = drmfb->offsets[0];
         response->fds[response->num_fds].pixel_format = drmfb->pixel_format;
         response->fds[response->num_fds].modifier = drmfb->modifier;
-        response->fds[response->num_fds].connector_id = drm->connector_ids[i];
+        response->fds[response->num_fds].connector_id = get_connector_by_crtc_id(c2crtc_map, plane->crtc_id);
         response->fds[response->num_fds].is_cursor = is_cursor;
-        response->fds[response->num_fds].is_combined_plane = !is_cursor && drmfb_has_multiple_handles(drmfb);
+        response->fds[response->num_fds].is_combined_plane = drmfb_has_multiple_handles(drmfb);
         if(is_cursor) {
             response->fds[response->num_fds].x = x;
             response->fds[response->num_fds].y = y;
@@ -337,6 +283,7 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response) {
             drmModeFreePlane(plane);
     }
 
+    drmModeFreePlaneResources(planes);
     if(response->num_fds > 0 || response->result == KMS_RESULT_OK) {
         result = 0;
     } else {
@@ -382,17 +329,25 @@ int main(int argc, char **argv) {
     const char *card_path = argv[2];
 
     gsr_drm drm;
-    drm.num_plane_ids = 0;
     drm.drmfd = open(card_path, O_RDONLY);
     if(drm.drmfd < 0) {
         fprintf(stderr, "kms server error: failed to open %s, error: %s", card_path, strerror(errno));
         return 2;
     }
 
-    if(kms_get_plane_ids(&drm) != 0) {
+    if(drmSetClientCap(drm.drmfd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1) != 0) {
+        fprintf(stderr, "kms server error: drmSetClientCap DRM_CLIENT_CAP_UNIVERSAL_PLANES failed, error: %s\n", strerror(errno));
         close(drm.drmfd);
         return 2;
     }
+
+    if(drmSetClientCap(drm.drmfd, DRM_CLIENT_CAP_ATOMIC, 1) != 0) {
+        fprintf(stderr, "kms server warning: drmSetClientCap DRM_CLIENT_CAP_ATOMIC failed, error: %s. The wrong monitor may be captured as a result\n", strerror(errno));
+    }
+
+    connector_to_crtc_map c2crtc_map;
+    c2crtc_map.num_maps = 0;
+    map_crtc_to_connector_ids(&drm, &c2crtc_map);
 
     fprintf(stderr, "kms server info: connecting to the client\n");
     bool connected = false;
@@ -458,7 +413,7 @@ int main(int argc, char **argv) {
             case KMS_REQUEST_TYPE_GET_KMS: {
                 gsr_kms_response response;
                 
-                if(kms_get_fb(&drm, &response) == 0) {
+                if(kms_get_fb(&drm, &response, &c2crtc_map) == 0) {
                     if(send_msg_to_client(socket_fd, &response) == -1)
                         fprintf(stderr, "kms server error: failed to respond to client KMS_REQUEST_TYPE_GET_KMS request\n");
 

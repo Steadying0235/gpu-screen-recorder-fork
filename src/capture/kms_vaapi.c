@@ -340,7 +340,7 @@ static bool gsr_capture_kms_vaapi_should_stop(gsr_capture *cap, bool *err) {
 
 static gsr_kms_response_fd* find_drm_by_connector_id(gsr_kms_response *kms_response, uint32_t connector_id) {
     for(int i = 0; i < kms_response->num_fds; ++i) {
-        if(kms_response->fds[i].connector_id == connector_id)
+        if(kms_response->fds[i].connector_id == connector_id && !kms_response->fds[i].is_cursor)
             return &kms_response->fds[i];
     }
     return NULL;
@@ -348,7 +348,7 @@ static gsr_kms_response_fd* find_drm_by_connector_id(gsr_kms_response *kms_respo
 
 static gsr_kms_response_fd* find_first_combined_drm(gsr_kms_response *kms_response) {
     for(int i = 0; i < kms_response->num_fds; ++i) {
-        if(kms_response->fds[i].is_combined_plane)
+        if(kms_response->fds[i].is_combined_plane && !kms_response->fds[i].is_cursor)
             return &kms_response->fds[i];
     }
     return NULL;
@@ -453,6 +453,9 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         }
 
         cursor_drm_fd = find_cursor_drm(&cap_kms->kms_response);
+        /* Hide cursor when it's on another display */
+        if(cursor_drm_fd && drm_fd && cursor_drm_fd->connector_id != drm_fd->connector_id)
+            cursor_drm_fd = NULL;
         capture_is_combined_plane = (drm_fd && drm_fd->is_combined_plane) || count_non_cursor_planes(&cap_kms->kms_response) == 1;
     }
 

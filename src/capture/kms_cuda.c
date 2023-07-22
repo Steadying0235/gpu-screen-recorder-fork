@@ -236,7 +236,7 @@ static bool gsr_capture_kms_cuda_should_stop(gsr_capture *cap, bool *err) {
 
 static gsr_kms_response_fd* find_drm_by_connector_id(gsr_kms_response *kms_response, uint32_t connector_id) {
     for(int i = 0; i < kms_response->num_fds; ++i) {
-        if(kms_response->fds[i].connector_id == connector_id)
+        if(kms_response->fds[i].connector_id == connector_id && !kms_response->fds[i].is_cursor)
             return &kms_response->fds[i];
     }
     return NULL;
@@ -244,7 +244,7 @@ static gsr_kms_response_fd* find_drm_by_connector_id(gsr_kms_response *kms_respo
 
 static gsr_kms_response_fd* find_first_combined_drm(gsr_kms_response *kms_response) {
     for(int i = 0; i < kms_response->num_fds; ++i) {
-        if(kms_response->fds[i].is_combined_plane)
+        if(kms_response->fds[i].is_combined_plane && !kms_response->fds[i].is_cursor)
             return &kms_response->fds[i];
     }
     return NULL;

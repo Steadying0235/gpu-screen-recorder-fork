@@ -234,12 +234,22 @@ static bool gsr_capture_kms_cuda_should_stop(gsr_capture *cap, bool *err) {
     return false;
 }
 
+/* Prefer non combined planes */
 static gsr_kms_response_fd* find_drm_by_connector_id(gsr_kms_response *kms_response, uint32_t connector_id) {
+    int index_combined = -1;
     for(int i = 0; i < kms_response->num_fds; ++i) {
-        if(kms_response->fds[i].connector_id == connector_id && !kms_response->fds[i].is_cursor)
-            return &kms_response->fds[i];
+        if(kms_response->fds[i].connector_id == connector_id && !kms_response->fds[i].is_cursor) {
+            if(kms_response->fds[i].is_combined_plane)
+                index_combined = i;
+            else
+                return &kms_response->fds[i];
+        }
     }
-    return NULL;
+
+    if(index_combined != -1)
+        return &kms_response->fds[index_combined];
+    else
+        return NULL;
 }
 
 static gsr_kms_response_fd* find_first_combined_drm(gsr_kms_response *kms_response) {

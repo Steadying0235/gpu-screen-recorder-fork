@@ -6,8 +6,8 @@ This screen recorder can be used for recording your desktop offline, for live st
 where only the last few seconds are saved.
 
 ## Note
-This software works with x11 and wayland, but when using wayland only monitors can be recorded and root access is needed.\
-If you are using a variable refresh rate monitor then choose to record "screen-direct-force". This will allow variable refresh rate to work when recording fullscreen applications. Note that some applications such as mpv will not work in fullscreen mode. A fix is being developed for this.\
+This software works with x11 and wayland, but when using wayland only monitors can be recorded and root access is required.\
+If you are using a variable refresh rate monitor on nvidia on x11 then choose to record "screen-direct-force". This will allow variable refresh rate to work when recording fullscreen applications. Note that some applications such as mpv will not work in fullscreen mode. A fix is being developed for this.\
 GPU Screen Recorder only supports h264 and hevc codecs at the moment which means that webm files are not supported.
 ### TEMPORARY ISSUES
 1) screen-direct capture has been temporary disabled as it causes issues with stuttering. This might be a nvfbc bug.

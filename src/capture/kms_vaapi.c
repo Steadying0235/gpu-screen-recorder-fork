@@ -142,9 +142,10 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         }
         cap_kms->using_wayland_capture = true;
     } else {
-        if(gsr_kms_client_init(&cap_kms->kms_client, cap_kms->params.card_path) != 0) {
+        int kms_init_res = gsr_kms_client_init(&cap_kms->kms_client, cap_kms->params.card_path);
+        if(kms_init_res != 0) {
             gsr_capture_kms_vaapi_stop(cap, video_codec_context);
-            return -1;
+            return kms_init_res;
         }
 
         MonitorCallbackUserdata monitor_callback_userdata = {

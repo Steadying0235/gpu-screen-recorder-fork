@@ -1687,9 +1687,10 @@ int main(int argc, char **argv) {
     if(replay_buffer_size_secs == -1)
         video_stream = create_stream(av_format_context, video_codec_context);
 
-    if(gsr_capture_start(capture, video_codec_context) != 0) {
+    int capture_result = gsr_capture_start(capture, video_codec_context);
+    if(capture_result != 0) {
         fprintf(stderr, "gsr error: gsr_capture_start failed\n");
-        _exit(1);
+        _exit(capture_result);
     }
 
     open_video(video_codec_context, quality, very_old_gpu, gpu_inf.vendor, pixel_format);

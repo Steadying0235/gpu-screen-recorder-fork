@@ -140,6 +140,7 @@ static bool find_program_in_path(const char *program_name, char *filepath, int f
 }
 
 int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
+    int result = -1;
     self->kms_server_pid = -1;
     self->socket_fd = -1;
     self->client_fd = -1;
@@ -248,11 +249,18 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
             }
             break;
         } else {
-            int status;
+            int status = 0;
             int wait_result = waitpid(self->kms_server_pid, &status, WNOHANG);
             if(wait_result != 0) {
                 fprintf(stderr, "gsr error: gsr_kms_client_init: kms server died or never started, error: %s\n", strerror(errno));
                 self->kms_server_pid = -1;
+                goto err;
+            } else if(WIFEXITED(status)) {
+                int exit_code = WEXITSTATUS(status);
+                fprintf(stderr, "gsr error: gsr_kms_client_init: kms server died or never started, exit code: %d\n", exit_code);
+                self->kms_server_pid = -1;
+                if(exit_code != 0)
+                    result = exit_code;
                 goto err;
             }
         }
@@ -263,7 +271,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
 
     err:
     gsr_kms_client_deinit(self);
-    return -1;
+    return result;
 }
 
 void gsr_kms_client_deinit(gsr_kms_client *self) {

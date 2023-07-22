@@ -191,7 +191,7 @@ static void gsr_capture_kms_cuda_tick(gsr_capture *cap, AVCodecContext *video_co
     gsr_capture_kms_cuda *cap_kms = cap->priv;
 
     // TODO:
-    cap_kms->params.egl->glClear(GL_COLOR_BUFFER_BIT);
+    //cap_kms->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
     if(!cap_kms->created_hw_frame) {
         cap_kms->created_hw_frame = true;
@@ -408,7 +408,7 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_kms_register_egl_image_in_cuda(cap_kms, image);
     cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, image);
 
-    cap_kms->params.egl->eglSwapBuffers(cap_kms->params.egl->egl_display, cap_kms->params.egl->egl_surface);
+    //cap_kms->params.egl->eglSwapBuffers(cap_kms->params.egl->egl_display, cap_kms->params.egl->egl_surface);
 
     frame->linesize[0] = frame->width * 4;
 

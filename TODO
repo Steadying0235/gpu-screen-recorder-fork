@@ -79,9 +79,7 @@ Test kms_cuda on hyprland and other wlroots based compositor to see if it works.
 Support "screen" (all monitors) capture on wayland. This should be done by getting all drm fds and multiple EGL_DMA_BUF_PLANEX_FD_EXT to create one egl image with all fds combined.
 
 Support pipewire screen capture?
-Support screen rotation in amd/intel/nvidia wayland.
-Capture cursor on amd/intel wayland without xwayland.
+Support screen rotation.
 When nvidia supports hardware cursor then capture the cursor. Right now the cursor is captured because it's a software cursor so it's composed on the dma buf.
 CPU usage is pretty high on AMD/Intel/(Nvidia(wayland)), why? opening and closing fds, creating egl, cuda association, is slow when done every frame. Test if desktop portal screencast has better performance.
-Cursor on amd/intel wayland only shows up when the cursor is above xwayland applications.
 

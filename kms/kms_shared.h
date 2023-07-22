@@ -31,6 +31,11 @@ typedef struct {
     uint64_t modifier;
     uint32_t connector_id; /* 0 if unknown */
     bool is_combined_plane;
+    bool is_cursor;
+    int x;
+    int y;
+    int src_w;
+    int src_h;
 } gsr_kms_response_fd;
 
 typedef struct {

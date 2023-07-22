@@ -85,7 +85,28 @@ static bool connector_get_property_by_name(int drmfd, drmModeConnectorPtr props,
     return false;
 }
 
-static bool plane_is_cursor_plane(int drmfd, uint32_t plane_id) {
+typedef enum {
+    PLANE_PROPERTY_X         = 1 << 0,
+    PLANE_PROPERTY_Y         = 1 << 1,
+    PLANE_PROPERTY_SRC_X     = 1 << 2,
+    PLANE_PROPERTY_SRC_Y     = 1 << 3,
+    PLANE_PROPERTY_SRC_W     = 1 << 4,
+    PLANE_PROPERTY_SRC_H     = 1 << 5,
+    PLANE_PROPERTY_IS_CURSOR = 1 << 6,
+} plane_property_mask;
+
+/* Returns plane_property_mask */
+static uint32_t plane_get_properties(int drmfd, uint32_t plane_id, bool *is_cursor, int *x, int *y, int *src_x, int *src_y, int *src_w, int *src_h) {
+    *is_cursor = false;
+    *x = 0;
+    *y = 0;
+    *src_x = 0;
+    *src_y = 0;
+    *src_w = 0;
+    *src_h = 0;
+
+    plane_property_mask property_mask = 0;
+
     drmModeObjectPropertiesPtr props = drmModeObjectGetProperties(drmfd, plane_id, DRM_MODE_OBJECT_PLANE);
     if(!props)
         return false;
@@ -95,26 +116,42 @@ static bool plane_is_cursor_plane(int drmfd, uint32_t plane_id) {
         if(!prop)
             continue;
 
+        // SRC_* values are fixed 16.16 points
         const uint32_t type = prop->flags & (DRM_MODE_PROP_LEGACY_TYPE | DRM_MODE_PROP_EXTENDED_TYPE);
-        if((type & DRM_MODE_PROP_ENUM) && strcmp(prop->name, "type") == 0) {
+        if((type & DRM_MODE_PROP_SIGNED_RANGE) && strcmp(prop->name, "CRTC_X") == 0) {
+            *x = (int)props->prop_values[i];
+            property_mask |= PLANE_PROPERTY_X;
+        } else if((type & DRM_MODE_PROP_SIGNED_RANGE) && strcmp(prop->name, "CRTC_Y") == 0) {
+            *y = (int)props->prop_values[i];
+            property_mask |= PLANE_PROPERTY_Y;
+        } else if((type & DRM_MODE_PROP_RANGE) && strcmp(prop->name, "SRC_X") == 0) {
+            *src_x = (int)(props->prop_values[i] >> 16);
+            property_mask |= PLANE_PROPERTY_SRC_X;
+        } else if((type & DRM_MODE_PROP_RANGE) && strcmp(prop->name, "SRC_Y") == 0) {
+            *src_y = (int)(props->prop_values[i] >> 16);
+            property_mask |= PLANE_PROPERTY_SRC_Y;
+        } else if((type & DRM_MODE_PROP_RANGE) && strcmp(prop->name, "SRC_W") == 0) {
+            *src_w = (int)(props->prop_values[i] >> 16);
+            property_mask |= PLANE_PROPERTY_SRC_W;
+        } else if((type & DRM_MODE_PROP_RANGE) && strcmp(prop->name, "SRC_H") == 0) {
+            *src_h = (int)(props->prop_values[i] >> 16);
+            property_mask |= PLANE_PROPERTY_SRC_H;
+        } else if((type & DRM_MODE_PROP_ENUM) && strcmp(prop->name, "type") == 0) {
             const uint64_t current_enum_value = props->prop_values[i];
-            bool is_cursor = false;
-
             for(int j = 0; j < prop->count_enums; ++j) {
                 if(prop->enums[j].value == current_enum_value && strcmp(prop->enums[j].name, "Cursor") == 0) {
-                    is_cursor = true;
+                    *is_cursor = true;
+                    property_mask |= PLANE_PROPERTY_IS_CURSOR;
                     break;
                 }
             }
-
-            drmModeFreeProperty(prop);
-            return is_cursor;
         }
+
         drmModeFreeProperty(prop);
     }
 
     drmModeFreeObjectProperties(props);
-    return false;
+    return property_mask;
 }
 
 /* Returns 0 if not found */
@@ -175,22 +212,27 @@ static int kms_get_plane_ids(gsr_drm *drm) {
             continue;
         }
 
-        if(!plane->fb_id)
-            goto next;
-
-        if(plane_is_cursor_plane(drm->drmfd, plane->plane_id))
-            goto next;
-
-        // TODO: Fallback to getfb(1)?
-        drmfb = drmModeGetFB2(drm->drmfd, plane->fb_id);
-        if(drmfb) {
-            drm->plane_ids[drm->num_plane_ids] = plane->plane_id;
-            drm->connector_ids[drm->num_plane_ids] = get_connector_by_crtc_id(&c2crtc_map, plane->crtc_id);
-            ++drm->num_plane_ids;
-            drmModeFreeFB2(drmfb);
+        if(plane->fb_id) {
+            // TODO: Fallback to getfb(1)?
+            drmfb = drmModeGetFB2(drm->drmfd, plane->fb_id);
+            if(drmfb) {
+                drm->plane_ids[drm->num_plane_ids] = plane->plane_id;
+                drm->connector_ids[drm->num_plane_ids] = get_connector_by_crtc_id(&c2crtc_map, plane->crtc_id);
+                ++drm->num_plane_ids;
+                if(drmfb)
+                    drmModeFreeFB2(drmfb);
+            }
+        } else {
+            bool is_cursor = false;
+            int x = 0, y = 0, src_x = 0, src_y = 0, src_w = 0, src_h = 0;
+            plane_get_properties(drm->drmfd, plane->plane_id, &is_cursor, &x, &y, &src_x, &src_y, &src_w, &src_h);
+            if(is_cursor) {
+                drm->plane_ids[drm->num_plane_ids] = plane->plane_id;
+                drm->connector_ids[drm->num_plane_ids] = 0;
+                ++drm->num_plane_ids;
+            }
         }
 
-        next:
         drmModeFreePlane(plane);
     }
 
@@ -230,6 +272,9 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response) {
             goto next;
         }
 
+        if(!plane->fb_id)
+            goto next;
+
         drmfb = drmModeGetFB2(drm->drmfd, plane->fb_id);
         if(!drmfb) {
             // Commented out for now because we get here if the cursor is moved to another monitor and we dont care about the cursor
@@ -258,6 +303,10 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response) {
             continue;
         }
 
+        bool is_cursor = false;
+        int x = 0, y = 0, src_x = 0, src_y = 0, src_w = 0, src_h = 0;
+        plane_get_properties(drm->drmfd, plane->plane_id, &is_cursor, &x, &y, &src_x, &src_y, &src_w, &src_h);
+
         response->fds[response->num_fds].fd = fb_fd;
         response->fds[response->num_fds].width = drmfb->width;
         response->fds[response->num_fds].height = drmfb->height;
@@ -267,6 +316,18 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response) {
         response->fds[response->num_fds].modifier = drmfb->modifier;
         response->fds[response->num_fds].connector_id = drm->connector_ids[i];
         response->fds[response->num_fds].is_combined_plane = drmfb_has_multiple_handles(drmfb);
+        response->fds[response->num_fds].is_cursor = is_cursor;
+        if(response->fds[response->num_fds].is_cursor) {
+            response->fds[response->num_fds].x = x;
+            response->fds[response->num_fds].y = y;
+            response->fds[response->num_fds].src_w = 0;
+            response->fds[response->num_fds].src_h = 0;
+        } else {
+            response->fds[response->num_fds].x = src_x;
+            response->fds[response->num_fds].y = src_y;
+            response->fds[response->num_fds].src_w = src_w;
+            response->fds[response->num_fds].src_h = src_h;
+        }
         ++response->num_fds;
 
         next:

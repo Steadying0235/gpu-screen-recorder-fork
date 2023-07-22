@@ -1389,8 +1389,7 @@ int main(int argc, char **argv) {
 
         follow_focused = true;
     } else if(contains_non_hex_number(window_str)) {
-        // TODO: wayland, not only drm (if wlroots)
-        if(wayland) {
+        if(wayland || gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA) {
             if(gsr_egl_supports_wayland_capture(&egl)) {
                 gsr_monitor gmon;
                 if(!get_monitor_by_name(&egl, GSR_CONNECTION_WAYLAND, window_str, &gmon)) {
@@ -1472,7 +1471,6 @@ int main(int argc, char **argv) {
 
             gsr_capture_kms_vaapi_params kms_params;
             kms_params.egl = &egl;
-            kms_params.dpy = dpy;
             kms_params.display_to_capture = capture_target;
             kms_params.gpu_inf = gpu_inf;
             kms_params.card_path = card_path;

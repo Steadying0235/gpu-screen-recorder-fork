@@ -6,8 +6,6 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <assert.h>
-#include <X11/Xlib.h>
-#include <X11/Xatom.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_cuda.h>
 #include <libavutil/frame.h>
@@ -260,7 +258,7 @@ static gsr_kms_response_fd* find_largest_drm(gsr_kms_response *kms_response) {
     gsr_kms_response_fd *largest_drm = &kms_response->fds[0];
     for(int i = 0; i < kms_response->num_fds; ++i) {
         const int64_t size = (int64_t)kms_response->fds[i].width * (int64_t)kms_response->fds[i].height;
-        if(size > largest_size) {
+        if(size > largest_size && !kms_response->fds[i].is_cursor) {
             largest_size = size;
             largest_drm = &kms_response->fds[i];
         }

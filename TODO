@@ -83,3 +83,4 @@ Support screen rotation.
 When nvidia supports hardware cursor then capture the cursor. Right now the cursor is captured because it's a software cursor so it's composed on the dma buf.
 CPU usage is pretty high on AMD/Intel/(Nvidia(wayland)), why? opening and closing fds, creating egl, cuda association, is slow when done every frame. Test if desktop portal screencast has better performance.
 
+Fix cursor offset in kms_vaapi when capturing with multiple monitors.

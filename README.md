@@ -86,14 +86,7 @@ The plugin does everything on the GPU and gives the texture to OBS, but OBS does
 ## How is this different from using FFMPEG with x11grab and nvenc?
 FFMPEG only uses the GPU with CUDA when doing transcoding from an input video to an output video, and not when recording the screen when using x11grab. So FFMPEG has the same fps drop issues that OBS has.
 ## It tells me that my AMD/Intel GPU is not supported or that my GPU doesn't support h264/hevc, but that's not true!
-Some linux distros disable hardware accelerated h264/hevc on AMD/Intel because of "patent license issues". If you are using an arch-based distro then you can install mesa-git instead of mesa and if you are using another distro then you may have to switch to a better distro.
-## Wayland support when?
-Recording a monitor on AMD/Intel could be supported, but nothing else. The main issue is on Nvidia.
-No matter what others way, Nvidia is completely broken on Wayland, no matter which Wayland compositor you use.
-There are tons of issues, and it may work for some users because some of the issues are related to CPU/GPU timing issues,
-so if you have a weaker CPU/GPU it might work better.\
-Also some Nvidia APIs only work on KDE/GNOME, sort of, for whatever unknown reason things break with other Wayland compositors.\
-Maybe Wayland will be usable on Nvidia in 5-10 years time.
+Some linux distros (such as manjaro) disable hardware accelerated h264/hevc on AMD/Intel because of "patent license issues". If you are using an arch-based distro then you can install mesa-git instead of mesa and if you are using another distro then you may have to switch to a better distro.
 
 # Donations
 If you really want to donate, you can donate via bitcoin or monero.

@@ -301,10 +301,10 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     }
     codec_context->max_b_frames = 0;
     codec_context->pix_fmt = pix_fmt;
-    //codec_context->color_range = AVCOL_RANGE_JPEG; // TODO: Amd/nvidia?
-    //codec_context->color_primaries = AVCOL_PRI_BT709;
-    //codec_context->color_trc = AVCOL_TRC_BT709;
-    //codec_context->colorspace = AVCOL_SPC_BT709;
+    codec_context->color_range = AVCOL_RANGE_JPEG; // TODO: Amd/nvidia?
+    codec_context->color_primaries = AVCOL_PRI_BT709;
+    codec_context->color_trc = AVCOL_TRC_BT709;
+    codec_context->colorspace = AVCOL_SPC_BT709;
     //codec_context->chroma_sample_location = AVCHROMA_LOC_CENTER;
     if(codec->id == AV_CODEC_ID_HEVC)
         codec_context->codec_tag = MKTAG('h', 'v', 'c', '1');

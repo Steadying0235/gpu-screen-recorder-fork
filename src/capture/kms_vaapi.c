@@ -38,7 +38,6 @@ typedef struct {
     MonitorId monitor_id;
 
     VADisplay va_dpy;
-
     VADRMPRIMESurfaceDescriptor prime;
 
     unsigned int input_texture;

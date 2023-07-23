@@ -1,6 +1,7 @@
 #include "../../include/capture/xcomposite_vaapi.h"
 #include "../../include/window_texture.h"
 #include "../../include/utils.h"
+#include "../../include/color_conversion.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -10,6 +11,8 @@
 #include <libavutil/hwcontext_vaapi.h>
 #include <libavutil/frame.h>
 #include <libavcodec/avcodec.h>
+#include <va/va.h>
+#include <va/va_drmcommon.h>
 
 typedef struct {
     gsr_capture_xcomposite_vaapi_params params;
@@ -28,19 +31,12 @@ typedef struct {
     
     WindowTexture window_texture;
 
-    int fourcc;
-    int num_planes;
-    uint64_t modifiers;
-    int dmabuf_fd;
-    int32_t pitch;
-    int32_t offset;
-
     VADisplay va_dpy;
-    VAConfigID config_id;
-    VAContextID context_id;
-    VASurfaceID input_surface;
-    VABufferID buffer_id;
-    VARectangle output_region;
+    VADRMPRIMESurfaceDescriptor prime;
+
+    unsigned int target_textures[2];
+
+    gsr_color_conversion color_conversion;
 
     Atom net_active_window_atom;
 } gsr_capture_xcomposite_vaapi;
@@ -194,6 +190,12 @@ static int gsr_capture_xcomposite_vaapi_start(gsr_capture *cap, AVCodecContext *
     return 0;
 }
 
+static uint32_t fourcc(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
+    return (d << 24) | (c << 16) | (b << 8) | a;
+}
+
+#define FOURCC_NV12 842094158
+
 static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame **frame) {
     gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
 
@@ -301,31 +303,6 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
         cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, even_number_ceil(cap_xcomp->texture_size.x)));
         cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, even_number_ceil(cap_xcomp->texture_size.y)));
 
-        if(cap_xcomp->buffer_id) {
-            vaDestroyBuffer(cap_xcomp->va_dpy, cap_xcomp->buffer_id);
-            cap_xcomp->buffer_id = 0;
-        }
-
-        if(cap_xcomp->context_id) {
-            vaDestroyContext(cap_xcomp->va_dpy, cap_xcomp->context_id);
-            cap_xcomp->context_id = 0;
-        }
-
-        if(cap_xcomp->config_id) {
-            vaDestroyConfig(cap_xcomp->va_dpy, cap_xcomp->config_id);
-            cap_xcomp->config_id = 0;
-        }
-
-        if(cap_xcomp->input_surface) {
-            vaDestroySurfaces(cap_xcomp->va_dpy, &cap_xcomp->input_surface, 1);
-            cap_xcomp->input_surface = 0;
-        }
-
-        if(cap_xcomp->dmabuf_fd) {
-            close(cap_xcomp->dmabuf_fd);
-            cap_xcomp->dmabuf_fd = 0;
-        }
-
         if(!cap_xcomp->created_hw_frame) {
             cap_xcomp->created_hw_frame = true;
             av_frame_free(frame);
@@ -352,147 +329,95 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
                 cap_xcomp->stop_is_error = true;
                 return;
             }
+
+            VASurfaceID target_surface_id = (uintptr_t)(*frame)->data[3];
+
+            VAStatus va_status = vaExportSurfaceHandle(cap_xcomp->va_dpy, target_surface_id, VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2, VA_EXPORT_SURFACE_READ_WRITE | VA_EXPORT_SURFACE_SEPARATE_LAYERS, &cap_xcomp->prime);
+            if(va_status != VA_STATUS_SUCCESS) {
+                fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaExportSurfaceHandle failed, error: %d\n", va_status);
+                cap_xcomp->should_stop = true;
+                cap_xcomp->stop_is_error = true;
+                return;
+            }
+            vaSyncSurface(cap_xcomp->va_dpy, target_surface_id);
+
+            if(cap_xcomp->prime.fourcc == FOURCC_NV12) {
+                cap_xcomp->params.egl->glGenTextures(2, cap_xcomp->target_textures);
+                for(int i = 0; i < 2; ++i) {
+                    const uint32_t formats[2] = { fourcc('R', '8', ' ', ' '), fourcc('G', 'R', '8', '8') };
+                    const int layer = i;
+                    const int plane = 0;
+
+                    const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
+                    //const uint64_t modifier = cap_kms->prime.objects[cap_kms->prime.layers[layer].object_index[plane]].drm_format_modifier;
+
+                    const intptr_t img_attr[] = {
+                        EGL_LINUX_DRM_FOURCC_EXT,       formats[i],
+                        EGL_WIDTH,                      cap_xcomp->prime.width / div[i],
+                        EGL_HEIGHT,                     cap_xcomp->prime.height / div[i],
+                        EGL_DMA_BUF_PLANE0_FD_EXT,      cap_xcomp->prime.objects[cap_xcomp->prime.layers[layer].object_index[plane]].fd,
+                        EGL_DMA_BUF_PLANE0_OFFSET_EXT,  cap_xcomp->prime.layers[layer].offset[plane],
+                        EGL_DMA_BUF_PLANE0_PITCH_EXT,   cap_xcomp->prime.layers[layer].pitch[plane],
+                        // TODO:
+                        //EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier & 0xFFFFFFFFULL,
+                        //EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, modifier >> 32ULL,
+                        EGL_NONE
+                    };
+
+                    while(cap_xcomp->params.egl->eglGetError() != EGL_SUCCESS){}
+                    EGLImage image = cap_xcomp->params.egl->eglCreateImage(cap_xcomp->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+                    if(!image) {
+                        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: failed to create egl image from drm fd for output drm fd, error: %d\n", cap_xcomp->params.egl->eglGetError());
+                        cap_xcomp->should_stop = true;
+                        cap_xcomp->stop_is_error = true;
+                        return;
+                    }
+
+                    cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, cap_xcomp->target_textures[i]);
+                    cap_xcomp->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                    cap_xcomp->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                    cap_xcomp->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    cap_xcomp->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+                    while(cap_xcomp->params.egl->glGetError()) {}
+                    while(cap_xcomp->params.egl->eglGetError() != EGL_SUCCESS){}
+                    cap_xcomp->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+                    if(cap_xcomp->params.egl->glGetError() != 0 || cap_xcomp->params.egl->eglGetError() != EGL_SUCCESS) {
+                        // TODO: Get the error properly
+                        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: failed to bind egl image to gl texture, error: %d\n", cap_xcomp->params.egl->eglGetError());
+                        cap_xcomp->should_stop = true;
+                        cap_xcomp->stop_is_error = true;
+                        cap_xcomp->params.egl->eglDestroyImage(cap_xcomp->params.egl->egl_display, image);
+                        cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
+                        return;
+                    }
+
+                    cap_xcomp->params.egl->eglDestroyImage(cap_xcomp->params.egl->egl_display, image);
+                    cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
+                }
+
+                gsr_color_conversion_params color_conversion_params = {0};
+                color_conversion_params.egl = cap_xcomp->params.egl;
+                color_conversion_params.source_color = GSR_SOURCE_COLOR_RGB;
+                color_conversion_params.destination_color = GSR_DESTINATION_COLOR_NV12;
+
+                color_conversion_params.destination_textures[0] = cap_xcomp->target_textures[0];
+                color_conversion_params.destination_textures[1] = cap_xcomp->target_textures[1];
+                color_conversion_params.num_destination_textures = 2;
+
+                if(gsr_color_conversion_init(&cap_xcomp->color_conversion, &color_conversion_params) != 0) {
+                    fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: failed to create color conversion\n");
+                    cap_xcomp->should_stop = true;
+                    cap_xcomp->stop_is_error = true;
+                    return;
+                }
+            } else {
+                fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: unexpected fourcc %u for output drm fd, expected nv12\n", cap_xcomp->prime.fourcc);
+                cap_xcomp->should_stop = true;
+                cap_xcomp->stop_is_error = true;
+                return;
+            }
         }
-
-        int xx = 0, yy = 0;
-        cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture));
-        cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &xx);
-        cap_xcomp->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &yy);
-        cap_xcomp->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
-
-        const intptr_t pixmap_attrs[] = {
-            EGL_IMAGE_PRESERVED_KHR, EGL_TRUE,
-            EGL_NONE,
-        };
-
-        // TODO: Use the window texture egl image directly instead of exporting it to opengl texture and then importing it to egl image again
-        EGLImage img = cap_xcomp->params.egl->eglCreateImage(cap_xcomp->params.egl->egl_display, cap_xcomp->params.egl->egl_context, EGL_GL_TEXTURE_2D, (EGLClientBuffer)(uint64_t)window_texture_get_opengl_texture_id(&cap_xcomp->window_texture), pixmap_attrs);
-        if(!img) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: eglCreateImage failed\n");
-            cap_xcomp->should_stop = true;
-            cap_xcomp->stop_is_error = true;
-            return;
-        }
-
-        if(!cap_xcomp->params.egl->eglExportDMABUFImageQueryMESA(cap_xcomp->params.egl->egl_display, img, &cap_xcomp->fourcc, &cap_xcomp->num_planes, &cap_xcomp->modifiers)) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: eglExportDMABUFImageQueryMESA failed\n");
-            cap_xcomp->should_stop = true;
-            cap_xcomp->stop_is_error = true;
-            cap_xcomp->params.egl->eglDestroyImage(cap_xcomp->params.egl->egl_display, img);
-            return;
-        }
-
-        if(cap_xcomp->num_planes != 1) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: expected 1 plane for drm buf, got %d planes\n", cap_xcomp->num_planes);
-            cap_xcomp->should_stop = true;
-            cap_xcomp->stop_is_error = true;
-            cap_xcomp->params.egl->eglDestroyImage(cap_xcomp->params.egl->egl_display, img);
-            return;
-        }
-
-        if(!cap_xcomp->params.egl->eglExportDMABUFImageMESA(cap_xcomp->params.egl->egl_display, img, &cap_xcomp->dmabuf_fd, &cap_xcomp->pitch, &cap_xcomp->offset)) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: eglExportDMABUFImageMESA failed\n");
-            cap_xcomp->should_stop = true;
-            cap_xcomp->stop_is_error = true;
-            cap_xcomp->params.egl->eglDestroyImage(cap_xcomp->params.egl->egl_display, img);
-            return;
-        }
-
-        cap_xcomp->params.egl->eglDestroyImage(cap_xcomp->params.egl->egl_display, img);
-
-        uintptr_t dmabuf = cap_xcomp->dmabuf_fd;
-
-        VASurfaceAttribExternalBuffers buf = {0};
-        buf.pixel_format = VA_FOURCC_BGRX;
-        buf.width = xx;
-        buf.height = yy;
-        buf.data_size = yy * cap_xcomp->pitch;
-        buf.num_planes = 1;
-        buf.pitches[0] = cap_xcomp->pitch;
-        buf.offsets[0] = cap_xcomp->offset;
-        buf.buffers = &dmabuf;
-        buf.num_buffers = 1;
-        buf.flags = 0;
-        buf.private_data = 0;
-
-        #define VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME        0x20000000
-
-        VASurfaceAttrib attribs[2] = {0};
-        attribs[0].type = VASurfaceAttribMemoryType;
-        attribs[0].flags = VA_SURFACE_ATTRIB_SETTABLE;
-        attribs[0].value.type = VAGenericValueTypeInteger;
-        attribs[0].value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME;
-        attribs[1].type = VASurfaceAttribExternalBufferDescriptor;
-        attribs[1].flags = VA_SURFACE_ATTRIB_SETTABLE;
-        attribs[1].value.type = VAGenericValueTypePointer;
-        attribs[1].value.value.p = &buf;
-        
-        VAStatus va_status = vaCreateSurfaces(cap_xcomp->va_dpy, VA_RT_FORMAT_RGB32, xx, yy, &cap_xcomp->input_surface, 1, attribs, 2);
-        if(va_status != VA_STATUS_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaCreateSurfaces failed: %d\n", va_status);
-            cap_xcomp->should_stop = true;
-            cap_xcomp->stop_is_error = true;
-            return;
-        }
-
-        va_status = vaCreateConfig(cap_xcomp->va_dpy, VAProfileNone, VAEntrypointVideoProc, NULL, 0, &cap_xcomp->config_id);
-        if(va_status != VA_STATUS_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaCreateConfig failed: %d\n", va_status);
-            cap_xcomp->should_stop = true;
-            cap_xcomp->stop_is_error = true;
-            return;
-        }
-
-        VASurfaceID target_surface_id = (uintptr_t)(*frame)->data[3];
-        va_status = vaCreateContext(cap_xcomp->va_dpy, cap_xcomp->config_id, xx, yy, VA_PROGRESSIVE, &target_surface_id, 1, &cap_xcomp->context_id);
-        if(va_status != VA_STATUS_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaCreateContext failed: %d\n", va_status);
-            cap_xcomp->should_stop = true;
-            cap_xcomp->stop_is_error = true;
-            return;
-        }
-
-        cap_xcomp->output_region = (VARectangle){
-            .x = 0,
-            .y = 0,
-            .width = xx,
-            .height = yy
-        };
-
-        // Copying a surface to another surface will automatically perform the color conversion. Thanks vaapi!
-        VAProcPipelineParameterBuffer params = {0};
-        params.surface = cap_xcomp->input_surface;
-        params.surface_region = NULL;
-        params.output_region = &cap_xcomp->output_region;
-        params.output_background_color = 0;
-        params.filter_flags = VA_FRAME_PICTURE;
-
-        params.input_color_properties.colour_primaries = 1;
-        params.input_color_properties.transfer_characteristics = 1;
-        params.input_color_properties.matrix_coefficients = 1;
-        params.surface_color_standard = VAProcColorStandardBT709;
-        params.input_color_properties.color_range = (*frame)->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;
-
-        params.output_color_properties.colour_primaries = 1;
-        params.output_color_properties.transfer_characteristics = 1;
-        params.output_color_properties.matrix_coefficients = 1;
-        params.output_color_standard = VAProcColorStandardBT709;
-        params.output_color_properties.color_range = (*frame)->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;
-
-        params.processing_mode = VAProcPerformanceMode;
-
-        va_status = vaCreateBuffer(cap_xcomp->va_dpy, cap_xcomp->context_id, VAProcPipelineParameterBufferType, sizeof(params), 1, &params, &cap_xcomp->buffer_id);
-        if(va_status != VA_STATUS_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaCreateBuffer failed: %d\n", va_status);
-            cap_xcomp->should_stop = true;
-            cap_xcomp->stop_is_error = true;
-            return;
-        }
-
-        // Clear texture with black background because the source texture (window_texture_get_opengl_texture_id(&cap_xcomp->window_texture))
-        // might be smaller than cap_xcomp->target_texture_id
-        // TODO:
-        //cap_xcomp->params.egl->glClearTexImage(cap_xcomp->target_texture_id, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     }
 }
 
@@ -510,46 +435,14 @@ static bool gsr_capture_xcomposite_vaapi_should_stop(gsr_capture *cap, bool *err
 }
 
 static int gsr_capture_xcomposite_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
+    (void)frame;
     gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
 
-    VASurfaceID target_surface_id = (uintptr_t)frame->data[3];
-
-    VAStatus va_status = vaBeginPicture(cap_xcomp->va_dpy, cap_xcomp->context_id, target_surface_id);
-    if(va_status != VA_STATUS_SUCCESS) {
-        static bool error_printed = false;
-        if(!error_printed) {
-            error_printed = true;
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaBeginPicture failed: %d\n", va_status);
-        }
-        return -1;
-    }
-
-    va_status = vaRenderPicture(cap_xcomp->va_dpy, cap_xcomp->context_id, &cap_xcomp->buffer_id, 1);
-    if(va_status != VA_STATUS_SUCCESS) {
-        vaEndPicture(cap_xcomp->va_dpy, cap_xcomp->context_id);
-        static bool error_printed = false;
-        if(!error_printed) {
-            error_printed = true;
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaRenderPicture failed: %d\n", va_status);
-        }
-        return -1;
-    }
-
-    va_status = vaEndPicture(cap_xcomp->va_dpy, cap_xcomp->context_id);
-    if(va_status != VA_STATUS_SUCCESS) {
-        static bool error_printed = false;
-        if(!error_printed) {
-            error_printed = true;
-            fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaEndPicture failed: %d\n", va_status);
-        }
-        return -1;
-    }
-
-    // TODO: Needed?
-    //vaSyncSurface(cap_xcomp->va_dpy, target_surface_id);
-
-    // TODO: Remove
-    //cap_xcomp->params.egl->eglSwapBuffers(cap_xcomp->params.egl->egl_display, cap_xcomp->params.egl->egl_surface);
+    float texture_rotation = 0.0f;
+    gsr_color_conversion_draw(&cap_xcomp->color_conversion, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture),
+        (vec2i){0, 0}, cap_xcomp->texture_size,
+        (vec2i){0, 0}, cap_xcomp->texture_size,
+        texture_rotation);
 
     return 0;
 }
@@ -557,30 +450,12 @@ static int gsr_capture_xcomposite_vaapi_capture(gsr_capture *cap, AVFrame *frame
 static void gsr_capture_xcomposite_vaapi_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
 
-    // TODO: buffer_id == 0 is valid.. may be same for some of these other values. Handle that! also in other files
-    if(cap_xcomp->buffer_id) {
-        vaDestroyBuffer(cap_xcomp->va_dpy, cap_xcomp->buffer_id);
-        cap_xcomp->buffer_id = 0;
-    }
+    gsr_color_conversion_deinit(&cap_xcomp->color_conversion);
 
-    if(cap_xcomp->context_id) {
-        vaDestroyContext(cap_xcomp->va_dpy, cap_xcomp->context_id);
-        cap_xcomp->context_id = 0;
-    }
-
-    if(cap_xcomp->config_id) {
-        vaDestroyConfig(cap_xcomp->va_dpy, cap_xcomp->config_id);
-        cap_xcomp->config_id = 0;
-    }
-
-    if(cap_xcomp->input_surface) {
-        vaDestroySurfaces(cap_xcomp->va_dpy, &cap_xcomp->input_surface, 1);
-        cap_xcomp->input_surface = 0;
-    }
-
-    if(cap_xcomp->dmabuf_fd) {
-        close(cap_xcomp->dmabuf_fd);
-        cap_xcomp->dmabuf_fd = 0;
+    if(cap_xcomp->params.egl->egl_context) {
+        cap_xcomp->params.egl->glDeleteTextures(2, cap_xcomp->target_textures);
+        cap_xcomp->target_textures[0] = 0;
+        cap_xcomp->target_textures[1] = 0;
     }
 
     window_texture_deinit(&cap_xcomp->window_texture);

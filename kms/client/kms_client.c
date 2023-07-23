@@ -252,11 +252,9 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
             int status = 0;
             int wait_result = waitpid(self->kms_server_pid, &status, WNOHANG);
             if(wait_result != 0) {
-                fprintf(stderr, "gsr error: gsr_kms_client_init: kms server died or never started, error: %s\n", strerror(errno));
-                self->kms_server_pid = -1;
-                goto err;
-            } else if(WIFEXITED(status)) {
-                int exit_code = WEXITSTATUS(status);
+                int exit_code = -1;
+                if(WIFEXITED(status))
+                    exit_code = WEXITSTATUS(status);
                 fprintf(stderr, "gsr error: gsr_kms_client_init: kms server died or never started, exit code: %d\n", exit_code);
                 self->kms_server_pid = -1;
                 if(exit_code != 0)

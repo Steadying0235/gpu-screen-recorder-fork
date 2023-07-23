@@ -200,7 +200,7 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
     gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
 
     // TODO:
-    //cap_xcomp->params.egl->glClear(GL_COLOR_BUFFER_BIT);
+    cap_xcomp->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
     bool init_new_window = false;
     while(XPending(cap_xcomp->params.dpy)) {
@@ -444,6 +444,8 @@ static int gsr_capture_xcomposite_vaapi_capture(gsr_capture *cap, AVFrame *frame
         (vec2i){0, 0}, cap_xcomp->texture_size,
         texture_rotation);
 
+    cap_xcomp->params.egl->eglSwapBuffers(cap_xcomp->params.egl->egl_display, cap_xcomp->params.egl->egl_surface);
+
     return 0;
 }
 
@@ -451,6 +453,13 @@ static void gsr_capture_xcomposite_vaapi_stop(gsr_capture *cap, AVCodecContext *
     gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
 
     gsr_color_conversion_deinit(&cap_xcomp->color_conversion);
+
+    for(uint32_t i = 0; i < cap_xcomp->prime.num_objects; ++i) {
+        if(cap_xcomp->prime.objects[i].fd > 0) {
+            close(cap_xcomp->prime.objects[i].fd);
+            cap_xcomp->prime.objects[i].fd = 0;
+        }
+    }
 
     if(cap_xcomp->params.egl->egl_context) {
         cap_xcomp->params.egl->glDeleteTextures(2, cap_xcomp->target_textures);

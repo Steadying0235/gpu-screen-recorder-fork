@@ -11,6 +11,8 @@
 #include "../external/wlr-export-dmabuf-unstable-v1-client-protocol.h"
 #include <unistd.h>
 
+// Move this shit to a separate wayland file, and have a separate file for x11.
+
 static void output_handle_geometry(void *data, struct wl_output *wl_output,
         int32_t x, int32_t y, int32_t phys_width, int32_t phys_height,
         int32_t subpixel, const char *make, const char *model,
@@ -566,6 +568,7 @@ void gsr_egl_update(gsr_egl *self) {
     if(!self->wayland.dpy)
         return;
 
+    // TODO: pselect on wl_display_get_fd before doing dispatch
     wl_display_dispatch(self->wayland.dpy);
 }
 

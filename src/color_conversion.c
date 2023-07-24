@@ -21,7 +21,7 @@ static float abs_f(float v) {
 #define RGB_TO_YUV "const mat4 RGBtoYUV = mat4(0.2126,  0.5000, -0.1146, 0.0,\n" \
                    "                           0.7152, -0.4542, -0.3854, 0.0,\n" \
                    "                           0.0722, -0.0468,  0.5000, 0.0,\n" \
-                   "                           0.0, 0.500,  0.500, 1.0);"
+                   "                           0.0000,  0.5000,  0.5000, 1.0);"
 
 static int load_shader_rgb(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform) {
     char vertex_shader[2048];

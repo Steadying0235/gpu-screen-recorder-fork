@@ -18,10 +18,11 @@ static float abs_f(float v) {
                    "                0.0,           0.0,      0.0, 1.0);\n"    \
                    "}\n"
 
-#define RGB_TO_YUV "const mat4 RGBtoYUV = mat4(0.2126,  0.5000, -0.1146, 0.0,\n" \
-                   "                           0.7152, -0.4542, -0.3854, 0.0,\n" \
-                   "                           0.0722, -0.0468,  0.5000, 0.0,\n" \
-                   "                           0.0000,  0.5000,  0.5000, 1.0);"
+/* BT709 limited */
+#define RGB_TO_YUV "const mat4 RGBtoYUV = mat4(0.1826, -0.1006,  0.4392, 0.0,\n" \
+                   "                           0.6142, -0.3386, -0.3989, 0.0,\n" \
+                   "                           0.0620,  0.4392, -0.0403, 0.0,\n" \
+                   "                           0.0625,  0.5000,  0.5000, 1.0);"
 
 static int load_shader_rgb(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform) {
     char vertex_shader[2048];
@@ -122,7 +123,7 @@ static unsigned int load_shader_uv(gsr_shader *shader, gsr_egl *egl, int *rotati
         "void main()                                                                           \n"
         "{                                                                                     \n"
         "  vec4 pixel = texture(tex1, texcoords_out);                                          \n"
-        "  FragColor.xy = (RGBtoYUV * vec4(pixel.rgb, 1.0)).zy;                                \n"
+        "  FragColor.xy = (RGBtoYUV * vec4(pixel.rgb, 1.0)).yz;                                \n"
         "  FragColor.w = pixel.a;                                                              \n"
         "}                                                                                     \n";
 

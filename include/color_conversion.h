@@ -10,7 +10,7 @@ typedef enum {
 
 typedef enum {
     GSR_DESTINATION_COLOR_RGB,
-    GSR_DESTINATION_COLOR_NV12
+    GSR_DESTINATION_COLOR_NV12 /* YUV420, BT709, limited */
 } gsr_destination_color;
 
 typedef struct {

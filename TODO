@@ -51,7 +51,6 @@ Window capture performance on steam deck isn't good when playing the witcher 3 f
 Monitor capture on steam deck is slightly below the game fps, but only when capturing on the steam deck screen. If capturing on another monitor, there is no issue.
     Is this related to the dma buf rotation issue? different modifier being slow? does this always happen?
 
-Make sure rgb to yuv color conversion is 100% correct.
 Fallback to vaapi copy in kms if opengl version fails. This can happen on steam deck for some reason (driver bug?). Also vaapi copy uses less gpu since it uses video codec unit to copy.
 Test if vaapi copy version uses less memory than opengl version.
 
@@ -60,7 +59,6 @@ Intel is a bit weird with monitor capture and multiple monitors. If one of the m
     How about if multiple monitors are rotated?
 
 When using multiple monitors kms grab the target monitor instead of the whole screen.
-Enable opus/flac again. It's broken right now when merging audio inputs. The audio gets a lot of static noise!
 
 Support vp8/vp9/av1. This is especially important on amd which on some distros (such as Manjaro) where hardware accelerated h264/hevc is disabled in the mesa package.
 
@@ -82,3 +80,11 @@ When nvidia supports hardware cursor then capture the cursor. Right now the curs
 CPU usage is pretty high on AMD/Intel/(Nvidia(wayland)), why? opening and closing fds, creating egl, cuda association, is slow when done every frame. Test if desktop portal screencast has better performance.
 
 Capture is broken on amd on wlroots. It's disabled at the moment and instead uses kms capture. Find out why we get a black screen in wlroots.
+
+First video and audio frame should be posted immediately instead of waiting 1000/fps milliseconds, to improve latency for remote desktop future functionality.
+
+Support vulkan video encoding. That might workaround forced p2 state nvidia driver "bug". Ffmpeg supports vulkan video encoding if it's encoding with --enable-vulkan
+
+Enable opus/flac again. It's broken right now when merging audio inputs. The audio gets a lot of static noise!
+
+It may be possible to improve color conversion rgb->yuv shader for color edges by biasing colors to an edge, instead of letting color overlaying with bilinear filtering handle it.

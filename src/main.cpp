@@ -301,10 +301,10 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     }
     codec_context->max_b_frames = 0;
     codec_context->pix_fmt = pix_fmt;
-    codec_context->color_range = AVCOL_RANGE_JPEG; // TODO: Amd/nvidia?
-    codec_context->color_primaries = AVCOL_PRI_BT709;
-    codec_context->color_trc = AVCOL_TRC_BT709;
-    codec_context->colorspace = AVCOL_SPC_BT709;
+    //codec_context->color_range = AVCOL_RANGE_JPEG; // TODO: Amd/nvidia?
+    //codec_context->color_primaries = AVCOL_PRI_BT709;
+    //codec_context->color_trc = AVCOL_TRC_BT709;
+    //codec_context->colorspace = AVCOL_SPC_BT709;
     //codec_context->chroma_sample_location = AVCHROMA_LOC_CENTER;
     if(codec->id == AV_CODEC_ID_HEVC)
         codec_context->codec_tag = MKTAG('h', 'v', 'c', '1');
@@ -682,7 +682,7 @@ static void usage_full() {
     fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'.\n");
     fprintf(stderr, "        'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -oc   Overclock memory transfer rate to the maximum performance level. This only applies to NVIDIA and exists to overcome a bug in NVIDIA driver where performance level\n");
+    fprintf(stderr, "  -oc   Overclock memory transfer rate to the maximum performance level. This only applies to NVIDIA on X11 and exists to overcome a bug in NVIDIA driver where performance level. The same issue exists on Wayland but overclocking is not possible on Wayland.\n");
     fprintf(stderr, "        is dropped when you record a game. Only needed if you are recording a game that is bottlenecked by GPU.\n");
     fprintf(stderr, "        Works only if your have \"Coolbits\" set to \"12\" in NVIDIA X settings, see README for more information. Note! use at your own risk! Optional, disabled by default.\n");
     fprintf(stderr, "\n");
@@ -1323,7 +1323,11 @@ int main(int argc, char **argv) {
     }
 
     if(gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA && overclock) {
-        fprintf(stderr, "Info: overclock option has no effect on amd/intel, ignoring option...\n");
+        fprintf(stderr, "Info: overclock option has no effect on amd/intel, ignoring option\n");
+    }
+
+    if(gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA && overclock && wayland) {
+        fprintf(stderr, "Info: overclocking is not possible on nvidia on wayland, ignoring option\n");
     }
 
     char card_path[128];

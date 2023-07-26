@@ -37,12 +37,9 @@ Window capture doesn't work properly in _control_ game after going from pause me
 
 Fix constant framerate not working properly on amd/intel because capture framerate gets locked to the same framerate as game framerate, which doesn't work well when you need to encode multiple duplicate frames. We can skip multiple encode if we duplicate frame once and then use that same frame data as the difference between frames will be exactly the same, but hevc complains about that. Is there a way to make hevc shut up?
 
-JPEG color range on amd seems to produce too bright video with h264 but not hevc, why?
-
 Properly handle monitor reconfiguration (kms vaapi, nvfbc).
 
 Better configure vaapi. The file size is too large.
-Better colors for vaapi. It looks a bit off when recording vscode for example.
 
 Clear vaapi surface (for focused window).
 

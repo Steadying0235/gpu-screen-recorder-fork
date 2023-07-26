@@ -38,6 +38,7 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define EGL_BUFFER_SIZE                         0x3020
 #define EGL_RENDERABLE_TYPE                     0x3040
 #define EGL_OPENGL_ES2_BIT                      0x0004
+#define EGL_OPENGL_ES_API                       0x30A0
 #define EGL_NONE                                0x3038
 #define EGL_CONTEXT_CLIENT_VERSION              0x3098
 #define EGL_BACK_BUFFER                         0x3084
@@ -59,8 +60,10 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define EGL_ALPHA_SIZE                          0x3021
 #define EGL_BLUE_SIZE                           0x3022
 #define EGL_GREEN_SIZE                          0x3023
-#define EGL_SURFACE_TYPE                        0x3033
-#define EGL_PBUFFER_BIT                         0x0001
+#define EGL_CONTEXT_PRIORITY_LEVEL_IMG          0x3100
+#define EGL_CONTEXT_PRIORITY_HIGH_IMG           0x3101
+#define EGL_CONTEXT_PRIORITY_MEDIUM_IMG         0x3102
+#define EGL_CONTEXT_PRIORITY_LOW_IMG            0x3103
 
 #define GL_FLOAT                                0x1406
 #define GL_FALSE                                0

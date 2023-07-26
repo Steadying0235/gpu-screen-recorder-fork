@@ -210,6 +210,7 @@ bool get_monitor_by_name(void *connection, gsr_connection_type connection_type, 
 }
 
 bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info) {
+    const char *software_renderers[] = { "llvmpipe", "SWR", "softpipe", NULL };
     bool supported = true;
     const unsigned char *gl_vendor = egl->glGetString(GL_VENDOR);
     const unsigned char *gl_renderer = egl->glGetString(GL_RENDERER);
@@ -222,10 +223,14 @@ bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info) {
         goto end;
     }
 
-    if(gl_renderer && strstr((const char*)gl_renderer, "llvmpipe")) {
-        fprintf(stderr, "gsr error: your opengl environment is not properly setup. It's using llvmpipe (cpu fallback) for opengl instead of your graphics card\n");
-        supported = false;
-        goto end;
+    if(gl_renderer) {
+        for(int i = 0; software_renderers[i]; ++i) {
+            if(strstr((const char*)gl_renderer, software_renderers[i])) {
+                fprintf(stderr, "gsr error: your opengl environment is not properly setup. It's using %s (software rendering) for opengl instead of your graphics card. Please make sure your graphics driver is properly installed\n", software_renderers[i]);
+                supported = false;
+                goto end;
+            }
+        }
     }
 
     if(strstr((const char*)gl_vendor, "AMD"))

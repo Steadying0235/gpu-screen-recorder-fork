@@ -15,10 +15,10 @@ screen recorder on wayland, but x11 is recommended for nvidia users (in general)
 1) screen-direct capture has been temporary disabled as it causes issues with stuttering. This might be a nvfbc bug.
 2) Recording the monitor on steam deck might fail sometimes. This happens even when using ffmpeg directly. This might be a steam deck driver bug. Recording a single window doesn't have this issue.
 3) Videos created on AMD/Intel are in variable framerate format. Use MPV to play such videos, otherwise you might experience stuttering in the video if you are using a buggy video player. Try saving the video into a .mkv file instead when using AMD/Intel, as some software may have better support for .mkv files (such as kdenlive).
-### AMD/Intel root permission
-When recording a window under AMD/Intel no special user permission is required, however when recording a monitor the program needs root permission (to access KMS).
-To make this safer, the part that needs root access has been moved to its own executable (to make it as small as possible) and a GUI sudo prompt is shown to run this executable as root. The executable is called "gsr-kms-server".
-However this doesn't work if you want to start replay at startup for example. To fix this, run: `sudo setcap cap_sys_admin+ep /usr/bin/gsr-kms-server` if you have installed GPU Screen Recorder from source or AUR.
+### AMD/Intel/Wayland root permission
+When recording a window under AMD/Intel no special user permission is required, however when recording a monitor (or when using wayland) the program needs root permission (to access KMS).\
+To make this safer, the part that needs root access has been moved to its own executable (to make it as small as possible) and a GUI sudo prompt is shown to run this executable as root. The executable is called "gsr-kms-server".\
+However this doesn't work if you are using the flatpak version of GPU Screen Recorder.
 
 # Performance
 On a system with a i5 4690k CPU and a GTX 1080 GPU:\
@@ -70,7 +70,14 @@ for example `-a "$(pactl get-default-sink).monitor|$(pactl get-default-source)"`
 There is also a gui for the gpu screen recorder called [gpu-screen-recorder-gtk](https://git.dec05eba.com/gpu-screen-recorder-gtk/).
 ## Simple way to run replay without gui
 Run the script `scripts/start-replay.sh` to start replay and then `scripts/save-replay.sh` to save a replay and `scripts/stop-replay.sh` to stop the replay. The videos are saved to `$HOME/Videos`.
-You can use these scripts to start replay at system startup if you add `scripts/start-replay.sh` to startup (this can be done differently depending on your desktop environment / window manager) and then go into hotkey settings on your system and choose a hotkey to run the script `scripts/save-replay.sh`. Modify `scripts/start-replay.sh` if you want to use other replay options.
+You can use these scripts to start replay at system startup if you add `scripts/start-replay.sh` to startup (this can be done differently depending on your desktop environment / window manager) and then go into
+hotkey settings on your system and choose a hotkey to run the script `scripts/save-replay.sh`. Modify `scripts/start-replay.sh` if you want to use other replay options.
+
+
+If you are running a distro that uses systemd then you can use the systemd service in `extra/gpu-screen-recorder.service` instead.
+Copy `extra/gpu-screen-recorder.service` to a location where systemd can find it, for example: `$HOME/.config/systemd/user` and then enable and start it with: `systemctl enable --now --user gpu-screen-recorder`. Copying the systemd service file is not needed if you installed GPU Screen Recorder from AUR as this is done automatically.
+You can then use the same `scripts/save-replay.sh` script to save a replay. The systemd service is configured with the file `$HOME/.config/gpu-screen-recorder.env` (create it if it doesn't exist).
+You can see which variables that you can use by looking at the gpu-screen-recorder.service file. Restart the systemd service after modifying that configuration file. By default it saves videos in `$HOME/Videos`.
 
 ## Issues
 ### NVIDIA

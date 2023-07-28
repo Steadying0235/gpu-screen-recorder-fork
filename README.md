@@ -77,7 +77,8 @@ hotkey settings on your system and choose a hotkey to run the script `scripts/sa
 If you are running a distro that uses systemd then you can use the systemd service in `extra/gpu-screen-recorder.service` instead.
 Copy `extra/gpu-screen-recorder.service` to a location where systemd can find it, for example: `$HOME/.config/systemd/user` and then enable and start it with: `systemctl enable --now --user gpu-screen-recorder`. Copying the systemd service file is not needed if you installed GPU Screen Recorder from AUR as this is done automatically.
 You can then use the same `scripts/save-replay.sh` script to save a replay. The systemd service is configured with the file `$HOME/.config/gpu-screen-recorder.env` (create it if it doesn't exist).
-You can see which variables that you can use by looking at the gpu-screen-recorder.service file. Restart the systemd service after modifying that configuration file. By default it saves videos in `$HOME/Videos`.
+You can see which variables that you can use by looking at the gpu-screen-recorder.service file. Restart the systemd service after modifying that configuration file. By default it saves videos in `$HOME/Videos`.\
+If you are using a NVIDIA GPU then it's recommended to set PreserveVideoMemoryAllocations=1 as mentioned in the section below.
 
 ## Issues
 ### NVIDIA

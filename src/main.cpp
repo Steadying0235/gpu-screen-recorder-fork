@@ -93,11 +93,23 @@ static int x11_io_error_handler(Display*) {
     return 0;
 }
 
+struct PacketData {
+    PacketData() {}
+    PacketData(const PacketData&) = delete;
+    PacketData& operator=(const PacketData&) = delete;
+
+    ~PacketData() {
+        av_free(data.data);
+    }
+
+    AVPacket data;
+};
+
 // |stream| is only required for non-replay mode
 static void receive_frames(AVCodecContext *av_codec_context, int stream_index, AVStream *stream, int64_t pts,
                            AVFormatContext *av_format_context,
                            double replay_start_time,
-                           std::deque<AVPacket> &frame_data_queue,
+                           std::deque<std::shared_ptr<PacketData>> &frame_data_queue,
                            int replay_buffer_size_secs,
                            bool &frames_erased,
                            std::mutex &write_output_mutex) {
@@ -117,14 +129,20 @@ static void receive_frames(AVCodecContext *av_codec_context, int stream_index, A
 
             std::lock_guard<std::mutex> lock(write_output_mutex);
             if(replay_buffer_size_secs != -1) {
+                // TODO: Preallocate all frames data and use those instead.
+                // Why are we doing this you ask? there is a new ffmpeg bug that causes cpu usage to increase over time when you have
+                // packets that are not being free'd until later. So we copy the packet data, free the packet and then reconstruct
+                // the packet later on when we need it, to keep packets alive only for a short period.
+                auto new_packet = std::make_shared<PacketData>();
+                new_packet->data = *av_packet;
+                new_packet->data.data = (uint8_t*)av_malloc(av_packet->size);
+                memcpy(new_packet->data.data, av_packet->data, av_packet->size);
+
                 double time_now = clock_get_monotonic_seconds();
                 double replay_time_elapsed = time_now - replay_start_time;
 
-                AVPacket new_pack;
-                av_packet_move_ref(&new_pack, av_packet);
-                frame_data_queue.push_back(std::move(new_pack));
+                frame_data_queue.push_back(std::move(new_packet));
                 if(replay_time_elapsed >= replay_buffer_size_secs) {
-                    av_packet_unref(&frame_data_queue.front());
                     frame_data_queue.pop_front();
                     frames_erased = true;
                 }
@@ -132,22 +150,25 @@ static void receive_frames(AVCodecContext *av_codec_context, int stream_index, A
                 av_packet_rescale_ts(av_packet, av_codec_context->time_base, stream->time_base);
                 av_packet->stream_index = stream->index;
                 // TODO: Is av_interleaved_write_frame needed?
-                int ret = av_interleaved_write_frame(av_format_context, av_packet);
+                int ret = av_write_frame(av_format_context, av_packet);
                 if(ret < 0) {
                     fprintf(stderr, "Error: Failed to write frame index %d to muxer, reason: %s (%d)\n", av_packet->stream_index, av_error_to_string(ret), ret);
                 }
             }
+            av_packet_free(&av_packet);
         } else if (res == AVERROR(EAGAIN)) { // we have no packet
                                              // fprintf(stderr, "No packet!\n");
+            av_packet_free(&av_packet);
             break;
         } else if (res == AVERROR_EOF) { // this is the end of the stream
+            av_packet_free(&av_packet);
             fprintf(stderr, "End of stream!\n");
             break;
         } else {
+            av_packet_free(&av_packet);
             fprintf(stderr, "Unexpected error: %d\n", res);
             break;
         }
-        av_packet_free(&av_packet);
     }
 }
 
@@ -802,10 +823,10 @@ struct AudioTrack {
 };
 
 static std::future<void> save_replay_thread;
-static std::vector<AVPacket> save_replay_packets;
+static std::vector<std::shared_ptr<PacketData>> save_replay_packets;
 static std::string save_replay_output_filepath;
 
-static void save_replay_async(AVCodecContext *video_codec_context, int video_stream_index, std::vector<AudioTrack> &audio_tracks, const std::deque<AVPacket> &frame_data_queue, bool frames_erased, std::string output_dir, const char *container_format, const std::string &file_extension, std::mutex &write_output_mutex) {
+static void save_replay_async(AVCodecContext *video_codec_context, int video_stream_index, std::vector<AudioTrack> &audio_tracks, std::deque<std::shared_ptr<PacketData>> &frame_data_queue, bool frames_erased, std::string output_dir, const char *container_format, const std::string &file_extension, std::mutex &write_output_mutex) {
     if(save_replay_thread.valid())
         return;
     
@@ -817,7 +838,7 @@ static void save_replay_async(AVCodecContext *video_codec_context, int video_str
         std::lock_guard<std::mutex> lock(write_output_mutex);
         start_index = (size_t)-1;
         for(size_t i = 0; i < frame_data_queue.size(); ++i) {
-            const AVPacket &av_packet = frame_data_queue[i];
+            const AVPacket &av_packet = frame_data_queue[i]->data;
             if((av_packet.flags & AV_PKT_FLAG_KEY) && av_packet.stream_index == video_stream_index) {
                 start_index = i;
                 break;
@@ -828,11 +849,11 @@ static void save_replay_async(AVCodecContext *video_codec_context, int video_str
             return;
 
         if(frames_erased) {
-            video_pts_offset = frame_data_queue[start_index].pts;
+            video_pts_offset = frame_data_queue[start_index]->data.pts;
             
             // Find the next audio packet to use as audio pts offset
             for(size_t i = start_index; i < frame_data_queue.size(); ++i) {
-                const AVPacket &av_packet = frame_data_queue[i];
+                const AVPacket &av_packet = frame_data_queue[i]->data;
                 if(av_packet.stream_index != video_stream_index) {
                     audio_pts_offset = av_packet.pts;
                     break;
@@ -844,7 +865,7 @@ static void save_replay_async(AVCodecContext *video_codec_context, int video_str
 
         save_replay_packets.resize(frame_data_queue.size());
         for(size_t i = 0; i < frame_data_queue.size(); ++i) {
-            av_packet_ref(&save_replay_packets[i], &frame_data_queue[i]);
+            save_replay_packets[i] = frame_data_queue[i];
         }
     }
 
@@ -880,7 +901,16 @@ static void save_replay_async(AVCodecContext *video_codec_context, int video_str
         }
 
         for(size_t i = start_index; i < save_replay_packets.size(); ++i) {
-            AVPacket &av_packet = save_replay_packets[i];
+            // TODO: Check if successful
+            AVPacket av_packet;
+            memset(&av_packet, 0, sizeof(av_packet));
+            //av_packet_from_data(av_packet, save_replay_packets[i]->data.data, save_replay_packets[i]->data.size);
+            av_packet.data = save_replay_packets[i]->data.data;
+            av_packet.size = save_replay_packets[i]->data.size;
+            av_packet.stream_index = save_replay_packets[i]->data.stream_index;
+            av_packet.pts = save_replay_packets[i]->data.pts;
+            av_packet.dts = save_replay_packets[i]->data.pts;
+            av_packet.flags = save_replay_packets[i]->data.flags;
 
             AVStream *stream = video_stream;
             AVCodecContext *codec_context = video_codec_context;
@@ -900,9 +930,11 @@ static void save_replay_async(AVCodecContext *video_codec_context, int video_str
             av_packet.stream_index = stream->index;
             av_packet_rescale_ts(&av_packet, codec_context->time_base, stream->time_base);
 
-            int ret = av_interleaved_write_frame(av_format_context, &av_packet);
+            int ret = av_write_frame(av_format_context, &av_packet);
             if(ret < 0)
                 fprintf(stderr, "Error: Failed to write frame index %d to muxer, reason: %s (%d)\n", stream->index, av_error_to_string(ret), ret);
+
+            //av_packet_free(&av_packet);
         }
 
         if (av_write_trailer(av_format_context) != 0)
@@ -1819,7 +1851,7 @@ int main(int argc, char **argv) {
     std::mutex audio_filter_mutex;
 
     const double record_start_time = clock_get_monotonic_seconds();
-    std::deque<AVPacket> frame_data_queue;
+    std::deque<std::shared_ptr<PacketData>> frame_data_queue;
     bool frames_erased = false;
 
     const size_t audio_buffer_size = 1024 * 4 * 2; // max 4 bytes/sample, 2 channels
@@ -2065,9 +2097,6 @@ int main(int argc, char **argv) {
             save_replay_thread.get();
             puts(save_replay_output_filepath.c_str());
             std::lock_guard<std::mutex> lock(write_output_mutex);
-            for(AVPacket &packet : save_replay_packets) {
-                av_packet_unref(&packet);
-            }
             save_replay_packets.clear();
         }
 
@@ -2089,9 +2118,6 @@ int main(int argc, char **argv) {
         save_replay_thread.get();
         puts(save_replay_output_filepath.c_str());
         std::lock_guard<std::mutex> lock(write_output_mutex);
-        for(AVPacket &packet : save_replay_packets) {
-            av_packet_unref(&packet);
-        }
         save_replay_packets.clear();
     }
 

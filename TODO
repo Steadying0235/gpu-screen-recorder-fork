@@ -82,3 +82,5 @@ Support vulkan video encoding. That might workaround forced p2 state nvidia driv
 Enable opus/flac again. It's broken right now when merging audio inputs. The audio gets a lot of static noise!
 
 It may be possible to improve color conversion rgb->yuv shader for color edges by biasing colors to an edge, instead of letting color overlaying with bilinear filtering handle it.
+
+When webcam is supported mention that nvidia_drm.modeset=1 must be set on nvidia x11 (it's required on wayland so it's not needed there. Or does eglstream work without it??). Check if this really is the case.

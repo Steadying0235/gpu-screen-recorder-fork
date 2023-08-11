@@ -284,24 +284,14 @@ static bool gsr_capture_kms_register_egl_image_in_cuda(gsr_capture_kms_cuda *cap
     if(res != CUDA_SUCCESS) {
         const char *err_str = "unknown";
         cap_kms->cuda.cuGetErrorString(res, &err_str);
-        fprintf(stderr, "gsr error: cuda_register_egl_image: cuGraphicsEGLRegisterImage failed, error %s (%d), egl image %p\n",
+        fprintf(stderr, "gsr error: cuda_register_egl_image: cuGraphicsEGLRegisterImage failed, error: %s (%d), egl image %p\n",
                 err_str, res, image);
         res = cap_kms->cuda.cuCtxPopCurrent_v2(&old_ctx);
         return false;
     }
 
-    if(res != CUDA_SUCCESS) {
-        fprintf(stderr, "cuda error 1\n");
-    }
-
     res = cap_kms->cuda.cuGraphicsResourceSetMapFlags(cap_kms->cuda_graphics_resource, CU_GRAPHICS_MAP_RESOURCE_FLAGS_READ_ONLY);
-    if(res != CUDA_SUCCESS) {
-        fprintf(stderr, "cuda error 2\n");
-    }
     res = cap_kms->cuda.cuGraphicsSubResourceGetMappedArray(&cap_kms->mapped_array, cap_kms->cuda_graphics_resource, 0, 0);
-    if(res != CUDA_SUCCESS) {
-        fprintf(stderr, "cuda error 3\n");
-    }
     res = cap_kms->cuda.cuCtxPopCurrent_v2(&old_ctx);
     return true;
 }

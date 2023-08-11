@@ -68,10 +68,7 @@ static bool cuda_register_opengl_texture(gsr_capture_xcomposite_cuda *cap_xcomp)
     if (res != CUDA_SUCCESS) {
         const char *err_str = "unknown";
         cap_xcomp->cuda.cuGetErrorString(res, &err_str);
-        fprintf(stderr,
-                "Error: cuGraphicsGLRegisterImage failed, error %s, texture "
-                "id: %u\n",
-                err_str, cap_xcomp->target_texture_id);
+        fprintf(stderr, "gsr error: cuda_register_opengl_texture: cuGraphicsGLRegisterImage failed, error: %s, texture " "id: %u\n", err_str, cap_xcomp->target_texture_id);
         res = cap_xcomp->cuda.cuCtxPopCurrent_v2(&old_ctx);
         return false;
     }

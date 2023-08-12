@@ -154,7 +154,6 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         };
         for_each_active_monitor_output((void*)cap_kms->params.card_path, GSR_CONNECTION_DRM, monitor_callback, &monitor_callback_userdata);
 
-        gsr_monitor monitor;
         if(!get_monitor_by_name((void*)cap_kms->params.card_path, GSR_CONNECTION_DRM, cap_kms->params.display_to_capture, &monitor)) {
             fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
             gsr_capture_kms_vaapi_stop(cap, video_codec_context);
@@ -472,7 +471,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     static bool test = true;
     if(test) {
         test = false;
-        fprintf(stderr, "drm fd: %d, %d\n", drm_fd->width, drm_fd->height);
+        fprintf(stderr, "drm fd: %u, %u\n", drm_fd->width, drm_fd->height);
     }
 
     // TODO: This causes a crash sometimes on steam deck, why? is it a driver bug? a vaapi pure version doesn't cause a crash.

@@ -162,11 +162,6 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     bool has_perm = 0;
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     if(!inside_flatpak) {
-        if(access("/usr/bin/gsr-kms-server", F_OK) != 0) {
-            fprintf(stderr, "gsr error: gsr_kms_client_init: /usr/bin/gsr-kms-server not found, please install gpu-screen-recorder first\n");
-            return -1;
-        }
-
         if(geteuid() == 0) {
             has_perm = true;
         } else {

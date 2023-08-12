@@ -6,8 +6,8 @@ cd "$script_dir"
 CC=${CC:-gcc}
 CXX=${CXX:-g++}
 
-opts="-O2 -g0 -DNDEBUG -Wall -Wextra"
-[ -n "$DEBUG" ] && opts="-O0 -g3 -Wall -Wextra";
+opts="-O2 -g0 -DNDEBUG -Wall -Wextra -Wshadow"
+[ -n "$DEBUG" ] && opts="-O0 -g3 -Wall -Wextra -Wshadow";
 
 build_wayland_protocol() {
     wayland-scanner private-code external/wlr-export-dmabuf-unstable-v1.xml external/wlr-export-dmabuf-unstable-v1-protocol.c

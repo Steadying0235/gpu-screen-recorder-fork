@@ -930,7 +930,7 @@ static void save_replay_async(AVCodecContext *video_codec_context, int video_str
             av_packet.stream_index = stream->index;
             av_packet_rescale_ts(&av_packet, codec_context->time_base, stream->time_base);
 
-            int ret = av_write_frame(av_format_context, &av_packet);
+            ret = av_write_frame(av_format_context, &av_packet);
             if(ret < 0)
                 fprintf(stderr, "Error: Failed to write frame index %d to muxer, reason: %s (%d)\n", stream->index, av_error_to_string(ret), ret);
 

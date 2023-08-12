@@ -275,8 +275,8 @@ bool gsr_get_valid_card_path(char *output) {
         if(!planes)
             goto next;
 
-        for(uint32_t i = 0; i < planes->count_planes; ++i) {
-            drmModePlanePtr plane = drmModeGetPlane(fd, planes->planes[i]);
+        for(uint32_t j = 0; j < planes->count_planes; ++j) {
+            drmModePlanePtr plane = drmModeGetPlane(fd, planes->planes[j]);
             if(!plane)
                 continue;
 

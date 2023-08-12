@@ -164,15 +164,11 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
     cap_kms->capture_pos = monitor.pos;
     cap_kms->capture_size = monitor.size;
 
-    fprintf(stderr, "capture size: %d, %d\n", cap_kms->capture_size.x, cap_kms->capture_size.y);
-
     /* Disable vsync */
     cap_kms->params.egl->eglSwapInterval(cap_kms->params.egl->egl_display, 0);
 
     video_codec_context->width = max_int(2, even_number_ceil(cap_kms->capture_size.x));
     video_codec_context->height = max_int(2, even_number_ceil(cap_kms->capture_size.y));
-
-    fprintf(stderr, "video size: %d, %d\n", video_codec_context->width, video_codec_context->height);
 
     if(!drm_create_codec_context(cap_kms, video_codec_context)) {
         gsr_capture_kms_vaapi_stop(cap, video_codec_context);
@@ -468,12 +464,6 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     if(!capture_is_combined_plane && cursor_drm_fd && cursor_drm_fd->connector_id != drm_fd->connector_id)
         cursor_drm_fd = NULL;
 
-    static bool test = true;
-    if(test) {
-        test = false;
-        fprintf(stderr, "drm fd: %u, %u\n", drm_fd->width, drm_fd->height);
-    }
-
     // TODO: This causes a crash sometimes on steam deck, why? is it a driver bug? a vaapi pure version doesn't cause a crash.
     // Even ffmpeg kmsgrab causes this crash. The error is:
     // amdgpu: Failed to allocate a buffer:
@@ -530,7 +520,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
             texture_rotation);
 
         if(cursor_drm_fd) {
-            const intptr_t img_attr[] = {
+            const intptr_t img_attr_cursor[] = {
                 EGL_LINUX_DRM_FOURCC_EXT,       cursor_drm_fd->pixel_format,
                 EGL_WIDTH,                      cursor_drm_fd->width,
                 EGL_HEIGHT,                     cursor_drm_fd->height,
@@ -542,10 +532,10 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
                 EGL_NONE
             };
 
-            EGLImage image = cap_kms->params.egl->eglCreateImage(cap_kms->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+            EGLImage cursor_image = cap_kms->params.egl->eglCreateImage(cap_kms->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr_cursor);
             cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, cap_kms->cursor_texture);
-            cap_kms->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
-            cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, image);
+            cap_kms->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, cursor_image);
+            cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, cursor_image);
             cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
             vec2i cursor_size = {cursor_drm_fd->width, cursor_drm_fd->height};

@@ -540,15 +540,15 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
     AVDictionary *options = nullptr;
     if(vendor == GSR_GPU_VENDOR_NVIDIA) {
         bool supports_p4 = false;
-        bool supports_p6 = false;
+        bool supports_p5 = false;
 
         const AVOption *opt = nullptr;
         while((opt = av_opt_next(codec_context->priv_data, opt))) {
             if(opt->type == AV_OPT_TYPE_CONST) {
                 if(strcmp(opt->name, "p4") == 0)
                     supports_p4 = true;
-                else if(strcmp(opt->name, "p6") == 0)
-                    supports_p6 = true;
+                else if(strcmp(opt->name, "p5") == 0)
+                    supports_p5 = true;
             }
         }
 
@@ -584,7 +584,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
             }
         }
 
-        if(!supports_p4 && !supports_p6)
+        if(!supports_p4 && !supports_p5)
             fprintf(stderr, "Info: your ffmpeg version is outdated. It's recommended that you use the flatpak version of gpu-screen-recorder version instead, which you can find at https://flathub.org/apps/details/com.dec05eba.gpu_screen_recorder\n");
 
         //if(is_livestream) {
@@ -598,10 +598,14 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
         // older gpus p5-p7 slow the gpu down to a crawl...
         // "hq" is now just an alias for p7 in ffmpeg :(
         // TODO: Temporary disable because of stuttering?
+
+        // TODO: Preset is set to p5 for now but it should ideally be p6 or p7.
+        // This change is needed because for certain sizes of a window (or monitor?) such as 971x780 causes encoding to freeze
+        // when using h264 codec. This is a new(?) nvidia driver bug.
         if(very_old_gpu)
             av_dict_set(&options, "preset", supports_p4 ? "p4" : "medium", 0);
         else
-            av_dict_set(&options, "preset", supports_p6 ? "p6" : "slow", 0);
+            av_dict_set(&options, "preset", supports_p5 ? "p5" : "slow", 0);
 
         av_dict_set(&options, "tune", "hq", 0);
         av_dict_set(&options, "rc", "constqp", 0);

@@ -86,3 +86,7 @@ It may be possible to improve color conversion rgb->yuv shader for color edges b
 When webcam is supported mention that nvidia_drm.modeset=1 must be set on nvidia x11 (it's required on wayland so it's not needed there. Or does eglstream work without it??). Check if this really is the case.
 
 Use vfr on nvidia x11 as well, otherwise network data could slow it down to below target fps and mess it up.
+
+Preset is set to p5 for now but it should ideally be p6 or p7.
+    This change is needed because for certain sizes of a window (or monitor?) such as 971x780 causes encoding to freeze
+    when using h264 codec. This is a new(?) nvidia driver bug.

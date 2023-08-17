@@ -39,6 +39,7 @@ If you are running an Arch Linux based distro, then you can find gpu screen reco
 If you are running another distro then you can run `sudo ./install.sh`, but you need to manually install the dependencies, as described below.\
 You can also install gpu screen recorder ([the gtk gui version](https://git.dec05eba.com/gpu-screen-recorder-gtk/)) from [flathub](https://flathub.org/apps/details/com.dec05eba.gpu_screen_recorder), which is the easiest method
 to install GPU Screen Recorder on non-arch based distros.\
+Do NOT install the NixOS package for GPU Screen Recorder or any other non official package. They are likely severly outdated with many bugs and only have a fraction of the functionality.\
 If you install GPU Screen Recorder flatpak, which is the gtk gui version then you can still run GPU Screen Recorder command line by using the flatpak command option, for example `flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder -w screen -f 60 -o video.mp4`. Note that if you want to record your monitor on AMD/Intel then you need to install the flatpak system-wide (like so: `flatpak install flathub --system com.dec05eba.gpu_screen_recorder`).
 
 # Dependencies

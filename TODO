@@ -90,3 +90,4 @@ Use vfr on nvidia x11 as well, otherwise network data could slow it down to belo
 Preset is set to p5 for now but it should ideally be p6 or p7.
     This change is needed because for certain sizes of a window (or monitor?) such as 971x780 causes encoding to freeze
     when using h264 codec. This is a new(?) nvidia driver bug.
+    Maybe dont choose p6 or p7 again? it causes micro stutter for some users (?).

@@ -1649,7 +1649,8 @@ int main(int argc, char **argv) {
 
     const double target_fps = 1.0 / (double)fps;
 
-    if(strcmp(video_codec_to_use, "auto") == 0) {
+    const bool video_codec_auto = strcmp(video_codec_to_use, "auto") == 0;
+    if(video_codec_auto) {
         if(gpu_inf.vendor == GSR_GPU_VENDOR_INTEL) {
             const AVCodec *h264_codec = find_h264_encoder(gpu_inf.vendor, card_path);
             if(!h264_codec) {
@@ -1684,7 +1685,8 @@ int main(int argc, char **argv) {
     }
 
     //bool use_hevc = strcmp(window_str, "screen") == 0 || strcmp(window_str, "screen-direct") == 0;
-    if(video_codec != VideoCodec::H264 && strcmp(file_extension.c_str(), "flv") == 0) {
+    const bool is_flv = strcmp(file_extension.c_str(), "flv") == 0;
+    if(video_codec != VideoCodec::H264 && is_flv) {
         video_codec_to_use = "h264";
         video_codec = VideoCodec::H264;
         fprintf(stderr, "Warning: h265 is not compatible with flv, falling back to h264 instead.\n");
@@ -1698,6 +1700,25 @@ int main(int argc, char **argv) {
         case VideoCodec::H265:
             video_codec_f = find_h265_encoder(gpu_inf.vendor, card_path);
             break;
+    }
+
+    if(!video_codec_auto && !video_codec_f && !is_flv) {
+        switch(video_codec) {
+            case VideoCodec::H264: {
+                fprintf(stderr, "Warning: selected video codec h264 is not supported, trying h265 instead\n");
+                video_codec_to_use = "h265";
+                video_codec = VideoCodec::H265;
+                video_codec_f = find_h265_encoder(gpu_inf.vendor, card_path);
+                break;
+            }
+            case VideoCodec::H265: {
+                fprintf(stderr, "Warning: selected video codec h265 is not supported, trying h264 instead\n");
+                video_codec_to_use = "h264";
+                video_codec = VideoCodec::H264;
+                video_codec_f = find_h264_encoder(gpu_inf.vendor, card_path);
+                break;
+            }
+        }
     }
 
     if(!video_codec_f) {

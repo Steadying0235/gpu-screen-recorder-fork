@@ -572,6 +572,9 @@ bool gsr_egl_start_capture(gsr_egl *self, const char *monitor_to_capture) {
     if(!gsr_egl_supports_wayland_capture(self))
         return false;
 
+    if(self->wayland.frame_callback)
+        return false;
+
     self->wayland.output_to_capture = get_wayland_output_by_name(self, monitor_to_capture);
     if(!self->wayland.output_to_capture)
         return false;

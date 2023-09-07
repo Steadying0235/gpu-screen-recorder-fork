@@ -79,11 +79,10 @@ First video and audio frame should be posted immediately instead of waiting 1000
 
 Support vulkan video encoding. That might workaround forced p2 state nvidia driver "bug". Ffmpeg supports vulkan video encoding if it's encoding with --enable-vulkan
 
-Enable opus/flac again. It's broken right now when merging audio inputs. The audio gets a lot of static noise!
-
 It may be possible to improve color conversion rgb->yuv shader for color edges by biasing colors to an edge, instead of letting color overlaying with bilinear filtering handle it.
 
 When webcam is supported mention that nvidia_drm.modeset=1 must be set on nvidia x11 (it's required on wayland so it's not needed there. Or does eglstream work without it??). Check if this really is the case.
+  Support green screen removal, cropping, shader effects in general (circle mask, rounded corners, etc).
 
 Use vfr on nvidia x11 as well, otherwise network data could slow it down to below target fps and mess it up.
 
@@ -91,3 +90,6 @@ Preset is set to p5 for now but it should ideally be p6 or p7.
     This change is needed because for certain sizes of a window (or monitor?) such as 971x780 causes encoding to freeze
     when using h264 codec. This is a new(?) nvidia driver bug.
     Maybe dont choose p6 or p7 again? it causes micro stutter for some users (?).
+
+For low latency, see https://developer.download.nvidia.com/compute/nvenc/v4.0/NVENC_VideoEncoder_API_ProgGuide.pdf (section 7.1).
+Remove follow focused option.

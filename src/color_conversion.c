@@ -136,7 +136,7 @@ static unsigned int load_shader_uv(gsr_shader *shader, gsr_egl *egl, int *rotati
     return 0;
 }
 
-static int loader_framebuffers(gsr_color_conversion *self) {
+static int load_framebuffers(gsr_color_conversion *self) {
     const unsigned int draw_buffer = GL_COLOR_ATTACHMENT0;
     self->params.egl->glGenFramebuffers(MAX_FRAMEBUFFERS, self->framebuffers);
 
@@ -223,7 +223,7 @@ int gsr_color_conversion_init(gsr_color_conversion *self, const gsr_color_conver
         }
     }
 
-    if(loader_framebuffers(self) != 0)
+    if(load_framebuffers(self) != 0)
         goto err;
 
     if(create_vertices(self) != 0)
@@ -232,7 +232,6 @@ int gsr_color_conversion_init(gsr_color_conversion *self, const gsr_color_conver
     return 0;
 
     err:
-    self->params.egl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
     gsr_color_conversion_deinit(self);
     return -1;
 }

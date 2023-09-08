@@ -554,7 +554,11 @@ void gsr_egl_unload(gsr_egl *self) {
 }
 
 bool gsr_egl_supports_wayland_capture(gsr_egl *self) {
-    return !!self->wayland.export_manager && self->wayland.num_outputs > 0;
+    // TODO: wlroots capture is broken right now (black screen) on amd and multiple monitors
+    // so it has to be disabled right now. Find out why it happens and fix it.
+    (void)self;
+    return false;
+    //return !!self->wayland.export_manager && self->wayland.num_outputs > 0;
 }
 
 bool gsr_egl_start_capture(gsr_egl *self, const char *monitor_to_capture) {

@@ -255,7 +255,7 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
                 const int plane = 0;
 
                 const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
-                const uint64_t modifier = cap_kms->prime.objects[cap_kms->prime.layers[layer].object_index[plane]].drm_format_modifier;
+                //const uint64_t modifier = cap_kms->prime.objects[cap_kms->prime.layers[layer].object_index[plane]].drm_format_modifier;
 
                 const intptr_t img_attr[] = {
                     EGL_LINUX_DRM_FOURCC_EXT,       formats[i],
@@ -264,8 +264,8 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
                     EGL_DMA_BUF_PLANE0_FD_EXT,      cap_kms->prime.objects[cap_kms->prime.layers[layer].object_index[plane]].fd,
                     EGL_DMA_BUF_PLANE0_OFFSET_EXT,  cap_kms->prime.layers[layer].offset[plane],
                     EGL_DMA_BUF_PLANE0_PITCH_EXT,   cap_kms->prime.layers[layer].pitch[plane],
-                    EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier & 0xFFFFFFFFULL,
-                    EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, modifier >> 32ULL,
+                    //EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier & 0xFFFFFFFFULL,
+                    //EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, modifier >> 32ULL,
                     EGL_NONE
                 };
 
@@ -482,7 +482,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     // Assertion pic->display_order == pic->encode_order failed at libavcodec/vaapi_encode_h265.c:765
     // kms server info: kms client shutdown, shutting down the server
     const intptr_t img_attr[] = {
-        EGL_LINUX_DRM_FOURCC_EXT,       drm_fd->pixel_format,
+        EGL_LINUX_DRM_FOURCC_EXT,       fourcc('A', 'R', '2', '4'),
         EGL_WIDTH,                      drm_fd->width,
         EGL_HEIGHT,                     drm_fd->height,
         EGL_DMA_BUF_PLANE0_FD_EXT,      drm_fd->fd,
@@ -494,6 +494,9 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     };
 
     EGLImage image = cap_kms->params.egl->eglCreateImage(cap_kms->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+    if(!image) {
+        fprintf(stderr, "failed to create image\n");
+    }
     cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, cap_kms->input_texture);
     cap_kms->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
     cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, image);

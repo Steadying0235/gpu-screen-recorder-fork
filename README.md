@@ -16,9 +16,8 @@ CPU usage may be higher on wayland than on x11 when using nvidia.
 3) Videos created on AMD/Intel are in variable framerate format. Use MPV to play such videos, otherwise you might experience stuttering in the video if you are using a buggy video player. Try saving the video into a .mkv file instead when using AMD/Intel, as some software may have better support for .mkv files (such as kdenlive).
 ### AMD/Intel/Wayland root permission
 When recording a window under AMD/Intel no special user permission is required, however when recording a monitor (or when using wayland) the program needs root permission (to access KMS).\
-To make this safer, the part that needs root access has been moved to its own executable (to make it as small as possible) and a GUI sudo prompt is shown to run this executable as root. The executable is called "gsr-kms-server".\
-This password prompt wont show up if you installed GPU Screen Recorder from source or from AUR.
-
+To make this safer, the part that needs root access has been moved to its own executable (to make it as small as possible).\
+For you as a user this only means that if you installed GPU Screen Recorder as a flatpak then a prompt asking for root password will show up when you start recording.
 # Performance
 On a system with a i5 4690k CPU and a GTX 1080 GPU:\
 When recording Legend of Zelda Breath of the Wild at 4k, fps drops from 30 to 7 when using OBS Studio + nvenc, however when using this screen recorder the fps remains at 30.\
@@ -100,7 +99,7 @@ FFMPEG only uses the GPU with CUDA when doing transcoding from an input video to
 Some linux distros (such as manjaro) disable hardware accelerated h264/hevc on AMD/Intel because of "patent license issues". If you are using an arch-based distro then you can install mesa-git instead of mesa and if you are using another distro then you may have to switch to a better distro.
 
 # Donations
-If you really want to donate, you can donate via bitcoin or monero.
+If you want to donate you can donate via bitcoin or monero.
 * Bitcoin: bc1qqvuqnwrdyppf707ge27fqz2n9y9gu7lf5ypyuf
 * Monero: 4An9kp2qW1C9Gah7ewv4JzcNFQ5TAX7ineGCqXWK6vQnhsGGcRpNgcn8r9EC3tMcgY7vqCKs3nSRXhejMHBaGvFdN2egYet
 

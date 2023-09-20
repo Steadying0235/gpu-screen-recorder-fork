@@ -9,9 +9,9 @@ cd "$script_dir"
 strip gsr-kms-server
 strip gpu-screen-recorder
 rm -f "/usr/local/bin/gpu-screen-recorder"
-setcap cap_sys_admin+ep gsr-kms-server
-setcap cap_sys_nice+ep gpu-screen-recorder
 install -Dm755 "gsr-kms-server" "/usr/bin/gsr-kms-server"
 install -Dm755 "gpu-screen-recorder" "/usr/bin/gpu-screen-recorder"
+setcap cap_sys_admin+ep /usr/bin/gsr-kms-server
+setcap cap_sys_nice+ep /usr/bin/gpu-screen-recorder
 
 echo "Successfully installed gpu-screen-recorder"

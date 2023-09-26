@@ -372,6 +372,9 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
         }
     }
 
+    // TODO: Use capture pos and capture size. Right now they are not used here and doesn't really need to be used on wayland
+    // and kms_cuda is only used on wayland right now so maybe it can be ignored.
+
     if(!drm_fd)
         return -1;
 

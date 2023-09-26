@@ -448,6 +448,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
                 break;
         }
 
+        // Will never happen on wayland unless the target monitor has been disconnected
         if(!drm_fd) {
             drm_fd = find_first_combined_drm(&cap_kms->kms_response);
             if(!drm_fd)
@@ -502,16 +503,16 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
     vec2i capture_pos = cap_kms->capture_pos;
-    if(capture_is_combined_plane) {
-        capture_pos = (vec2i){ 0, 0 };
-    }
 
     if(cap_kms->using_wayland_capture) {
         gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
             (vec2i){0, 0}, cap_kms->capture_size,
-            capture_pos, cap_kms->capture_size,
+            (vec2i){0, 0}, cap_kms->capture_size,
             0.0f);
     } else {
+        if(!capture_is_combined_plane)
+            capture_pos = (vec2i){drm_fd->x, drm_fd->y};
+
         float texture_rotation = 0.0f;
 
         gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,

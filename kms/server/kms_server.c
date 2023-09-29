@@ -262,6 +262,8 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
         response->fds[response->num_fds].modifier = drmfb->modifier;
         response->fds[response->num_fds].connector_id = get_connector_by_crtc_id(c2crtc_map, plane->crtc_id);
         response->fds[response->num_fds].is_cursor = is_cursor;
+        // TODO: This is not an accurate way to detect it. First of all, it always fails with multiple monitors
+        // on wayland as the drmfb always has multiple planes
         response->fds[response->num_fds].is_combined_plane = drmfb_has_multiple_handles(drmfb);
         if(is_cursor) {
             response->fds[response->num_fds].x = x;

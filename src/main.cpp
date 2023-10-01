@@ -2121,6 +2121,7 @@ int main(int argc, char **argv) {
         if(save_replay_thread.valid() && save_replay_thread.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
             save_replay_thread.get();
             puts(save_replay_output_filepath.c_str());
+            fflush(stdout);
             std::lock_guard<std::mutex> lock(write_output_mutex);
             save_replay_packets.clear();
         }
@@ -2142,6 +2143,7 @@ int main(int argc, char **argv) {
     if(save_replay_thread.valid()) {
         save_replay_thread.get();
         puts(save_replay_output_filepath.c_str());
+        fflush(stdout);
         std::lock_guard<std::mutex> lock(write_output_mutex);
         save_replay_packets.clear();
     }

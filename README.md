@@ -86,7 +86,7 @@ If you are using a NVIDIA GPU then it's recommended to set PreserveVideoMemoryAl
 Nvidia drivers have an issue where CUDA breaks if CUDA is running when suspend/hibernation happens, and it remains broken until you reload the nvidia driver. To fix this, either disable suspend or tell the NVIDIA driver to preserve video memory on suspend/hibernate by using the `NVreg_PreserveVideoMemoryAllocations=1` option. You can run `sudo extra/install_preserve_video_memory.sh` to automatically add that option to your system.
 
 # Reporting bugs/contributing patches
-See https://git.dec05eba.com/?p=about
+See [https://git.dec05eba.com/?p=about](https://git.dec05eba.com/?p=about)
 
 # Demo
 [![Click here to watch a demo video on youtube](https://img.youtube.com/vi/n5tm0g01n6A/0.jpg)](https://www.youtube.com/watch?v=n5tm0g01n6A)

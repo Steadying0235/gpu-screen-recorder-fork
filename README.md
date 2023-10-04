@@ -72,8 +72,7 @@ There is also a gui for the gpu screen recorder called [gpu-screen-recorder-gtk]
 Run the script `scripts/start-replay.sh` to start replay and then `scripts/save-replay.sh` to save a replay and `scripts/stop-replay.sh` to stop the replay. The videos are saved to `$HOME/Videos`.
 You can use these scripts to start replay at system startup if you add `scripts/start-replay.sh` to startup (this can be done differently depending on your desktop environment / window manager) and then go into
 hotkey settings on your system and choose a hotkey to run the script `scripts/save-replay.sh`. Modify `scripts/start-replay.sh` if you want to use other replay options.
-
-
+## Run replay on system startup
 If you are running a distro that uses systemd then you can use the systemd service in `extra/gpu-screen-recorder.service` instead.
 Copy `extra/gpu-screen-recorder.service` to a location where systemd can find it, for example: `$HOME/.config/systemd/user` and then enable and start it with: `systemctl enable --now --user gpu-screen-recorder`. Copying the systemd service file is not needed if you installed GPU Screen Recorder from AUR as this is done automatically.
 You can then use the same `scripts/save-replay.sh` script to save a replay. The systemd service is configured with the file `$HOME/.config/gpu-screen-recorder.env` (create it if it doesn't exist).

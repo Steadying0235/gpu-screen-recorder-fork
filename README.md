@@ -42,11 +42,38 @@ If you install GPU Screen Recorder flatpak, which is the gtk gui version then yo
 
 # Dependencies
 ## AMD
-`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libpulse, libva, libva-mesa-driver, libdrm, libcap, polkit (for pkexec), wayland-client`.
+libglvnd (which provides libgl and libegl)\
+mesa\
+ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)\
+x11 (libx11, libxcomposite, libxrandr)\
+libpulse\
+vaapi (libva, libva-mesa-driver)\
+libdrm\
+libcap\
+wayland-client
 ## Intel
-`libglvnd (which provides libgl and libegl), mesa, ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libpulse, libva, libva-intel-driver, libdrm, libcap, polkit (for pkexec), wayland-client`.
+libglvnd (which provides libgl and libegl)\
+mesa\
+ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)\
+x11 (libx11, libxcomposite, libxrandr)\
+libpulse\
+vaapi (libva, libva-intel-driver)\
+libdrm\
+libcap\
+wayland-client
 ## NVIDIA
-`libglvnd (which provides libgl and libegl), ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter), libx11, libxcomposite, libxrandr, libpulse, cuda runtime (libcuda.so.1) (libnvidia-compute), nvenc (libnvidia-encode), libva, libdrm, libcap, polkit (for pkexec, only on wayland), wayland-client`. Additionally, you need to have `nvfbc (libnvidia-fbc1)` installed when using nvfbc and `xnvctrl (libxnvctrl0)` when using the `-oc` option.
+libglvnd (which provides libgl and libegl)\
+ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)\
+x11 (libx11, libxcomposite, libxrandr)\
+libpulse\
+cuda runtime (libcuda.so.1) (libnvidia-compute)\
+nvenc (libnvidia-encode)\
+libva\
+libdrm\
+libcap\
+wayland-client\
+nvfbc (libnvidia-fbc1, when recording the screen on x11)\
+xnvctrl (libxnvctrl0, when using the `-oc` option)
 
 # How to use
 Run `gpu-screen-recorder --help` to see all options.

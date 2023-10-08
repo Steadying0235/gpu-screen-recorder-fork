@@ -19,6 +19,7 @@
 
 typedef struct {
     int drmfd;
+    drmModePlaneResPtr planes;
 } gsr_drm;
 
 typedef struct {
@@ -198,22 +199,14 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
     response->err_msg[0] = '\0';
     response->num_fds = 0;
 
-    drmModePlaneResPtr planes = drmModeGetPlaneResources(drm->drmfd);
-    if(!planes) {
-        response->result = KMS_RESULT_FAILED_TO_GET_PLANES;
-        snprintf(response->err_msg, sizeof(response->err_msg), "failed to get drm planes, error: %s\n", strerror(errno));
-        fprintf(stderr, "kms server error: %s\n", response->err_msg);
-        return result;
-    }
-
-    for(uint32_t i = 0; i < planes->count_planes && response->num_fds < GSR_KMS_MAX_PLANES; ++i) {
+    for(uint32_t i = 0; i < drm->planes->count_planes && response->num_fds < GSR_KMS_MAX_PLANES; ++i) {
         drmModePlanePtr plane = NULL;
         drmModeFB2 *drmfb = NULL;
 
-        plane = drmModeGetPlane(drm->drmfd, planes->planes[i]);
+        plane = drmModeGetPlane(drm->drmfd, drm->planes->planes[i]);
         if(!plane) {
             response->result = KMS_RESULT_FAILED_TO_GET_PLANE;
-            snprintf(response->err_msg, sizeof(response->err_msg), "failed to get drm plane with id %u, error: %s\n", planes->planes[i], strerror(errno));
+            snprintf(response->err_msg, sizeof(response->err_msg), "failed to get drm plane with id %u, error: %s\n", drm->planes->planes[i], strerror(errno));
             fprintf(stderr, "kms server error: %s\n", response->err_msg);
             goto next;
         }
@@ -263,7 +256,8 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
         response->fds[response->num_fds].connector_id = get_connector_by_crtc_id(c2crtc_map, plane->crtc_id);
         response->fds[response->num_fds].is_cursor = is_cursor;
         // TODO: This is not an accurate way to detect it. First of all, it always fails with multiple monitors
-        // on wayland as the drmfb always has multiple planes
+        // on wayland as the drmfb always has multiple planes.
+        // Check if this can be improved by also checking if the handles are duplicated (multiple ones refer to each other).
         response->fds[response->num_fds].is_combined_plane = drmfb_has_multiple_handles(drmfb);
         if(is_cursor) {
             response->fds[response->num_fds].x = x;
@@ -285,7 +279,6 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
             drmModeFreePlane(plane);
     }
 
-    drmModeFreePlaneResources(planes);
     if(response->num_fds > 0 || response->result == KMS_RESULT_OK) {
         result = 0;
     } else {
@@ -316,13 +309,19 @@ static void strncpy_safe(char *dst, const char *src, int len) {
 }
 
 int main(int argc, char **argv) {
+    int res = 0;
+    int socket_fd = 0;
+    gsr_drm drm;
+    drm.drmfd = 0;
+    drm.planes = NULL;
+
     if(argc != 3) {
         fprintf(stderr, "usage: gsr-kms-server <domain_socket_path> <card_path>\n");
         return 1;
     }
 
     const char *domain_socket_path = argv[1];
-    int socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if(socket_fd == -1) {
         fprintf(stderr, "kms server error: failed to create socket, error: %s\n", strerror(errno));
         return 2;
@@ -330,21 +329,28 @@ int main(int argc, char **argv) {
 
     const char *card_path = argv[2];
 
-    gsr_drm drm;
     drm.drmfd = open(card_path, O_RDONLY);
     if(drm.drmfd < 0) {
         fprintf(stderr, "kms server error: failed to open %s, error: %s", card_path, strerror(errno));
-        return 2;
+        res = 2;
+        goto done;
     }
 
     if(drmSetClientCap(drm.drmfd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1) != 0) {
         fprintf(stderr, "kms server error: drmSetClientCap DRM_CLIENT_CAP_UNIVERSAL_PLANES failed, error: %s\n", strerror(errno));
-        close(drm.drmfd);
-        return 10;
+        res = 2;
+        goto done;
     }
 
     if(drmSetClientCap(drm.drmfd, DRM_CLIENT_CAP_ATOMIC, 1) != 0) {
         fprintf(stderr, "kms server warning: drmSetClientCap DRM_CLIENT_CAP_ATOMIC failed, error: %s. The wrong monitor may be captured as a result\n", strerror(errno));
+    }
+
+    drm.planes = drmModeGetPlaneResources(drm.drmfd);
+    if(!drm.planes) {
+        fprintf(stderr, "kms server error: failed to get plane resources, error: %s\n", strerror(errno));
+        res = 2;
+        goto done;
     }
 
     connector_to_crtc_map c2crtc_map;
@@ -369,8 +375,8 @@ int main(int argc, char **argv) {
             }
 
             fprintf(stderr, "kms server error: connect failed, error: %s (%d)\n", strerror(errno), errno);
-            close(drm.drmfd);
-            return 2;
+            res = 2;
+            goto done;
         }
 
         next:
@@ -381,11 +387,10 @@ int main(int argc, char **argv) {
         fprintf(stderr, "kms server info: connected to the client\n");
     } else {
         fprintf(stderr, "kms server error: failed to connect to the client in %f seconds\n", connect_timeout_sec);
-        close(drm.drmfd);
-        return 2;
+        res = 2;
+        goto done;
     }
 
-    int res = 0;
     for(;;) {
         gsr_kms_request request;
         struct iovec iov;
@@ -444,7 +449,11 @@ int main(int argc, char **argv) {
     }
 
     done:
-    close(drm.drmfd);
-    close(socket_fd);
+    if(drm.planes)
+        drmModeFreePlaneResources(drm.planes);
+    if(drm.drmfd > 0)
+        close(drm.drmfd);
+    if(socket_fd > 0)
+        close(socket_fd);
     return res;
 }

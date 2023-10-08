@@ -245,8 +245,6 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
         cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
-        fprintf(stderr, "prime width: %u, height: %u\n", cap_kms->prime.width, cap_kms->prime.height);
-
         if(cap_kms->prime.fourcc == FOURCC_NV12) {
             cap_kms->params.egl->glGenTextures(2, cap_kms->target_textures);
             for(int i = 0; i < 2; ++i) {

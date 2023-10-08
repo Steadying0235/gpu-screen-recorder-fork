@@ -8,7 +8,7 @@ cd "$script_dir"
 ./build.sh
 strip gsr-kms-server
 strip gpu-screen-recorder
-rm -f "/usr/local/bin/gpu-screen-recorder"
+
 install -Dm755 "gsr-kms-server" "/usr/bin/gsr-kms-server"
 install -Dm755 "gpu-screen-recorder" "/usr/bin/gpu-screen-recorder"
 setcap cap_sys_admin+ep /usr/bin/gsr-kms-server

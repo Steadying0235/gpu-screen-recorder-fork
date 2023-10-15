@@ -4,5 +4,6 @@
 
 rm -f "/usr/bin/gsr-kms-server"
 rm -f "/usr/bin/gpu-screen-recorder"
+rm -f "/usr/lib/systemd/user/gpu-screen-recorder.service"
 
 echo "Successfully uninstalled gpu-screen-recorder"

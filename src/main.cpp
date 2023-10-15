@@ -1308,6 +1308,9 @@ int main(int argc, char **argv) {
     // Pipewire instead DEFAULTS TO THE DEFAULT AUDIO INPUT. THAT'S RETARDED.
     // OH, YOU MISSPELLED THE AUDIO INPUT? FUCK YOU
     for(const char *audio_input : audio_input_arg.values) {
+        if(!audio_input || audio_input[0] == '\0')
+            continue;
+
         requested_audio_inputs.push_back({parse_audio_input_arg(audio_input)});
         for(AudioInput &request_audio_input : requested_audio_inputs.back().audio_inputs) {
             bool match = false;

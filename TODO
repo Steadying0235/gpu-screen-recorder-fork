@@ -93,3 +93,9 @@ Preset is set to p5 for now but it should ideally be p6 or p7.
 
 For low latency, see https://developer.download.nvidia.com/compute/nvenc/v4.0/NVENC_VideoEncoder_API_ProgGuide.pdf (section 7.1).
 Remove follow focused option.
+
+Fix kms capture on 10-bit setup (both x11 and wayland). It may already work automatically on amd/intel, but on nvidia the color conversion shader needs to be used to automatically map 10-bit to 8-bit.
+
+Test vaapi av1 encoding (av1_vaapi) (which was recently added to ffmpeg master).
+
+Overclocking (-oc) can overclock too much on some systems. Maybe remove the option?

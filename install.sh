@@ -11,6 +11,9 @@ strip gpu-screen-recorder
 
 install -Dm755 "gsr-kms-server" "/usr/bin/gsr-kms-server"
 install -Dm755 "gpu-screen-recorder" "/usr/bin/gpu-screen-recorder"
+if [ -d "/usr/lib/systemd/user" ]; then
+    install -Dm644 "extra/gpu-screen-recorder.service" "/usr/lib/systemd/user/gpu-screen-recorder.service"
+fi
 setcap cap_sys_admin+ep /usr/bin/gsr-kms-server
 setcap cap_sys_nice+ep /usr/bin/gpu-screen-recorder
 

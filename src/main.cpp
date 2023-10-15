@@ -9,6 +9,7 @@ extern "C" {
 }
 
 #include <assert.h>
+#include <filesystem>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
@@ -665,7 +666,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 }
 
 static void usage_header() {
-    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265] [-ac aac|opus|flac] [-oc yes|no] [-fm cfr|vfr] [-v yes|no] [-h|--help] [-o <output_file>]\n");
+    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265] [-ac aac|opus|flac] [-oc yes|no] [-fm cfr|vfr] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no]\n");
 }
 
 static void usage_full() {
@@ -716,6 +717,8 @@ static void usage_full() {
     fprintf(stderr, "  -v    Prints per second, fps updates. Optional, set to 'yes' by default.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -h    Show this help.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  -mf   Organise replays in folders based on the current date.\n");
     fprintf(stderr, "\n");
     //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, defaults to yuv420\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r).\n");
@@ -795,6 +798,22 @@ static std::string get_date_str() {
     return str; 
 }
 
+static std::string get_date_only_str() {
+    char str[128];
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    strftime(str, sizeof(str)-1, "%Y-%m-%d", t);
+    return str;
+}
+
+static std::string get_time_only_str() {
+    char str[128];
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    strftime(str, sizeof(str)-1, "%H-%M-%S", t);
+    return str;
+}
+
 static AVStream* create_stream(AVFormatContext *av_format_context, AVCodecContext *codec_context) {
     AVStream *stream = avformat_new_stream(av_format_context, nullptr);
     if (!stream) {
@@ -830,7 +849,7 @@ static std::future<void> save_replay_thread;
 static std::vector<std::shared_ptr<PacketData>> save_replay_packets;
 static std::string save_replay_output_filepath;
 
-static void save_replay_async(AVCodecContext *video_codec_context, int video_stream_index, std::vector<AudioTrack> &audio_tracks, std::deque<std::shared_ptr<PacketData>> &frame_data_queue, bool frames_erased, std::string output_dir, const char *container_format, const std::string &file_extension, std::mutex &write_output_mutex) {
+static void save_replay_async(AVCodecContext *video_codec_context, int video_stream_index, std::vector<AudioTrack> &audio_tracks, std::deque<std::shared_ptr<PacketData>> &frame_data_queue, bool frames_erased, std::string output_dir, const char *container_format, const std::string &file_extension, std::mutex &write_output_mutex, bool make_folders) {
     if(save_replay_thread.valid())
         return;
     
@@ -873,7 +892,16 @@ static void save_replay_async(AVCodecContext *video_codec_context, int video_str
         }
     }
 
-    save_replay_output_filepath = output_dir + "/Replay_" + get_date_str() + "." + file_extension;
+    if (make_folders) {
+        std::string output_folder = output_dir + '/' + get_date_only_str();
+        if (!std::filesystem::exists(output_folder)) {
+            std::filesystem::create_directory(output_folder);
+        }
+        save_replay_output_filepath = output_folder + "/Replay_" + get_time_only_str() + "." + file_extension;
+    } else {
+       save_replay_output_filepath = output_dir + "/Replay_" + get_date_str() + "." + file_extension;
+    }
+
     save_replay_thread = std::async(std::launch::async, [video_stream_index, container_format, start_index, video_pts_offset, audio_pts_offset, video_codec_context, &audio_tracks]() mutable {
         AVFormatContext *av_format_context;
         avformat_alloc_output_context2(&av_format_context, nullptr, container_format, nullptr);
@@ -1150,6 +1178,7 @@ int main(int argc, char **argv) {
         { "-fm", Arg { {}, true, false } },
         { "-pixfmt", Arg { {}, true, false } },
         { "-v", Arg { {}, true, false } },
+        { "-mf", Arg { {}, true, false } },
     };
 
     for(int i = 1; i < argc; i += 2) {
@@ -1240,6 +1269,20 @@ int main(int argc, char **argv) {
         verbose = false;
     } else {
         fprintf(stderr, "Error: -v should either be either 'yes' or 'no', got: '%s'\n", verbose_str);
+        usage();
+    }
+
+    bool make_folders = false;
+    const char *make_folders_str = args["-mf"].value();
+    if(!make_folders_str)
+        make_folders_str = "no";
+
+    if(strcmp(make_folders_str, "yes") == 0) {
+        make_folders = true;
+    } else if(strcmp(make_folders_str, "no") == 0) {
+        make_folders = false;
+    } else {
+        fprintf(stderr, "Error: -mf should either be either 'yes' or 'no', got: '%s'\n", make_folders_str);
         usage();
     }
 
@@ -2128,7 +2171,7 @@ int main(int argc, char **argv) {
 
         if(save_replay == 1 && !save_replay_thread.valid() && replay_buffer_size_secs != -1) {
             save_replay = 0;
-            save_replay_async(video_codec_context, VIDEO_STREAM_INDEX, audio_tracks, frame_data_queue, frames_erased, filename, container_format, file_extension, write_output_mutex);
+            save_replay_async(video_codec_context, VIDEO_STREAM_INDEX, audio_tracks, frame_data_queue, frames_erased, filename, container_format, file_extension, write_output_mutex, make_folders);
         }
 
         double frame_end = clock_get_monotonic_seconds();

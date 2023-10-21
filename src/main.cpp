@@ -9,7 +9,6 @@ extern "C" {
 }
 
 #include <assert.h>
-#include <filesystem>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
@@ -712,7 +711,7 @@ static void usage_full() {
     fprintf(stderr, "        is dropped when you record a game. Only needed if you are recording a game that is bottlenecked by GPU.\n");
     fprintf(stderr, "        Works only if your have \"Coolbits\" set to \"12\" in NVIDIA X settings, see README for more information. Note! use at your own risk! Optional, disabled by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -fm   Framerate mode. Should be either 'cfr' or 'vfr'. Defaults to 'cfr' on NVIDIA and 'vfr' on AMD/Intel.\n");
+    fprintf(stderr, "  -fm   Framerate mode. Should be either 'cfr' or 'vfr'. Defaults to 'cfr' on NVIDIA X11 and 'vfr' on AMD/Intel X11/Wayland or NVIDIA Wayland.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -v    Prints per second, fps updates. Optional, set to 'yes' by default.\n");
     fprintf(stderr, "\n");
@@ -722,7 +721,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, defaults to yuv420\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r).\n");
-    fprintf(stderr, "        In replay mode this has to be an existing directory instead of a file.\n");
+    fprintf(stderr, "        In replay mode this has to be a directory instead of a file.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "NOTES:\n");
     fprintf(stderr, "  Send signal SIGINT to gpu-screen-recorder (Ctrl+C, or killall gpu-screen-recorder) to stop and save the recording (when not using replay mode).\n");
@@ -849,6 +848,38 @@ static std::future<void> save_replay_thread;
 static std::vector<std::shared_ptr<PacketData>> save_replay_packets;
 static std::string save_replay_output_filepath;
 
+static int create_directory_recursive(char *path) {
+    int path_len = strlen(path);
+    char *p = path;
+    char *end = path + path_len;
+    for(;;) {
+        char *slash_p = strchr(p, '/');
+
+        // Skips first '/', we don't want to try and create the root directory
+        if(slash_p == path) {
+            ++p;
+            continue;
+        }
+
+        if(!slash_p)
+            slash_p = end;
+
+        char prev_char = *slash_p;
+        *slash_p = '\0';
+        int err = mkdir(path, S_IRWXU);
+        *slash_p = prev_char;
+
+        if(err == -1 && errno != EEXIST)
+            return err;
+
+        if(slash_p == end)
+            break;
+        else
+            p = slash_p + 1;
+    }
+    return 0;
+}
+
 static void save_replay_async(AVCodecContext *video_codec_context, int video_stream_index, std::vector<AudioTrack> &audio_tracks, std::deque<std::shared_ptr<PacketData>> &frame_data_queue, bool frames_erased, std::string output_dir, const char *container_format, const std::string &file_extension, std::mutex &write_output_mutex, bool make_folders) {
     if(save_replay_thread.valid())
         return;
@@ -894,12 +925,11 @@ static void save_replay_async(AVCodecContext *video_codec_context, int video_str
 
     if (make_folders) {
         std::string output_folder = output_dir + '/' + get_date_only_str();
-        if (!std::filesystem::exists(output_folder)) {
-            std::filesystem::create_directory(output_folder);
-        }
+        create_directory_recursive(&output_folder[0]);
         save_replay_output_filepath = output_folder + "/Replay_" + get_time_only_str() + "." + file_extension;
     } else {
-       save_replay_output_filepath = output_dir + "/Replay_" + get_date_str() + "." + file_extension;
+        create_directory_recursive(&output_dir[0]);
+        save_replay_output_filepath = output_dir + "/Replay_" + get_date_str() + "." + file_extension;
     }
 
     save_replay_thread = std::async(std::launch::async, [video_stream_index, container_format, start_index, video_pts_offset, audio_pts_offset, video_codec_context, &audio_tracks]() mutable {
@@ -1507,14 +1537,9 @@ int main(int argc, char **argv) {
 
         if(gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA) {
             if(wayland) {
-                const char *capture_target = window_str;
-                if(strcmp(window_str, "screen-direct") == 0 || strcmp(window_str, "screen-direct-force") == 0) {
-                    capture_target = "screen";
-                }
-
                 gsr_capture_kms_cuda_params kms_params;
                 kms_params.egl = &egl;
-                kms_params.display_to_capture = capture_target;
+                kms_params.display_to_capture = window_str;
                 kms_params.gpu_inf = gpu_inf;
                 kms_params.card_path = card_path;
                 capture = gsr_capture_kms_cuda_create(&kms_params);
@@ -1550,14 +1575,9 @@ int main(int argc, char **argv) {
                     _exit(1);
             }
         } else {
-            const char *capture_target = window_str;
-            if(strcmp(window_str, "screen-direct") == 0 || strcmp(window_str, "screen-direct-force") == 0) {
-                capture_target = "screen";
-            }
-
             gsr_capture_kms_vaapi_params kms_params;
             kms_params.egl = &egl;
-            kms_params.display_to_capture = capture_target;
+            kms_params.display_to_capture = window_str;
             kms_params.gpu_inf = gpu_inf;
             kms_params.card_path = card_path;
             kms_params.wayland = wayland;
@@ -1632,8 +1652,8 @@ int main(int argc, char **argv) {
             }
 
             struct stat buf;
-            if(stat(filename, &buf) == -1 || !S_ISDIR(buf.st_mode)) {
-                fprintf(stderr, "Error: directory \"%s\" does not exist or is not a directory\n", filename);
+            if(stat(filename, &buf) != -1 && !S_ISDIR(buf.st_mode)) {
+                fprintf(stderr, "Error: File \"%s\" exists but it's not a directory\n", filename);
                 usage();
             }
         }
@@ -1785,6 +1805,12 @@ int main(int argc, char **argv) {
         MergedAudioInputs mai;
         mai.audio_inputs.push_back({ "", "gsr-silent" });
         requested_audio_inputs.push_back(std::move(mai));
+    }
+
+    if(is_livestream && framerate_mode != FramerateMode::CONSTANT) {
+        fprintf(stderr, "Info: framerate mode was forcefully set to \"cfr\" because live streaming was detected\n");
+        framerate_mode = FramerateMode::CONSTANT;
+        framerate_mode_str = "cfr";
     }
 
     AVStream *video_stream = nullptr;

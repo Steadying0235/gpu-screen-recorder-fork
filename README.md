@@ -82,7 +82,7 @@ Here is an example of how to record all monitors and the default audio output: `
 ## Streaming
 Streaming works the same as recording, but the `-o` argument should be path to the live streaming service you want to use (including your live streaming key). Take a look at scripts/twitch-stream.sh to see an example of how to stream to twitch.
 ## Replay mode
-Run `gpu-screen-recorder` with the `-c mp4` and `-r` option, for example: `gpu-screen-recorder -w screen -f 60 -r 30 -c mp4 -o ~/Videos`. Note that in this case, `-o` should point to a directory (that exists).\
+Run `gpu-screen-recorder` with the `-c mp4` and `-r` option, for example: `gpu-screen-recorder -w screen -f 60 -r 30 -c mp4 -o ~/Videos`. Note that in this case, `-o` should point to a directory.\
 If `-mf yes` is set, replays are save in folders based on the date.
 To save a video in replay mode, you need to send signal SIGUSR1 to gpu screen recorder. You can do this by running `killall -SIGUSR1 gpu-screen-recorder`.\
 To stop recording, send SIGINT to gpu screen recorder. You can do this by running `killall gpu-screen-recorder` or pressing `Ctrl-C` in the terminal that runs gpu screen recorder.\

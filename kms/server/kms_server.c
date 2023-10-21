@@ -13,7 +13,8 @@
 
 #include <xf86drm.h>
 #include <xf86drmMode.h>
-#include <libdrm/drm_mode.h>
+#include <drm_mode.h>
+#include <drm_fourcc.h>
 
 #define MAX_CONNECTORS 32
 
@@ -161,14 +162,6 @@ static uint32_t get_connector_by_crtc_id(const connector_to_crtc_map *c2crtc_map
     return 0;
 }
 
-static bool drmfb_has_multiple_handles(drmModeFB2 *drmfb) {
-    int num_handles = 0;
-    for(uint32_t handle_index = 0; handle_index < 4 && drmfb->handles[handle_index]; ++handle_index) {
-        ++num_handles;
-    }
-    return num_handles > 1;
-}
-
 static void map_crtc_to_connector_ids(gsr_drm *drm, connector_to_crtc_map *c2crtc_map) {
     c2crtc_map->num_maps = 0;
     drmModeResPtr resources = drmModeGetResources(drm->drmfd);
@@ -201,7 +194,7 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
 
     for(uint32_t i = 0; i < drm->planes->count_planes && response->num_fds < GSR_KMS_MAX_PLANES; ++i) {
         drmModePlanePtr plane = NULL;
-        drmModeFB2 *drmfb = NULL;
+        drmModeFBPtr drmfb = NULL;
 
         plane = drmModeGetPlane(drm->drmfd, drm->planes->planes[i]);
         if(!plane) {
@@ -214,7 +207,8 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
         if(!plane->fb_id)
             goto next;
 
-        drmfb = drmModeGetFB2(drm->drmfd, plane->fb_id);
+        // TODO: drmModeGetFB2 can't be used because it causes a vram leak when the fb_fd is sent amd/intel.. why?
+        drmfb = drmModeGetFB(drm->drmfd, plane->fb_id);
         if(!drmfb) {
             // Commented out for now because we get here if the cursor is moved to another monitor and we dont care about the cursor
             //response->result = KMS_RESULT_FAILED_TO_GET_PLANE;
@@ -223,7 +217,7 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
             goto next;
         }
 
-        if(!drmfb->handles[0]) {
+        if(!drmfb->handle) {
             response->result = KMS_RESULT_FAILED_TO_GET_PLANE;
             snprintf(response->err_msg, sizeof(response->err_msg), "drmfb handle is NULL");
             fprintf(stderr, "kms server error: %s\n", response->err_msg);
@@ -234,7 +228,7 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
         // TODO: Support other plane formats than rgb (with multiple planes, such as direct YUV420 on wayland).
 
         int fb_fd = -1;
-        const int ret = drmPrimeHandleToFD(drm->drmfd, drmfb->handles[0], O_RDONLY, &fb_fd);
+        const int ret = drmPrimeHandleToFD(drm->drmfd, drmfb->handle, O_RDONLY, &fb_fd);
         if(ret != 0 || fb_fd == -1) {
             response->result = KMS_RESULT_FAILED_TO_GET_PLANE;
             snprintf(response->err_msg, sizeof(response->err_msg), "failed to get fd from drm handle, error: %s", strerror(errno));
@@ -249,16 +243,14 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
         response->fds[response->num_fds].fd = fb_fd;
         response->fds[response->num_fds].width = drmfb->width;
         response->fds[response->num_fds].height = drmfb->height;
-        response->fds[response->num_fds].pitch = drmfb->pitches[0];
-        response->fds[response->num_fds].offset = drmfb->offsets[0];
-        response->fds[response->num_fds].pixel_format = drmfb->pixel_format;
-        response->fds[response->num_fds].modifier = drmfb->modifier;
+        response->fds[response->num_fds].pitch = drmfb->pitch;
+        response->fds[response->num_fds].offset = 0;//drmfb->offsets[0];
+        // TODO?
+        response->fds[response->num_fds].pixel_format = DRM_FORMAT_ARGB8888;//drmfb->pixel_format;
+        response->fds[response->num_fds].modifier = 0;//drmfb->modifier;
         response->fds[response->num_fds].connector_id = get_connector_by_crtc_id(c2crtc_map, plane->crtc_id);
         response->fds[response->num_fds].is_cursor = is_cursor;
-        // TODO: This is not an accurate way to detect it. First of all, it always fails with multiple monitors
-        // on wayland as the drmfb always has multiple planes.
-        // Check if this can be improved by also checking if the handles are duplicated (multiple ones refer to each other).
-        response->fds[response->num_fds].is_combined_plane = drmfb_has_multiple_handles(drmfb);
+        response->fds[response->num_fds].is_combined_plane = false;
         if(is_cursor) {
             response->fds[response->num_fds].x = x;
             response->fds[response->num_fds].y = y;
@@ -274,12 +266,12 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
 
         next:
         if(drmfb)
-            drmModeFreeFB2(drmfb);
+            drmModeFreeFB(drmfb);
         if(plane)
             drmModeFreePlane(plane);
     }
 
-    if(response->num_fds > 0 || response->result == KMS_RESULT_OK) {
+    if(response->result == KMS_RESULT_OK) {
         result = 0;
     } else {
         for(int i = 0; i < response->num_fds; ++i) {
@@ -419,17 +411,18 @@ int main(int argc, char **argv) {
         switch(request.type) {
             case KMS_REQUEST_TYPE_GET_KMS: {
                 gsr_kms_response response;
+                response.num_fds = 0;
                 
                 if(kms_get_fb(&drm, &response, &c2crtc_map) == 0) {
                     if(send_msg_to_client(socket_fd, &response) == -1)
                         fprintf(stderr, "kms server error: failed to respond to client KMS_REQUEST_TYPE_GET_KMS request\n");
-
-                    for(int i = 0; i < response.num_fds; ++i) {
-                        close(response.fds[i].fd);
-                    }
                 } else {
                     if(send_msg_to_client(socket_fd, &response) == -1)
                         fprintf(stderr, "kms server error: failed to respond to client KMS_REQUEST_TYPE_GET_KMS request\n");
+                }
+
+                for(int i = 0; i < response.num_fds; ++i) {
+                    close(response.fds[i].fd);
                 }
 
                 break;

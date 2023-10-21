@@ -99,3 +99,7 @@ Fix kms capture on 10-bit setup (both x11 and wayland). It may already work auto
 Test vaapi av1 encoding (av1_vaapi) (which was recently added to ffmpeg master).
 
 Overclocking (-oc) can overclock too much on some systems. Maybe remove the option?
+
+Exit if X11/Wayland killed (if drm plane dead or something?)
+
+Use SRC_W and SRC_H for screen plane instead of crtc_w and crtc_h.

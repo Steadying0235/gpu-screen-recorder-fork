@@ -14,7 +14,6 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <drm_mode.h>
-#include <drm_fourcc.h>
 
 #define MAX_CONNECTORS 32
 

@@ -264,10 +264,8 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
         response->fds[response->num_fds].height = drmfb->height;
         response->fds[response->num_fds].pitch = drmfb->pitches[0];
         response->fds[response->num_fds].offset = drmfb->offsets[0];
-        // TODO:
-        response->fds[response->num_fds].pixel_format = DRM_FORMAT_ARGB8888;//drmfb->pixel_format;
-        // TODO:
-        response->fds[response->num_fds].modifier = 0;//drmfb->modifier;
+        response->fds[response->num_fds].pixel_format = drmfb->pixel_format;
+        response->fds[response->num_fds].modifier = drmfb->modifier;
         response->fds[response->num_fds].connector_id = get_connector_by_crtc_id(c2crtc_map, plane->crtc_id);
         response->fds[response->num_fds].is_cursor = is_cursor;
         response->fds[response->num_fds].is_combined_plane = false;

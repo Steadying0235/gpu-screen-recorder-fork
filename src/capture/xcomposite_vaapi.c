@@ -508,6 +508,7 @@ gsr_capture* gsr_capture_xcomposite_vaapi_create(const gsr_capture_xcomposite_va
         .tick = gsr_capture_xcomposite_vaapi_tick,
         .should_stop = gsr_capture_xcomposite_vaapi_should_stop,
         .capture = gsr_capture_xcomposite_vaapi_capture,
+        .capture_end = NULL,
         .destroy = gsr_capture_xcomposite_vaapi_destroy,
         .priv = cap_xcomp
     };

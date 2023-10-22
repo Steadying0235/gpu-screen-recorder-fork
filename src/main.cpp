@@ -2186,6 +2186,8 @@ int main(int argc, char **argv) {
                         fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
                     }
                 }
+
+                gsr_capture_end(capture, frame);
                 video_pts_counter += num_frames;
             }
         }

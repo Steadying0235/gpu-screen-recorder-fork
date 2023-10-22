@@ -14,6 +14,7 @@ struct gsr_capture {
     void (*tick)(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame **frame); /* can be NULL */
     bool (*should_stop)(gsr_capture *cap, bool *err); /* can be NULL */
     int (*capture)(gsr_capture *cap, AVFrame *frame);
+    void (*capture_end)(gsr_capture *cap, AVFrame *frame); /* can be NULL */
     void (*destroy)(gsr_capture *cap, AVCodecContext *video_codec_context);
 
     void *priv; /* can be NULL */
@@ -24,6 +25,7 @@ int gsr_capture_start(gsr_capture *cap, AVCodecContext *video_codec_context);
 void gsr_capture_tick(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame **frame);
 bool gsr_capture_should_stop(gsr_capture *cap, bool *err);
 int gsr_capture_capture(gsr_capture *cap, AVFrame *frame);
+void gsr_capture_end(gsr_capture *cap, AVFrame *frame);
 /* Calls |gsr_capture_stop| as well */
 void gsr_capture_destroy(gsr_capture *cap, AVCodecContext *video_codec_context);
 

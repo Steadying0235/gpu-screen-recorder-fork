@@ -503,6 +503,7 @@ gsr_capture* gsr_capture_xcomposite_cuda_create(const gsr_capture_xcomposite_cud
         .tick = gsr_capture_xcomposite_cuda_tick,
         .should_stop = gsr_capture_xcomposite_cuda_should_stop,
         .capture = gsr_capture_xcomposite_cuda_capture,
+        .capture_end = NULL,
         .destroy = gsr_capture_xcomposite_cuda_destroy,
         .priv = cap_xcomp
     };

@@ -185,6 +185,26 @@ static void map_crtc_to_connector_ids(gsr_drm *drm, connector_to_crtc_map *c2crt
     drmModeFreeResources(resources);
 }
 
+static void drm_mode_cleanup_handles(int drmfd, drmModeFB2Ptr drmfb) {
+    for(int i = 0; i < 4; ++i) {
+        if(!drmfb->handles[i])
+            continue;
+
+        bool already_closed = false;
+        for(int j = 0; j < i; ++j) {
+            if(drmfb->handles[i] == drmfb->handles[j]) {
+                already_closed = true;
+                break;
+            }
+        }
+
+        if(already_closed)
+            continue;
+
+        drmCloseBufferHandle(drmfd, drmfb->handles[i]);
+    }
+}
+
 static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crtc_map *c2crtc_map) {
     int result = -1;
 
@@ -194,7 +214,7 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
 
     for(uint32_t i = 0; i < drm->planes->count_planes && response->num_fds < GSR_KMS_MAX_PLANES; ++i) {
         drmModePlanePtr plane = NULL;
-        drmModeFBPtr drmfb = NULL;
+        drmModeFB2Ptr drmfb = NULL;
 
         plane = drmModeGetPlane(drm->drmfd, drm->planes->planes[i]);
         if(!plane) {
@@ -207,8 +227,7 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
         if(!plane->fb_id)
             goto next;
 
-        // TODO: drmModeGetFB2 can't be used because it causes a vram leak when the fb_fd is sent amd/intel.. why?
-        drmfb = drmModeGetFB(drm->drmfd, plane->fb_id);
+        drmfb = drmModeGetFB2(drm->drmfd, plane->fb_id);
         if(!drmfb) {
             // Commented out for now because we get here if the cursor is moved to another monitor and we dont care about the cursor
             //response->result = KMS_RESULT_FAILED_TO_GET_PLANE;
@@ -217,23 +236,23 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
             goto next;
         }
 
-        if(!drmfb->handle) {
+        if(!drmfb->handles[0]) {
             response->result = KMS_RESULT_FAILED_TO_GET_PLANE;
             snprintf(response->err_msg, sizeof(response->err_msg), "drmfb handle is NULL");
             fprintf(stderr, "kms server error: %s\n", response->err_msg);
-            goto next;
+            goto cleanup_handles;
         }
 
         // TODO: Check if dimensions have changed by comparing width and height to previous time this was called.
         // TODO: Support other plane formats than rgb (with multiple planes, such as direct YUV420 on wayland).
 
         int fb_fd = -1;
-        const int ret = drmPrimeHandleToFD(drm->drmfd, drmfb->handle, O_RDONLY, &fb_fd);
+        const int ret = drmPrimeHandleToFD(drm->drmfd, drmfb->handles[0], O_RDONLY, &fb_fd);
         if(ret != 0 || fb_fd == -1) {
             response->result = KMS_RESULT_FAILED_TO_GET_PLANE;
             snprintf(response->err_msg, sizeof(response->err_msg), "failed to get fd from drm handle, error: %s", strerror(errno));
             fprintf(stderr, "kms server error: %s\n", response->err_msg);
-            goto next;
+            goto cleanup_handles;
         }
 
         bool is_cursor = false;
@@ -243,10 +262,11 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
         response->fds[response->num_fds].fd = fb_fd;
         response->fds[response->num_fds].width = drmfb->width;
         response->fds[response->num_fds].height = drmfb->height;
-        response->fds[response->num_fds].pitch = drmfb->pitch;
-        response->fds[response->num_fds].offset = 0;//drmfb->offsets[0];
-        // TODO?
+        response->fds[response->num_fds].pitch = drmfb->pitches[0];
+        response->fds[response->num_fds].offset = drmfb->offsets[0];
+        // TODO:
         response->fds[response->num_fds].pixel_format = DRM_FORMAT_ARGB8888;//drmfb->pixel_format;
+        // TODO:
         response->fds[response->num_fds].modifier = 0;//drmfb->modifier;
         response->fds[response->num_fds].connector_id = get_connector_by_crtc_id(c2crtc_map, plane->crtc_id);
         response->fds[response->num_fds].is_cursor = is_cursor;
@@ -264,12 +284,18 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
         }
         ++response->num_fds;
 
+        cleanup_handles:
+        drm_mode_cleanup_handles(drm->drmfd, drmfb);
+
         next:
         if(drmfb)
-            drmModeFreeFB(drmfb);
+            drmModeFreeFB2(drmfb);
         if(plane)
             drmModeFreePlane(plane);
     }
+
+    if(response->num_fds > 0)
+        response->result = KMS_RESULT_OK;
 
     if(response->result == KMS_RESULT_OK) {
         result = 0;

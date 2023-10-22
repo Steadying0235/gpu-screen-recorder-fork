@@ -547,6 +547,13 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
 
     cap_kms->params.egl->eglSwapBuffers(cap_kms->params.egl->egl_display, cap_kms->params.egl->egl_surface);
 
+    return 0;
+}
+
+static void gsr_capture_kms_vaapi_capture_end(gsr_capture *cap, AVFrame *frame) {
+    (void)frame;
+    gsr_capture_kms_vaapi *cap_kms = cap->priv;
+
     gsr_egl_cleanup_frame(cap_kms->params.egl);
 
     for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {
@@ -555,8 +562,6 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         cap_kms->kms_response.fds[i].fd = 0;
     }
     cap_kms->kms_response.num_fds = 0;
-
-    return 0;
 }
 
 static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {
@@ -647,6 +652,7 @@ gsr_capture* gsr_capture_kms_vaapi_create(const gsr_capture_kms_vaapi_params *pa
         .tick = gsr_capture_kms_vaapi_tick,
         .should_stop = gsr_capture_kms_vaapi_should_stop,
         .capture = gsr_capture_kms_vaapi_capture,
+        .capture_end = gsr_capture_kms_vaapi_capture_end,
         .destroy = gsr_capture_kms_vaapi_destroy,
         .priv = cap_kms
     };

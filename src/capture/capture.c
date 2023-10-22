@@ -42,6 +42,18 @@ int gsr_capture_capture(gsr_capture *cap, AVFrame *frame) {
     return cap->capture(cap, frame);
 }
 
+void gsr_capture_end(gsr_capture *cap, AVFrame *frame) {
+    if(!cap->started) {
+        fprintf(stderr, "gsr error: gsr_capture_end failed: the gsr capture has not been started\n");
+        return;
+    }
+
+    if(!cap->capture_end)
+        return;
+
+    cap->capture_end(cap, frame);
+}
+
 void gsr_capture_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
     cap->destroy(cap, video_codec_context);
 }

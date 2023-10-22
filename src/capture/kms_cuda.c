@@ -424,6 +424,13 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
 
     gsr_capture_kms_unload_cuda_graphics(cap_kms);
 
+    return 0;
+}
+
+static void gsr_capture_kms_cuda_capture_end(gsr_capture *cap, AVFrame *frame) {
+    (void)frame;
+    gsr_capture_kms_cuda *cap_kms = cap->priv;
+
     gsr_egl_cleanup_frame(cap_kms->params.egl);
 
     for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {
@@ -432,8 +439,6 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
         cap_kms->kms_response.fds[i].fd = 0;
     }
     cap_kms->kms_response.num_fds = 0;
-
-    return 0;
 }
 
 static void gsr_capture_kms_cuda_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {
@@ -501,6 +506,7 @@ gsr_capture* gsr_capture_kms_cuda_create(const gsr_capture_kms_cuda_params *para
         .tick = gsr_capture_kms_cuda_tick,
         .should_stop = gsr_capture_kms_cuda_should_stop,
         .capture = gsr_capture_kms_cuda_capture,
+        .capture_end = gsr_capture_kms_cuda_capture_end,
         .destroy = gsr_capture_kms_cuda_destroy,
         .priv = cap_kms
     };

@@ -253,7 +253,7 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
                 const int plane = 0;
 
                 const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
-                const uint64_t modifier = cap_kms->prime.objects[cap_kms->prime.layers[layer].object_index[plane]].drm_format_modifier;
+                //const uint64_t modifier = cap_kms->prime.objects[cap_kms->prime.layers[layer].object_index[plane]].drm_format_modifier;
 
                 const intptr_t img_attr[] = {
                     EGL_LINUX_DRM_FOURCC_EXT,       formats[i],
@@ -262,8 +262,9 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
                     EGL_DMA_BUF_PLANE0_FD_EXT,      cap_kms->prime.objects[cap_kms->prime.layers[layer].object_index[plane]].fd,
                     EGL_DMA_BUF_PLANE0_OFFSET_EXT,  cap_kms->prime.layers[layer].offset[plane],
                     EGL_DMA_BUF_PLANE0_PITCH_EXT,   cap_kms->prime.layers[layer].pitch[plane],
-                    EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier & 0xFFFFFFFFULL,
-                    EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, modifier >> 32ULL,
+                    // TODO:
+                    //EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier & 0xFFFFFFFFULL,
+                    //EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, modifier >> 32ULL,
                     EGL_NONE
                 };
 
@@ -487,8 +488,9 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         EGL_DMA_BUF_PLANE0_FD_EXT,      drm_fd->fd,
         EGL_DMA_BUF_PLANE0_OFFSET_EXT,  drm_fd->offset,
         EGL_DMA_BUF_PLANE0_PITCH_EXT,   drm_fd->pitch,
-        EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, drm_fd->modifier & 0xFFFFFFFFULL,
-        EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, drm_fd->modifier >> 32ULL,
+        // TODO:
+        //EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, drm_fd->modifier & 0xFFFFFFFFULL,
+        //EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, drm_fd->modifier >> 32ULL,
         EGL_NONE
     };
 

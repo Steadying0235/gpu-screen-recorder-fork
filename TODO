@@ -103,3 +103,5 @@ Overclocking (-oc) can overclock too much on some systems. Maybe remove the opti
 Exit if X11/Wayland killed (if drm plane dead or something?)
 
 Use SRC_W and SRC_H for screen plane instead of crtc_w and crtc_h.
+
+Make it possible to select which /dev/dri/card* to use, but that requires opengl to also use the same card. Not sure if that is possible for amd, intel and nvidia without using vulkan instead.

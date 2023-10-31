@@ -12,6 +12,7 @@
 #include <libavcodec/avcodec.h>
 #include <va/va.h>
 #include <va/va_drmcommon.h>
+#include <drm_fourcc.h>
 
 #define MAX_CONNECTOR_IDS 32
 
@@ -480,6 +481,10 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     // Error: avcodec_send_frame failed, error: Input/output error
     // Assertion pic->display_order == pic->encode_order failed at libavcodec/vaapi_encode_h265.c:765
     // kms server info: kms client shutdown, shutting down the server
+    uint64_t modifier = drm_fd->modifier;
+    if(modifier == I915_FORMAT_MOD_Y_TILED_CCS)
+        modifier = I915_FORMAT_MOD_Y_TILED;
+
     const intptr_t img_attr[] = {
         EGL_LINUX_DRM_FOURCC_EXT,       drm_fd->pixel_format,
         EGL_WIDTH,                      drm_fd->width,

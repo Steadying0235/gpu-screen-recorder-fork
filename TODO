@@ -105,3 +105,5 @@ Exit if X11/Wayland killed (if drm plane dead or something?)
 Use SRC_W and SRC_H for screen plane instead of crtc_w and crtc_h.
 
 Make it possible to select which /dev/dri/card* to use, but that requires opengl to also use the same card. Not sure if that is possible for amd, intel and nvidia without using vulkan instead.
+
+Support I915_FORMAT_MOD_Y_TILED_CCS (and other power saving modifiers, see https://trac.ffmpeg.org/ticket/8542). The only fix may be to use desktop portal for recording. This issue doesn't appear on x11 since these modifiers are not used by xorg server.

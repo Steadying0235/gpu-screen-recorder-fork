@@ -12,7 +12,6 @@
 #include <libavcodec/avcodec.h>
 #include <va/va.h>
 #include <va/va_drmcommon.h>
-#include <drm_fourcc.h>
 
 #define MAX_CONNECTOR_IDS 32
 
@@ -481,10 +480,6 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     // Error: avcodec_send_frame failed, error: Input/output error
     // Assertion pic->display_order == pic->encode_order failed at libavcodec/vaapi_encode_h265.c:765
     // kms server info: kms client shutdown, shutting down the server
-    uint64_t modifier = drm_fd->modifier;
-    if(modifier == I915_FORMAT_MOD_Y_TILED_CCS)
-        modifier = I915_FORMAT_MOD_Y_TILED;
-
     const intptr_t img_attr[] = {
         EGL_LINUX_DRM_FOURCC_EXT,       drm_fd->pixel_format,
         EGL_WIDTH,                      drm_fd->width,
@@ -492,8 +487,8 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         EGL_DMA_BUF_PLANE0_FD_EXT,      drm_fd->fd,
         EGL_DMA_BUF_PLANE0_OFFSET_EXT,  drm_fd->offset,
         EGL_DMA_BUF_PLANE0_PITCH_EXT,   drm_fd->pitch,
-        EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier & 0xFFFFFFFFULL,
-        EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, modifier >> 32ULL,
+        EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, drm_fd->modifier & 0xFFFFFFFFULL,
+        EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, drm_fd->modifier >> 32ULL,
         EGL_NONE
     };
 

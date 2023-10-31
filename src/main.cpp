@@ -1403,7 +1403,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Error: option -r has to be between 5 and 1200, was: %s\n", replay_buffer_size_secs_str);
             _exit(1);
         }
-        replay_buffer_size_secs += 5; // Add a few seconds to account of lost packets because of non-keyframe packets skipped
+        replay_buffer_size_secs += 3; // Add a few seconds to account of lost packets because of non-keyframe packets skipped
     }
 
     bool wayland = false;

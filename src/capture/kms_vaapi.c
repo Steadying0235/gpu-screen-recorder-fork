@@ -492,8 +492,8 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         EGL_DMA_BUF_PLANE0_FD_EXT,      drm_fd->fd,
         EGL_DMA_BUF_PLANE0_OFFSET_EXT,  drm_fd->offset,
         EGL_DMA_BUF_PLANE0_PITCH_EXT,   drm_fd->pitch,
-        EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, drm_fd->modifier & 0xFFFFFFFFULL,
-        EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, drm_fd->modifier >> 32ULL,
+        EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier & 0xFFFFFFFFULL,
+        EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, modifier >> 32ULL,
         EGL_NONE
     };
 

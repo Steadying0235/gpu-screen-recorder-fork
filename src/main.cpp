@@ -677,9 +677,9 @@ static void usage_full() {
     fprintf(stderr, "        The display is the display (monitor) name in xrandr and if \"screen\", \"screen-direct\" or \"screen-direct-force\" is selected then all displays are recorded.\n");
     fprintf(stderr, "        If this is \"focused\" then the currently focused window is recorded. When recording the focused window then the -s option has to be used as well.\n");
     fprintf(stderr, "        \"screen-direct\"/\"screen-direct-force\" skips one texture copy for fullscreen applications so it may lead to better performance and it works with VRR monitors\n");
-    fprintf(stderr, "        when recording fullscreen application but may break some applications, such as mpv in fullscreen mode. Direct mode doesn't capture cursor either.\n");
-    fprintf(stderr, "        \"screen-direct-force\" is not recommended unless you use a VRR monitor because there might be driver issues that cause the video to stutter or record a black screen.\n");
-    fprintf(stderr, "        On AMD/Intel, capturing a monitor might have better performance than recording a single window.\n");
+    fprintf(stderr, "        when recording fullscreen application but may break some applications, such as mpv in fullscreen mode or might cause games to freeze/crash because of nvidia driver issues.\n");
+    fprintf(stderr, "        Direct mode doesn't capture cursor either.\n");
+    fprintf(stderr, "        \"screen-direct-force\" is not recommended unless you use a VRR monitor and you are aware that using this option can cause games to freeze/crash or other issues.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -c    Container format for output file, for example mp4, or flv. Only required if no output file is specified or if recording in replay buffer mode.\n");
     fprintf(stderr, "        If an output file is specified and -c is not used then the container format is determined from the output filename extension.\n");

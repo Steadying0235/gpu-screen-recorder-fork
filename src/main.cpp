@@ -1332,7 +1332,9 @@ int main(int argc, char **argv) {
     }
 
     const Arg &audio_input_arg = args["-a"];
-    const std::vector<AudioInput> audio_inputs = get_pulseaudio_inputs();
+    std::vector<AudioInput> audio_inputs;
+    if(!audio_input_arg.values.empty())
+        audio_inputs = get_pulseaudio_inputs();
     std::vector<MergedAudioInputs> requested_audio_inputs;
 
     // Manually check if the audio inputs we give exist. This is only needed for pipewire, not pulseaudio.

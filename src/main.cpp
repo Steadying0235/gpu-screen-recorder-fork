@@ -67,7 +67,8 @@ enum class VideoQuality {
 
 enum class VideoCodec {
     H264,
-    H265
+    H265,
+    AV1
 };
 
 enum class AudioCodec {
@@ -501,6 +502,24 @@ static const AVCodec* find_h265_encoder(gsr_gpu_vendor vendor, const char *card_
     return checked_success ? codec : nullptr;
 }
 
+static const AVCodec* find_av1_encoder(gsr_gpu_vendor vendor, const char *card_path) {
+    const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "av1_nvenc" : "av1_vaapi");
+    if(!codec)
+        codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "nvenc_av1" : "vaapi_av1");
+
+    if(!codec)
+        return nullptr;
+
+    static bool checked = false;
+    static bool checked_success = true;
+    if(!checked) {
+        checked = true;
+        if(!check_if_codec_valid_for_hardware(codec, vendor, card_path))
+            checked_success = false;
+    }
+    return checked_success ? codec : nullptr;
+}
+
 static AVFrame* open_audio(AVCodecContext *audio_codec_context) {
     AVDictionary *options = nullptr;
     av_dict_set(&options, "strict", "experimental", 0);
@@ -620,6 +639,15 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
                     av_dict_set(&options, "profile", "high444p", 0);
                     break;
             }
+        } else if(codec_context->codec_id == AV_CODEC_ID_AV1) {
+            switch(pixel_format) {
+                case PixelFormat::YUV420:
+                    av_dict_set(&options, "rgb_mode", "yuv420", 0);
+                    break;
+                case PixelFormat::YUV444:
+                    av_dict_set(&options, "rgb_mode", "yuv444", 0);
+                    break;
+            }
         } else {
             //av_dict_set(&options, "profile", "main10", 0);
             //av_dict_set(&options, "pix_fmt", "yuv420p16le", 0);
@@ -647,6 +675,10 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
         if(codec_context->codec_id == AV_CODEC_ID_H264) {
             av_dict_set(&options, "profile", "high", 0);
             av_dict_set_int(&options, "quality", 7, 0);
+        } else if(codec_context->codec_id == AV_CODEC_ID_AV1) {
+            av_dict_set(&options, "profile", "main", 0); // TODO: use professional instead?
+            av_dict_set(&options, "tier", "main", 0);
+            av_dict_set_int(&options, "quality", 7, 0);
         } else {
             av_dict_set(&options, "profile", "main", 0);
         }
@@ -666,7 +698,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 }
 
 static void usage_header() {
-    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265] [-ac aac|opus|flac] [-oc yes|no] [-fm cfr|vfr] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no]\n");
+    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265|av1] [-ac aac|opus|flac] [-oc yes|no] [-fm cfr|vfr] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no]\n");
 }
 
 static void usage_full() {
@@ -683,7 +715,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -c    Container format for output file, for example mp4, or flv. Only required if no output file is specified or if recording in replay buffer mode.\n");
     fprintf(stderr, "        If an output file is specified and -c is not used then the container format is determined from the output filename extension.\n");
-    fprintf(stderr, "        Only containers that support h264 or hevc are supported, which means that only mp4, mkv, flv (and some others) are supported.\n");
+    fprintf(stderr, "        Only containers that support h264, hevc or av1 are supported, which means that only mp4, mkv, flv (and some others) are supported.\n");
     fprintf(stderr, "        WebM is not supported yet.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -s    The size (area) to record at in the format WxH, for example 1920x1080. This option is only supported (and required) when -w is \"focused\".\n");
@@ -702,7 +734,7 @@ static void usage_full() {
     fprintf(stderr, "        and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature.\n");
     fprintf(stderr, "        This option has be between 5 and 1200. Note that the replay buffer size will not always be precise, because of keyframes. Optional, disabled by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264' or 'h265'. Defaults to 'auto' which defaults to 'h265' unless recording at fps higher than 60. Defaults to 'h264' on intel.\n");
+    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'h265', 'av1'. Defaults to 'auto' which defaults to 'h265' unless recording at fps higher than 60. Defaults to 'h264' on intel.\n");
     fprintf(stderr, "        Forcefully set to 'h264' if -c is 'flv'.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'.\n");
@@ -1248,8 +1280,10 @@ int main(int argc, char **argv) {
         video_codec = VideoCodec::H264;
     } else if(strcmp(video_codec_to_use, "h265") == 0) {
         video_codec = VideoCodec::H265;
+    } else if(strcmp(video_codec_to_use, "av1") == 0) {
+        video_codec = VideoCodec::AV1;
     } else if(strcmp(video_codec_to_use, "auto") != 0) {
-        fprintf(stderr, "Error: -k should either be either 'auto', 'h264' or 'h265', got: '%s'\n", video_codec_to_use);
+        fprintf(stderr, "Error: -k should either be either 'auto', 'h264', 'h265' or 'av1', got: '%s'\n", video_codec_to_use);
         usage();
     }
 
@@ -1753,7 +1787,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    //bool use_hevc = strcmp(window_str, "screen") == 0 || strcmp(window_str, "screen-direct") == 0;
+    // TODO: Allow hevc, vp9 and av1 in (enhanced) flv (supported since ffmpeg 6.1)
     const bool is_flv = strcmp(file_extension.c_str(), "flv") == 0;
     if(video_codec != VideoCodec::H264 && is_flv) {
         video_codec_to_use = "h264";
@@ -1768,6 +1802,9 @@ int main(int argc, char **argv) {
             break;
         case VideoCodec::H265:
             video_codec_f = find_h265_encoder(gpu_inf.vendor, card_path);
+            break;
+        case VideoCodec::AV1:
+            video_codec_f = find_av1_encoder(gpu_inf.vendor, card_path);
             break;
     }
 
@@ -1787,16 +1824,38 @@ int main(int argc, char **argv) {
                 video_codec_f = find_h264_encoder(gpu_inf.vendor, card_path);
                 break;
             }
+            case VideoCodec::AV1: {
+                fprintf(stderr, "Warning: selected video codec av1 is not supported, trying h264 instead\n");
+                video_codec_to_use = "h264";
+                video_codec = VideoCodec::H264;
+                video_codec_f = find_h264_encoder(gpu_inf.vendor, card_path);
+                break;
+            }
         }
     }
 
     if(!video_codec_f) {
-        const char *video_codec_name = video_codec == VideoCodec::H264 ? "h264" : "h265";
+        const char *video_codec_name = "";
+        switch(video_codec) {
+            case VideoCodec::H264: {
+                video_codec_name = "h265";
+                break;
+            }
+            case VideoCodec::H265: {
+                video_codec_name = "h265";
+                break;
+            }
+            case VideoCodec::AV1: {
+                video_codec_name = "av1";
+                break;
+            }
+        }
+
         fprintf(stderr, "Error: your gpu does not support '%s' video codec. If you are sure that your gpu does support '%s' video encoding and you are using an AMD/Intel GPU,\n"
             "  then it's possible that your distro has disabled hardware accelerated video encoding for '%s' video codec.\n"
             "  This may be the case on corporate distros such as Manjaro.\n"
-            "  You can test this by running 'vainfo | grep VAEntrypointEncSlice' to see if it matches any H264/HEVC profile. vainfo is part of libva-utils.\n"
-            "  On such distros, you need to manually install mesa from source to enable H264/HEVC hardware acceleration, or use a more user friendly distro.\n", video_codec_name, video_codec_name, video_codec_name);
+            "  You can test this by running 'vainfo | grep VAEntrypointEncSlice' to see if it matches any H264/HEVC/AV1 profile. vainfo is part of libva-utils.\n"
+            "  On such distros, you need to manually install mesa from source to enable H264/HEVC/AV1 hardware acceleration, or use a more user friendly distro.\n", video_codec_name, video_codec_name, video_codec_name);
         _exit(2);
     }
 

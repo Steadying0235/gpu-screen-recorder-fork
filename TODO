@@ -54,7 +54,7 @@ Intel is a bit weird with monitor capture and multiple monitors. If one of the m
     Is that only the case when the primary monitor is rotated? Also the primary monitor becomes position 0, 0 so crtc (x11 randr) position doesn't match the drm pos. Maybe get monitor position and size from drm instead.
     How about if multiple monitors are rotated?
 
-Support vp8/vp9/av1. This is especially important on amd which on some distros (such as Manjaro) where hardware accelerated h264/hevc is disabled in the mesa package.
+Support vp8/vp9. This is especially important on amd which on some distros (such as Manjaro) where hardware accelerated h264/hevc is disabled in the mesa package.
 
 Support screen (all monitors) capture on amd/intel when no combined plane is found.
 Use separate plane (which has offset and pitch) from combined plane instead of the combined plane.
@@ -96,8 +96,6 @@ Remove follow focused option.
 
 Fix kms capture on 10-bit setup (both x11 and wayland). It may already work automatically on amd/intel, but on nvidia the color conversion shader needs to be used to automatically map 10-bit to 8-bit.
 
-Test vaapi av1 encoding (av1_vaapi) (which was recently added to ffmpeg master).
-
 Overclocking (-oc) can overclock too much on some systems. Maybe remove the option?
 
 Exit if X11/Wayland killed (if drm plane dead or something?)
@@ -107,3 +105,5 @@ Use SRC_W and SRC_H for screen plane instead of crtc_w and crtc_h.
 Make it possible to select which /dev/dri/card* to use, but that requires opengl to also use the same card. Not sure if that is possible for amd, intel and nvidia without using vulkan instead.
 
 Support I915_FORMAT_MOD_Y_TILED_CCS (and other power saving modifiers, see https://trac.ffmpeg.org/ticket/8542). The only fix may be to use desktop portal for recording. This issue doesn't appear on x11 since these modifiers are not used by xorg server.
+
+Test if p2 state can be worked around by using pure nvenc api and overwriting cuInit/cuCtxCreate* to not do anything. Cuda might be loaded when using nvenc but it might not be used, with certain record options? (such as h264 p5).

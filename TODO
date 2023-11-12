@@ -107,3 +107,4 @@ Make it possible to select which /dev/dri/card* to use, but that requires opengl
 Support I915_FORMAT_MOD_Y_TILED_CCS (and other power saving modifiers, see https://trac.ffmpeg.org/ticket/8542). The only fix may be to use desktop portal for recording. This issue doesn't appear on x11 since these modifiers are not used by xorg server.
 
 Test if p2 state can be worked around by using pure nvenc api and overwriting cuInit/cuCtxCreate* to not do anything. Cuda might be loaded when using nvenc but it might not be used, with certain record options? (such as h264 p5).
+    nvenc uses cuda when using b frames and rgb->yuv conversion, so convert the image ourselves instead.

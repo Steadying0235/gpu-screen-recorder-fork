@@ -4,9 +4,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define GSR_KMS_PROTOCOL_VERSION 1
 #define GSR_KMS_MAX_PLANES 32
 
 typedef enum {
+    KMS_REQUEST_TYPE_REPLACE_CONNECTION,
     KMS_REQUEST_TYPE_GET_KMS
 } gsr_kms_request_type;
 
@@ -19,7 +21,9 @@ typedef enum {
 } gsr_kms_result;
 
 typedef struct {
-    int type; /* gsr_kms_request_type */
+    uint32_t version; /* GSR_KMS_PROTOCOL_VERSION */
+    int type;         /* gsr_kms_request_type */
+    int new_connection_fd;
 } gsr_kms_request;
 
 typedef struct {
@@ -40,7 +44,8 @@ typedef struct {
 } gsr_kms_response_fd;
 
 typedef struct {
-    int result; /* gsr_kms_result */
+    uint32_t version; /* GSR_KMS_PROTOCOL_VERSION */
+    int result;       /* gsr_kms_result */
     char err_msg[128];
     gsr_kms_response_fd fds[GSR_KMS_MAX_PLANES];
     int num_fds;

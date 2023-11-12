@@ -7,9 +7,10 @@
 
 typedef struct {
     pid_t kms_server_pid;
-    int socket_fd;
-    int client_fd;
-    char socket_path[PATH_MAX];
+    int initial_socket_fd;
+    int initial_client_fd;
+    char initial_socket_path[PATH_MAX];
+    int socket_pair[2];
 } gsr_kms_client;
 
 /* |card_path| should be a path to card, for example /dev/dri/card0 */

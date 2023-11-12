@@ -408,6 +408,8 @@ int main(int argc, char **argv) {
 
     for(;;) {
         gsr_kms_request request;
+        request.version = 0;
+        request.type = -1;
         struct iovec iov;
         iov.iov_base = &request;
         iov.iov_len = sizeof(request);
@@ -431,9 +433,42 @@ int main(int argc, char **argv) {
             continue;
         }
 
+        if(request.version != GSR_KMS_PROTOCOL_VERSION) {
+            fprintf(stderr, "kms server error: expected gpu screen recorder protocol version to be %u, but it's %u\n", GSR_KMS_PROTOCOL_VERSION, request.version);
+            /*
+            if(request.new_connection_fd > 0)
+                close(request.new_connection_fd);
+            */
+            continue;
+        }
+
         switch(request.type) {
+            case KMS_REQUEST_TYPE_REPLACE_CONNECTION: {
+                gsr_kms_response response;
+                response.version = GSR_KMS_PROTOCOL_VERSION;
+                response.num_fds = 0;
+
+                if(request.new_connection_fd > 0) {
+                    if(socket_fd > 0)
+                        close(socket_fd);
+                    socket_fd = request.new_connection_fd;
+
+                    response.result = KMS_RESULT_OK;
+                    if(send_msg_to_client(socket_fd, &response) == -1)
+                        fprintf(stderr, "kms server error: failed to respond to client KMS_REQUEST_TYPE_REPLACE_CONNECTION request\n");
+                } else {
+                    response.result = KMS_RESULT_INVALID_REQUEST;
+                    snprintf(response.err_msg, sizeof(response.err_msg), "received invalid connection fd");
+                    fprintf(stderr, "kms server error: %s\n", response.err_msg);
+                    if(send_msg_to_client(socket_fd, &response) == -1)
+                        fprintf(stderr, "kms server error: failed to respond to client request\n");
+                }
+
+                break;
+            }
             case KMS_REQUEST_TYPE_GET_KMS: {
                 gsr_kms_response response;
+                response.version = GSR_KMS_PROTOCOL_VERSION;
                 response.num_fds = 0;
                 
                 if(kms_get_fb(&drm, &response, &c2crtc_map) == 0) {
@@ -452,13 +487,15 @@ int main(int argc, char **argv) {
             }
             default: {
                 gsr_kms_response response;
+                response.version = GSR_KMS_PROTOCOL_VERSION;
                 response.result = KMS_RESULT_INVALID_REQUEST;
+                response.num_fds = 0;
+
                 snprintf(response.err_msg, sizeof(response.err_msg), "invalid request type %d, expected %d (%s)", request.type, KMS_REQUEST_TYPE_GET_KMS, "KMS_REQUEST_TYPE_GET_KMS");
                 fprintf(stderr, "kms server error: %s\n", response.err_msg);
-                if(send_msg_to_client(socket_fd, &response) == -1) {
+                if(send_msg_to_client(socket_fd, &response) == -1)
                     fprintf(stderr, "kms server error: failed to respond to client request\n");
-                    break;
-                }
+
                 break;
             }
         }

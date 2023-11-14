@@ -376,6 +376,23 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     codec_context->bit_rate = 0;
     #endif
 
+    if(vendor != GSR_GPU_VENDOR_NVIDIA) {
+        switch(video_quality) {
+            case VideoQuality::MEDIUM:
+                codec_context->global_quality = 180;
+                break;
+            case VideoQuality::HIGH:
+                codec_context->global_quality = 120;
+                break;
+            case VideoQuality::VERY_HIGH:
+                codec_context->global_quality = 100;
+                break;
+            case VideoQuality::ULTRA:
+                codec_context->global_quality = 70;
+                break;
+        }
+    }
+
     av_opt_set_int(codec_context->priv_data, "b_ref_mode", 0, 0);
     //av_opt_set_int(codec_context->priv_data, "cbr", true, 0);
 
@@ -572,7 +589,22 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
             }
         }
 
-        if(very_old_gpu) {
+        if(codec_context->codec_id == AV_CODEC_ID_AV1) {
+            switch(video_quality) {
+                case VideoQuality::MEDIUM:
+                    av_dict_set_int(&options, "qp", 43, 0);
+                    break;
+                case VideoQuality::HIGH:
+                    av_dict_set_int(&options, "qp", 39, 0);
+                    break;
+                case VideoQuality::VERY_HIGH:
+                    av_dict_set_int(&options, "qp", 34, 0);
+                    break;
+                case VideoQuality::ULTRA:
+                    av_dict_set_int(&options, "qp", 28, 0);
+                    break;
+            }
+        } else if(very_old_gpu || codec_context->codec_id == AV_CODEC_ID_H264) {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
                     av_dict_set_int(&options, "qp", 37, 0);
@@ -653,19 +685,38 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
             //av_dict_set(&options, "pix_fmt", "yuv420p16le", 0);
         }
     } else {
-        switch(video_quality) {
-            case VideoQuality::MEDIUM:
-                av_dict_set_int(&options, "qp", 32, 0);
-                break;
-            case VideoQuality::HIGH:
-                av_dict_set_int(&options, "qp", 28, 0);
-                break;
-            case VideoQuality::VERY_HIGH:
-                av_dict_set_int(&options, "qp", 24, 0);
-                break;
-            case VideoQuality::ULTRA:
-                av_dict_set_int(&options, "qp", 18, 0);
-                break;
+        if(codec_context->codec_id == AV_CODEC_ID_AV1) {
+            // Using global_quality option
+        } else if(codec_context->codec_id == AV_CODEC_ID_H264) {
+            switch(video_quality) {
+                case VideoQuality::MEDIUM:
+                    av_dict_set_int(&options, "qp", 32, 0);
+                    break;
+                case VideoQuality::HIGH:
+                    av_dict_set_int(&options, "qp", 28, 0);
+                    break;
+                case VideoQuality::VERY_HIGH:
+                    av_dict_set_int(&options, "qp", 24, 0);
+                    break;
+                case VideoQuality::ULTRA:
+                    av_dict_set_int(&options, "qp", 18, 0);
+                    break;
+            }
+        } else {
+            switch(video_quality) {
+                case VideoQuality::MEDIUM:
+                    av_dict_set_int(&options, "qp", 34, 0);
+                    break;
+                case VideoQuality::HIGH:
+                    av_dict_set_int(&options, "qp", 30, 0);
+                    break;
+                case VideoQuality::VERY_HIGH:
+                    av_dict_set_int(&options, "qp", 26, 0);
+                    break;
+                case VideoQuality::ULTRA:
+                    av_dict_set_int(&options, "qp", 20, 0);
+                    break;
+            }
         }
 
         // TODO: More quality options
@@ -678,7 +729,6 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
         } else if(codec_context->codec_id == AV_CODEC_ID_AV1) {
             av_dict_set(&options, "profile", "main", 0); // TODO: use professional instead?
             av_dict_set(&options, "tier", "main", 0);
-            av_dict_set_int(&options, "quality", 7, 0);
         } else {
             av_dict_set(&options, "profile", "main", 0);
         }

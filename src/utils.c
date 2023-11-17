@@ -137,16 +137,16 @@ static void for_each_active_monitor_output_drm(const char *drm_card_path, active
             if(!connector)
                 continue;
 
-            if(connector->connection != DRM_MODE_CONNECTED) {
-                drmModeFreeConnector(connector);
-                continue;
-            }
-
             drm_connector_type_count *connector_type = drm_connector_types_get_index(type_counts, &num_type_counts, connector->connector_type);
             const char *connection_name = drmModeGetConnectorTypeName(connector->connector_type);
             const int connection_name_len = strlen(connection_name);
             if(connector_type)
                 ++connector_type->count;
+
+            if(connector->connection != DRM_MODE_CONNECTED) {
+                drmModeFreeConnector(connector);
+                continue;
+            }
 
             uint64_t crtc_id = 0;
             connector_get_property_by_name(fd, connector, "CRTC_ID", &crtc_id);

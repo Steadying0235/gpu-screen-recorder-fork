@@ -52,6 +52,16 @@ static void monitor_output_callback_print(const gsr_monitor *monitor, void *user
     fprintf(stderr, "    \"%.*s\"    (%dx%d+%d+%d)\n", monitor->name_len, monitor->name, monitor->size.x, monitor->size.y, monitor->pos.x, monitor->pos.y);
 }
 
+typedef struct {
+    const char *output_name;
+} FirstOutputCallback;
+
+static void get_first_output(const gsr_monitor *monitor, void *userdata) {
+    FirstOutputCallback *first_output = (FirstOutputCallback*)userdata;
+    if(!first_output->output_name)
+        first_output->output_name = strndup(monitor->name, monitor->name_len + 1);
+}
+
 static char* av_error_to_string(int err) {
     if(av_strerror(err, av_error_buffer, sizeof(av_error_buffer)) < 0)
         strcpy(av_error_buffer, "Unknown error");
@@ -1557,7 +1567,7 @@ int main(int argc, char **argv) {
     }
 
     const char *screen_region = args["-s"].value();
-    const char *window_str = args["-w"].value();
+    const char *window_str = strdup(args["-w"].value());
 
     if(screen_region && strcmp(window_str, "focused") != 0) {
         fprintf(stderr, "Error: option -s is only available when using -w focused\n");
@@ -1593,10 +1603,27 @@ int main(int argc, char **argv) {
         follow_focused = true;
     } else if(contains_non_hex_number(window_str)) {
         if(wayland || gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA) {
+            if(strcmp(window_str, "screen") == 0) {
+                FirstOutputCallback first_output;
+                first_output.output_name = NULL;
+                if(gsr_egl_supports_wayland_capture(&egl)) {
+                    for_each_active_monitor_output(&egl, GSR_CONNECTION_WAYLAND, get_first_output, &first_output);
+                } else {
+                    for_each_active_monitor_output(card_path, GSR_CONNECTION_DRM, get_first_output, &first_output);
+                }
+
+                if(first_output.output_name) {
+                    window_str = first_output.output_name;
+                } else {
+                    fprintf(stderr, "Error: no available output found\n");
+                }
+            }
+
             if(gsr_egl_supports_wayland_capture(&egl)) {
                 gsr_monitor gmon;
                 if(!get_monitor_by_name(&egl, GSR_CONNECTION_WAYLAND, window_str, &gmon)) {
                     fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
+                    fprintf(stderr, "    \"screen\"\n");
                     for_each_active_monitor_output(&egl, GSR_CONNECTION_WAYLAND, monitor_output_callback_print, NULL);
                     _exit(1);
                 }
@@ -1604,6 +1631,7 @@ int main(int argc, char **argv) {
                 gsr_monitor gmon;
                 if(!get_monitor_by_name(card_path, GSR_CONNECTION_DRM, window_str, &gmon)) {
                     fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
+                    fprintf(stderr, "    \"screen\"\n");
                     for_each_active_monitor_output(card_path, GSR_CONNECTION_DRM, monitor_output_callback_print, NULL);
                     _exit(1);
                 }
@@ -2357,6 +2385,7 @@ int main(int argc, char **argv) {
         //XCloseDisplay(dpy);
     }
 
+    free((void*)window_str);
     free(empty_audio);
     // We do an _exit here because cuda uses at_exit to do _something_ that causes the program to freeze,
     // but only on some nvidia driver versions on some gpus (RTX?), and _exit exits the program without calling

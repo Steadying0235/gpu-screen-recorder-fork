@@ -56,7 +56,7 @@ Intel is a bit weird with monitor capture and multiple monitors. If one of the m
 
 Support vp8/vp9. This is especially important on amd which on some distros (such as Manjaro) where hardware accelerated h264/hevc is disabled in the mesa package.
 
-Support screen (all monitors) capture on amd/intel when no combined plane is found.
+Support screen (all monitors) capture on amd/intel and nvidia wayland when no combined plane is found. Right now screen just takes the first output.
 Use separate plane (which has offset and pitch) from combined plane instead of the combined plane.
 
 Both twitch and youtube support variable bitrate but twitch recommends constant bitrate to reduce stream buffering/dropped frames when going from low motion to high motion: https://help.twitch.tv/s/article/broadcasting-guidelines?language=en_US. Info for youtube: https://support.google.com/youtube/answer/2853702?hl=en#zippy=%2Cvariable-bitrate-with-custom-stream-keys-in-live-control-room%2Ck-p-fps%2Cp-fps.

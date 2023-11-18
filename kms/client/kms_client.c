@@ -15,7 +15,7 @@
 #define GSR_SOCKET_PAIR_LOCAL  0
 #define GSR_SOCKET_PAIR_REMOTE 1
 
-static void cleanup_initial_socket(gsr_kms_client *self, bool kill_server);
+static void cleanup_socket(gsr_kms_client *self, bool kill_server);
 static int gsr_kms_client_replace_connection(gsr_kms_client *self);
 
 static bool generate_random_characters(char *buffer, int buffer_size, const char *alphabet, size_t alphabet_size) {
@@ -301,7 +301,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     if(gsr_kms_client_replace_connection(self) != 0)
         goto err;
 
-    cleanup_initial_socket(self, false);
+    cleanup_socket(self, false);
     fprintf(stderr, "gsr info: using socketpair\n");
 
     return 0;
@@ -311,7 +311,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     return result;
 }
 
-void cleanup_initial_socket(gsr_kms_client *self, bool kill_server) {
+void cleanup_socket(gsr_kms_client *self, bool kill_server) {
     if(self->initial_client_fd != -1) {
         close(self->initial_client_fd);
         self->initial_client_fd = -1;
@@ -322,8 +322,19 @@ void cleanup_initial_socket(gsr_kms_client *self, bool kill_server) {
         self->initial_socket_fd = -1;
     }
 
+    if(kill_server) {
+        for(int i = 0; i < 2; ++i) {
+            if(self->socket_pair[i] > 0) {
+                close(self->socket_pair[i]);
+                self->socket_pair[i] = -1;
+            }
+        }
+    }
+
     if(kill_server && self->kms_server_pid != -1) {
-        kill(self->kms_server_pid, SIGKILL);
+        kill(self->kms_server_pid, SIGINT);
+        int status;
+        waitpid(self->kms_server_pid, &status, 0);
         self->kms_server_pid = -1;
     }
 
@@ -334,14 +345,7 @@ void cleanup_initial_socket(gsr_kms_client *self, bool kill_server) {
 }
 
 void gsr_kms_client_deinit(gsr_kms_client *self) {
-    cleanup_initial_socket(self, true);
-
-    for(int i = 0; i < 2; ++i) {
-        if(self->socket_pair[i] > 0) {
-            close(self->socket_pair[i]);
-            self->socket_pair[i] = -1;
-        }
-    }
+    cleanup_socket(self, true);
 }
 
 int gsr_kms_client_replace_connection(gsr_kms_client *self) {

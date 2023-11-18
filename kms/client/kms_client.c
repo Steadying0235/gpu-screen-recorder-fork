@@ -332,9 +332,7 @@ void cleanup_socket(gsr_kms_client *self, bool kill_server) {
     }
 
     if(kill_server && self->kms_server_pid != -1) {
-        kill(self->kms_server_pid, SIGINT);
-        int status;
-        waitpid(self->kms_server_pid, &status, 0);
+        kill(self->kms_server_pid, SIGKILL);
         self->kms_server_pid = -1;
     }
 

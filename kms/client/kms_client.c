@@ -53,11 +53,29 @@ static int send_msg_to_server(int server_fd, gsr_kms_request *request) {
     iov.iov_base = request;
     iov.iov_len = sizeof(*request);
 
-    struct msghdr request_message = {0};
-    request_message.msg_iov = &iov;
-    request_message.msg_iovlen = 1;
+    struct msghdr response_message = {0};
+    response_message.msg_iov = &iov;
+    response_message.msg_iovlen = 1;
 
-    return sendmsg(server_fd, &request_message, 0);
+    char cmsgbuf[CMSG_SPACE(sizeof(int) * 1)];
+    memset(cmsgbuf, 0, sizeof(cmsgbuf));
+
+    if(request->new_connection_fd > 0) {
+        response_message.msg_control = cmsgbuf;
+        response_message.msg_controllen = sizeof(cmsgbuf);
+
+        struct cmsghdr *cmsg = CMSG_FIRSTHDR(&response_message);
+        cmsg->cmsg_level = SOL_SOCKET;
+        cmsg->cmsg_type = SCM_RIGHTS;
+        cmsg->cmsg_len = CMSG_LEN(sizeof(int) * 1);
+
+        int *fds = (int*)CMSG_DATA(cmsg);
+        fds[0] = request->new_connection_fd;
+
+        response_message.msg_controllen = cmsg->cmsg_len;
+    }
+
+    return sendmsg(server_fd, &response_message, 0);
 }
 
 static int recv_msg_from_server(int server_fd, gsr_kms_response *response) {

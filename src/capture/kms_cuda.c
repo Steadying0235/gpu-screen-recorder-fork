@@ -1,6 +1,7 @@
 #include "../../include/capture/kms_cuda.h"
 #include "../../kms/client/kms_client.h"
 #include "../../include/utils.h"
+#include "../../include/color_conversion.h"
 #include "../../include/cuda.h"
 #include <stdlib.h>
 #include <stdio.h>
@@ -10,6 +11,13 @@
 #include <libavutil/hwcontext_cuda.h>
 #include <libavutil/frame.h>
 #include <libavcodec/avcodec.h>
+
+/*
+    TODO: Use dummy pool for cuda buffer so we can create our own cuda buffers from pixel buffer objects
+    and copy the input textures to the pixel buffer objects. Use sw_format NV12 as well. Then this is
+    similar to kms_vaapi. This allows us to remove one extra texture and texture copy.
+*/
+/* TODO: Support cursor plane capture when nvidia supports cursor plane */
 
 #define MAX_CONNECTOR_IDS 32
 
@@ -39,6 +47,10 @@ typedef struct {
 
     CUgraphicsResource cuda_graphics_resource;
     CUarray mapped_array;
+
+    unsigned int input_texture;
+    unsigned int target_texture;
+    gsr_color_conversion color_conversion;
 } gsr_capture_kms_cuda;
 
 static int max_int(int a, int b) {
@@ -183,15 +195,51 @@ static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_co
     return 0;
 }
 
-static uint32_t fourcc(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
-    return (d << 24) | (c << 16) | (b << 8) | a;
+static unsigned int gl_create_texture(gsr_capture_kms_cuda *cap_kms, int width, int height) {
+    unsigned int texture_id = 0;
+    cap_kms->params.egl->glGenTextures(1, &texture_id);
+    cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, texture_id);
+    cap_kms->params.egl->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+
+    cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+    cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
+    return texture_id;
+}
+
+static bool cuda_register_opengl_texture(gsr_capture_kms_cuda *cap_kms) {
+    CUresult res;
+    CUcontext old_ctx;
+    res = cap_kms->cuda.cuCtxPushCurrent_v2(cap_kms->cuda.cu_ctx);
+    // TODO: Use cuGraphicsEGLRegisterImage instead with the window egl image (dont use window_texture).
+    // That removes the need for an extra texture and texture copy
+    res = cap_kms->cuda.cuGraphicsGLRegisterImage(
+        &cap_kms->cuda_graphics_resource, cap_kms->target_texture, GL_TEXTURE_2D,
+        CU_GRAPHICS_REGISTER_FLAGS_READ_ONLY);
+    if (res != CUDA_SUCCESS) {
+        const char *err_str = "unknown";
+        cap_kms->cuda.cuGetErrorString(res, &err_str);
+        fprintf(stderr, "gsr error: cuda_register_opengl_texture: cuGraphicsGLRegisterImage failed, error: %s, texture " "id: %u\n", err_str, cap_kms->target_texture);
+        res = cap_kms->cuda.cuCtxPopCurrent_v2(&old_ctx);
+        return false;
+    }
+
+    res = cap_kms->cuda.cuGraphicsResourceSetMapFlags(cap_kms->cuda_graphics_resource, CU_GRAPHICS_MAP_RESOURCE_FLAGS_READ_ONLY);
+    res = cap_kms->cuda.cuGraphicsMapResources(1, &cap_kms->cuda_graphics_resource, 0);
+
+    res = cap_kms->cuda.cuGraphicsSubResourceGetMappedArray(&cap_kms->mapped_array, cap_kms->cuda_graphics_resource, 0, 0);
+    res = cap_kms->cuda.cuCtxPopCurrent_v2(&old_ctx);
+    return true;
 }
 
 static void gsr_capture_kms_cuda_tick(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame **frame) {
     gsr_capture_kms_cuda *cap_kms = cap->priv;
 
     // TODO:
-    //cap_kms->params.egl->glClear(GL_COLOR_BUFFER_BIT);
+    cap_kms->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
     if(!cap_kms->created_hw_frame) {
         cap_kms->created_hw_frame = true;
@@ -215,6 +263,43 @@ static void gsr_capture_kms_cuda_tick(gsr_capture *cap, AVCodecContext *video_co
 
         if(av_hwframe_get_buffer(video_codec_context->hw_frames_ctx, *frame, 0) < 0) {
             fprintf(stderr, "gsr error: gsr_capture_kms_cuda_tick: av_hwframe_get_buffer failed\n");
+            cap_kms->should_stop = true;
+            cap_kms->stop_is_error = true;
+            return;
+        }
+
+        cap_kms->params.egl->glGenTextures(1, &cap_kms->input_texture);
+        cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, cap_kms->input_texture);
+        cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
+
+        cap_kms->target_texture = gl_create_texture(cap_kms, video_codec_context->width, video_codec_context->height);
+        if(cap_kms->target_texture == 0) {
+            fprintf(stderr, "gsr error: gsr_capture_kms_cuda_tick: failed to create opengl texture\n");
+            cap_kms->should_stop = true;
+            cap_kms->stop_is_error = true;
+            return;
+        }
+
+        if(!cuda_register_opengl_texture(cap_kms)) {
+            cap_kms->should_stop = true;
+            cap_kms->stop_is_error = true;
+            return;
+        }
+
+        gsr_color_conversion_params color_conversion_params = {0};
+        color_conversion_params.egl = cap_kms->params.egl;
+        color_conversion_params.source_color = GSR_SOURCE_COLOR_RGB;
+        color_conversion_params.destination_color = GSR_DESTINATION_COLOR_BGR;
+
+        color_conversion_params.destination_textures[0] = cap_kms->target_texture;
+        color_conversion_params.num_destination_textures = 1;
+
+        if(gsr_color_conversion_init(&cap_kms->color_conversion, &color_conversion_params) != 0) {
+            fprintf(stderr, "gsr error: gsr_capture_kms_cuda_tick: failed to create color conversion\n");
             cap_kms->should_stop = true;
             cap_kms->stop_is_error = true;
             return;
@@ -277,25 +362,6 @@ static gsr_kms_response_fd* find_largest_drm(gsr_kms_response *kms_response) {
     return largest_drm;
 }
 
-static bool gsr_capture_kms_register_egl_image_in_cuda(gsr_capture_kms_cuda *cap_kms, EGLImage image) {
-    CUcontext old_ctx;
-    CUresult res = cap_kms->cuda.cuCtxPushCurrent_v2(cap_kms->cuda.cu_ctx);
-    res = cap_kms->cuda.cuGraphicsEGLRegisterImage(&cap_kms->cuda_graphics_resource, image, CU_GRAPHICS_REGISTER_FLAGS_READ_ONLY);
-    if(res != CUDA_SUCCESS) {
-        const char *err_str = "unknown";
-        cap_kms->cuda.cuGetErrorString(res, &err_str);
-        fprintf(stderr, "gsr error: cuda_register_egl_image: cuGraphicsEGLRegisterImage failed, error: %s (%d), egl image %p\n",
-                err_str, res, image);
-        res = cap_kms->cuda.cuCtxPopCurrent_v2(&old_ctx);
-        return false;
-    }
-
-    res = cap_kms->cuda.cuGraphicsResourceSetMapFlags(cap_kms->cuda_graphics_resource, CU_GRAPHICS_MAP_RESOURCE_FLAGS_READ_ONLY);
-    res = cap_kms->cuda.cuGraphicsSubResourceGetMappedArray(&cap_kms->mapped_array, cap_kms->cuda_graphics_resource, 0, 0);
-    res = cap_kms->cuda.cuCtxPopCurrent_v2(&old_ctx);
-    return true;
-}
-
 static void gsr_capture_kms_unload_cuda_graphics(gsr_capture_kms_cuda *cap_kms) {
     if(cap_kms->cuda.cu_ctx) {
         CUcontext old_ctx;
@@ -311,6 +377,14 @@ static void gsr_capture_kms_unload_cuda_graphics(gsr_capture_kms_cuda *cap_kms) 
     }
 }
 
+static gsr_kms_response_fd* find_cursor_drm(gsr_kms_response *kms_response) {
+    for(int i = 0; i < kms_response->num_fds; ++i) {
+        if(kms_response->fds[i].is_cursor)
+            return &kms_response->fds[i];
+    }
+    return NULL;
+}
+
 static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
     (void)frame;
     gsr_capture_kms_cuda *cap_kms = cap->priv;
@@ -323,6 +397,8 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
     cap_kms->kms_response.num_fds = 0;
 
     gsr_kms_response_fd *drm_fd = NULL;
+    gsr_kms_response_fd *cursor_drm_fd = NULL;
+    bool capture_is_combined_plane = false;
     if(cap_kms->using_wayland_capture) {
         gsr_egl_update(cap_kms->params.egl);
         cap_kms->wayland_kms_data.fd = cap_kms->params.egl->fd;
@@ -340,13 +416,16 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
         cap_kms->wayland_kms_data.src_w = cap_kms->wayland_kms_data.width;
         cap_kms->wayland_kms_data.src_h = cap_kms->wayland_kms_data.height;
 
+        cap_kms->capture_pos.x = cap_kms->wayland_kms_data.x;
+        cap_kms->capture_pos.y = cap_kms->wayland_kms_data.y;
+
         if(cap_kms->wayland_kms_data.fd <= 0)
             return -1;
 
         drm_fd = &cap_kms->wayland_kms_data;
     } else {
         if(gsr_kms_client_get_kms(&cap_kms->kms_client, &cap_kms->kms_response) != 0) {
-            fprintf(stderr, "gsr error: gsr_capture_kms_cuda_capture: failed to get kms, error: %d (%s)\n", cap_kms->kms_response.result, cap_kms->kms_response.err_msg);
+            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: failed to get kms, error: %d (%s)\n", cap_kms->kms_response.result, cap_kms->kms_response.err_msg);
             return -1;
         }
 
@@ -365,22 +444,26 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
                 break;
         }
 
+        // Will never happen on wayland unless the target monitor has been disconnected
         if(!drm_fd) {
             drm_fd = find_first_combined_drm(&cap_kms->kms_response);
             if(!drm_fd)
                 drm_fd = find_largest_drm(&cap_kms->kms_response);
+            capture_is_combined_plane = true;
         }
-    }
 
-    // TODO: Use capture pos and capture size. Right now they are not used here and doesn't really need to be used on wayland
-    // and kms_cuda is only used on wayland right now so maybe it can be ignored.
+        cursor_drm_fd = find_cursor_drm(&cap_kms->kms_response);
+    }
 
     if(!drm_fd)
         return -1;
 
+    if(!capture_is_combined_plane && cursor_drm_fd && cursor_drm_fd->connector_id != drm_fd->connector_id)
+        cursor_drm_fd = NULL;
+
     const intptr_t img_attr[] = {
         //EGL_IMAGE_PRESERVED_KHR, EGL_TRUE,
-        EGL_LINUX_DRM_FOURCC_EXT,       fourcc('A', 'R', '2', '4'),//cap_kms->params.egl->pixel_format, ARGB8888
+        EGL_LINUX_DRM_FOURCC_EXT,       drm_fd->pixel_format,//cap_kms->params.egl->pixel_format, ARGB8888
         EGL_WIDTH,                      drm_fd->width,//cap_kms->params.egl->width,
         EGL_HEIGHT,                     drm_fd->height,//cap_kms->params.egl->height,
         EGL_DMA_BUF_PLANE0_FD_EXT,      drm_fd->fd,//cap_kms->params.egl->fd,
@@ -391,17 +474,22 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
         EGL_NONE
     };
 
-    while(cap_kms->params.egl->glGetError()) {}
-    while(cap_kms->params.egl->eglGetError() != EGL_SUCCESS){}
     EGLImage image = cap_kms->params.egl->eglCreateImage(cap_kms->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
-    if(cap_kms->params.egl->glGetError() != 0 || cap_kms->params.egl->eglGetError() != EGL_SUCCESS) {
-        fprintf(stderr, "egl error!\n");
-    }
-
-    gsr_capture_kms_register_egl_image_in_cuda(cap_kms, image);
+    cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, cap_kms->input_texture);
+    cap_kms->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
     cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, image);
+    cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
-    //cap_kms->params.egl->eglSwapBuffers(cap_kms->params.egl->egl_display, cap_kms->params.egl->egl_surface);
+    vec2i capture_pos = cap_kms->capture_pos;
+    if(!capture_is_combined_plane)
+        capture_pos = (vec2i){drm_fd->x, drm_fd->y};
+
+    gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
+        (vec2i){0, 0}, cap_kms->capture_size,
+        capture_pos, cap_kms->capture_size,
+        0.0f);
+
+    cap_kms->params.egl->eglSwapBuffers(cap_kms->params.egl->egl_display, cap_kms->params.egl->egl_surface);
 
     frame->linesize[0] = frame->width * 4;
 
@@ -421,8 +509,6 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
     memcpy_struct.WidthInBytes = frame->width * 4;
     memcpy_struct.Height = frame->height;
     cap_kms->cuda.cuMemcpy2D_v2(&memcpy_struct);
-
-    gsr_capture_kms_unload_cuda_graphics(cap_kms);
 
     return 0;
 }
@@ -444,7 +530,21 @@ static void gsr_capture_kms_cuda_capture_end(gsr_capture *cap, AVFrame *frame) {
 static void gsr_capture_kms_cuda_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_kms_cuda *cap_kms = cap->priv;
 
+    gsr_color_conversion_deinit(&cap_kms->color_conversion);
+
     gsr_capture_kms_unload_cuda_graphics(cap_kms);
+
+    if(cap_kms->params.egl->egl_context) {
+        if(cap_kms->input_texture) {
+            cap_kms->params.egl->glDeleteTextures(1, &cap_kms->input_texture);
+            cap_kms->input_texture = 0;
+        }
+
+        if(cap_kms->target_texture) {
+            cap_kms->params.egl->glDeleteTextures(1, &cap_kms->target_texture);
+            cap_kms->target_texture = 0;
+        }
+    }
 
     for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {
         if(cap_kms->kms_response.fds[i].fd > 0)

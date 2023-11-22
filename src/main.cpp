@@ -417,6 +417,8 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     //codec_context->rc_max_rate = codec_context->bit_rate;
     //codec_context->rc_min_rate = codec_context->bit_rate;
     //codec_context->rc_buffer_size = codec_context->bit_rate / 10;
+    // TODO: Do this when not using cqp
+    //codec_context->rc_initial_buffer_occupancy = codec_context->bit_rate * 1000;
 
     codec_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
@@ -735,7 +737,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 
         if(codec_context->codec_id == AV_CODEC_ID_H264) {
             av_dict_set(&options, "profile", "high", 0);
-            av_dict_set_int(&options, "quality", 7, 0);
+            av_dict_set_int(&options, "quality", 5, 0); // quality preset
         } else if(codec_context->codec_id == AV_CODEC_ID_AV1) {
             av_dict_set(&options, "profile", "main", 0); // TODO: use professional instead?
             av_dict_set(&options, "tier", "main", 0);

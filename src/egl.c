@@ -227,13 +227,13 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
     const int32_t attr[] = {
         EGL_BUFFER_SIZE, 24,
         EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
-        EGL_NONE, EGL_NONE
+        EGL_NONE
     };
 
     const int32_t ctxattr[] = {
         EGL_CONTEXT_CLIENT_VERSION, 2,
         EGL_CONTEXT_PRIORITY_LEVEL_IMG, EGL_CONTEXT_PRIORITY_HIGH_IMG, /* requires cap_sys_nice, ignored otherwise */
-        EGL_NONE, EGL_NONE
+        EGL_NONE
     };
 
     if(wayland) {
@@ -249,7 +249,7 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
         // Fetch globals
         wl_display_roundtrip(self->wayland.dpy);
 
-        // fetch wl_output
+        // Fetch wl_output
         wl_display_roundtrip(self->wayland.dpy);
 
         if(!self->wayland.compositor) {

@@ -2302,7 +2302,7 @@ int main(int argc, char **argv) {
 
             const double this_video_frame_time = clock_get_monotonic_seconds();
             const int64_t expected_frames = std::round((this_video_frame_time - start_time_pts) / target_fps);
-            const int num_frames = framerate_mode == FramerateMode::CONSTANT ? std::max(0L, expected_frames - video_pts_counter) : 1;
+            const int num_frames = framerate_mode == FramerateMode::CONSTANT ? std::max((int64_t)0LL, expected_frames - video_pts_counter) : 1;
 
             if(num_frames > 0) {
                 gsr_capture_capture(capture, frame);

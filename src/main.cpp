@@ -549,7 +549,7 @@ static const AVCodec* find_av1_encoder(gsr_gpu_vendor vendor, const char *card_p
     return checked_success ? codec : nullptr;
 }
 
-static AVFrame* open_audio(AVCodecContext *audio_codec_context) {
+static void open_audio(AVCodecContext *audio_codec_context) {
     AVDictionary *options = nullptr;
     av_dict_set(&options, "strict", "experimental", 0);
 
@@ -559,7 +559,9 @@ static AVFrame* open_audio(AVCodecContext *audio_codec_context) {
         fprintf(stderr, "failed to open codec, reason: %s\n", av_error_to_string(ret));
         _exit(1);
     }
+}
 
+static AVFrame* create_audio_frame(AVCodecContext *audio_codec_context) {
     AVFrame *frame = av_frame_alloc();
     if(!frame) {
         fprintf(stderr, "failed to allocate audio frame\n");
@@ -576,7 +578,7 @@ static AVFrame* open_audio(AVCodecContext *audio_codec_context) {
     av_channel_layout_copy(&frame->ch_layout, &audio_codec_context->ch_layout);
 #endif
 
-    ret = av_frame_get_buffer(frame, 0);
+    int ret = av_frame_get_buffer(frame, 0);
     if(ret < 0) {
         fprintf(stderr, "failed to allocate audio data buffers, reason: %s\n", av_error_to_string(ret));
         _exit(1);
@@ -924,13 +926,13 @@ struct AudioDevice {
     SoundDevice sound_device;
     AudioInput audio_input;
     AVFilterContext *src_filter_ctx = nullptr;
+    AVFrame *frame = nullptr;
     std::thread thread; // TODO: Instead of having a thread for each track, have one thread for all threads and read the data with non-blocking read
 };
 
 // TODO: Cleanup
 struct AudioTrack {
     AVCodecContext *codec_context = nullptr;
-    AVFrame *frame = nullptr;
     AVStream *stream = nullptr;
 
     std::vector<AudioDevice> audio_devices;
@@ -1980,7 +1982,7 @@ int main(int argc, char **argv) {
         if(replay_buffer_size_secs == -1)
             audio_stream = create_stream(av_format_context, audio_codec_context);
 
-        AVFrame *audio_frame = open_audio(audio_codec_context);
+        open_audio(audio_codec_context);
         if(audio_stream)
             avcodec_parameters_from_context(audio_stream->codecpar, audio_codec_context);
 
@@ -2020,11 +2022,13 @@ int main(int argc, char **argv) {
             if(audio_input.name.empty()) {
                 audio_device.sound_device.handle = NULL;
                 audio_device.sound_device.frames = 0;
+                audio_device.frame = NULL;
             } else {
                 if(sound_device_get_by_name(&audio_device.sound_device, audio_input.name.c_str(), audio_input.description.c_str(), num_channels, audio_codec_context->frame_size, audio_codec_context_get_audio_format(audio_codec_context)) != 0) {
                     fprintf(stderr, "Error: failed to get \"%s\" sound device\n", audio_input.name.c_str());
                     _exit(1);
                 }
+                audio_device.frame = create_audio_frame(audio_codec_context);
             }
 
             audio_devices.push_back(std::move(audio_device));
@@ -2032,7 +2036,6 @@ int main(int argc, char **argv) {
 
         AudioTrack audio_track;
         audio_track.codec_context = audio_codec_context;
-        audio_track.frame = audio_frame;
         audio_track.stream = audio_stream;
         audio_track.audio_devices = std::move(audio_devices);
         audio_track.graph = graph;
@@ -2138,14 +2141,14 @@ int main(int argc, char **argv) {
                     if(got_audio_data)
                         received_audio_time = this_audio_frame_time;
 
-                    int ret = av_frame_make_writable(audio_track.frame);
+                    int ret = av_frame_make_writable(audio_device.frame);
                     if (ret < 0) {
                         fprintf(stderr, "Failed to make audio frame writable\n");
                         break;
                     }
 
                     // TODO: Is this |received_audio_time| really correct?
-                    int64_t num_missing_frames = std::round((this_audio_frame_time - received_audio_time) / target_audio_hz / (int64_t)audio_track.frame->nb_samples);
+                    int64_t num_missing_frames = std::round((this_audio_frame_time - received_audio_time) / target_audio_hz / (int64_t)audio_device.frame->nb_samples);
                     if(got_audio_data)
                         num_missing_frames = std::max((int64_t)0, num_missing_frames - 1);
 
@@ -2164,29 +2167,29 @@ int main(int argc, char **argv) {
                         //audio_track.frame->data[0] = empty_audio;
                         received_audio_time = this_audio_frame_time;
                         if(needs_audio_conversion)
-                            swr_convert(swr, &audio_track.frame->data[0], audio_track.frame->nb_samples, (const uint8_t**)&empty_audio, audio_track.codec_context->frame_size);
+                            swr_convert(swr, &audio_device.frame->data[0], audio_device.frame->nb_samples, (const uint8_t**)&empty_audio, audio_track.codec_context->frame_size);
                         else
-                            audio_track.frame->data[0] = empty_audio;
+                            audio_device.frame->data[0] = empty_audio;
 
                         // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
                         std::lock_guard<std::mutex> lock(audio_filter_mutex);
                         for(int i = 0; i < num_missing_frames; ++i) {
                             if(audio_track.graph) {
                                 // TODO: av_buffersrc_add_frame
-                                if(av_buffersrc_write_frame(audio_device.src_filter_ctx, audio_track.frame) < 0) {
+                                if(av_buffersrc_write_frame(audio_device.src_filter_ctx, audio_device.frame) < 0) {
                                     fprintf(stderr, "Error: failed to add audio frame to filter\n");
                                 }
                             } else {
-                                audio_track.frame->pts = (this_audio_frame_time - record_start_time) * (double)AV_TIME_BASE;
-                                const bool same_pts = audio_track.frame->pts == prev_pts;
-                                prev_pts = audio_track.frame->pts;
+                                audio_device.frame->pts = (this_audio_frame_time - record_start_time) * (double)AV_TIME_BASE;
+                                const bool same_pts = audio_device.frame->pts == prev_pts;
+                                prev_pts = audio_device.frame->pts;
                                 if(same_pts)
                                     continue;
 
-                                ret = avcodec_send_frame(audio_track.codec_context, audio_track.frame);
+                                ret = avcodec_send_frame(audio_track.codec_context, audio_device.frame);
                                 if(ret >= 0) {
                                     // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                                    receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_track.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+                                    receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_device.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
                                 } else {
                                     fprintf(stderr, "Failed to encode audio!\n");
                                 }
@@ -2200,27 +2203,27 @@ int main(int argc, char **argv) {
                     if(got_audio_data) {
                         // TODO: Instead of converting audio, get float audio from alsa. Or does alsa do conversion internally to get this format?
                         if(needs_audio_conversion)
-                            swr_convert(swr, &audio_track.frame->data[0], audio_track.frame->nb_samples, (const uint8_t**)&sound_buffer, audio_track.codec_context->frame_size);
+                            swr_convert(swr, &audio_device.frame->data[0], audio_device.frame->nb_samples, (const uint8_t**)&sound_buffer, audio_track.codec_context->frame_size);
                         else
-                            audio_track.frame->data[0] = (uint8_t*)sound_buffer;
+                            audio_device.frame->data[0] = (uint8_t*)sound_buffer;
 
-                        audio_track.frame->pts = (this_audio_frame_time - record_start_time) * (double)AV_TIME_BASE;
-                        const bool same_pts = audio_track.frame->pts == prev_pts;
-                        prev_pts = audio_track.frame->pts;
+                        audio_device.frame->pts = (this_audio_frame_time - record_start_time) * (double)AV_TIME_BASE;
+                        const bool same_pts = audio_device.frame->pts == prev_pts;
+                        prev_pts = audio_device.frame->pts;
                         if(same_pts)
                             continue;
 
                         if(audio_track.graph) {
                             std::lock_guard<std::mutex> lock(audio_filter_mutex);
                             // TODO: av_buffersrc_add_frame
-                            if(av_buffersrc_write_frame(audio_device.src_filter_ctx, audio_track.frame) < 0) {
+                            if(av_buffersrc_write_frame(audio_device.src_filter_ctx, audio_device.frame) < 0) {
                                 fprintf(stderr, "Error: failed to add audio frame to filter\n");
                             }
                         } else {
-                            ret = avcodec_send_frame(audio_track.codec_context, audio_track.frame);
+                            ret = avcodec_send_frame(audio_track.codec_context, audio_device.frame);
                             if(ret >= 0) {
                                 // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                                receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_track.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+                                receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_device.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
                             } else {
                                 fprintf(stderr, "Failed to encode audio!\n");
                             }

@@ -914,7 +914,23 @@ static AVStream* create_stream(AVFormatContext *av_format_context, AVCodecContex
 }
 
 static void run_recording_saved_script_async(const char *script_file, const char *video_file, const char *type) {
-    const char *args[] = { script_file, video_file, type, NULL };
+    const char *args[6];
+    const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
+
+    if(inside_flatpak) {
+        args[0] = "flatpak-spawn";
+        args[1] = "--host";
+        args[2] = script_file;
+        args[3] = video_file;
+        args[4] = type;
+        args[5] = NULL;
+    } else {
+        args[0] = script_file;
+        args[1] = video_file;
+        args[2] = type;
+        args[3] = NULL;
+    }
+
     pid_t pid = fork();
     if(pid == -1) {
         perror(script_file);
@@ -925,7 +941,7 @@ static void run_recording_saved_script_async(const char *script_file, const char
 
         pid_t second_child = fork();
         if(second_child == 0) { // child
-            execvp(script_file, (char* const*)args);
+            execvp(args[0], (char* const*)args);
             perror(script_file);
             _exit(127);
         } else if(second_child != -1) { // parent

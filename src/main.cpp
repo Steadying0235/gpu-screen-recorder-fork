@@ -20,6 +20,7 @@ extern "C" {
 #include <signal.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 #include "../include/sound.hpp"
 
@@ -762,7 +763,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 }
 
 static void usage_header() {
-    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265|av1] [-ac aac|opus|flac] [-oc yes|no] [-fm cfr|vfr] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no]\n");
+    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265|av1] [-ac aac|opus|flac] [-oc yes|no] [-fm cfr|vfr] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no] [-sc <script_path>]\n");
 }
 
 static void usage_full() {
@@ -816,6 +817,8 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -mf   Organise replays in folders based on the current date.\n");
     fprintf(stderr, "\n");
+    fprintf(stderr, "  -sc   Run a script on the created video file. The first argument to the script is the video filepath and the second argument is the recording type (either \"regular\" or \"replay\"). Not applicable for live streams.\n");
+    fprintf(stderr, "\n");
     //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, defaults to yuv420\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r).\n");
     fprintf(stderr, "        In replay mode this has to be a directory instead of a file.\n");
@@ -839,25 +842,13 @@ static void usage() {
 static sig_atomic_t running = 1;
 static sig_atomic_t save_replay = 0;
 
-static void int_handler(int) {
+static void stop_handler(int) {
     running = 0;
 }
 
 static void save_replay_handler(int) {
     save_replay = 1;
 }
-
-struct Arg {
-    std::vector<const char*> values;
-    bool optional = false;
-    bool list = false;
-
-    const char* value() const {
-        if(values.empty())
-            return nullptr;
-        return values.front();
-    }
-};
 
 static bool is_hex_num(char c) {
     return (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f') || (c >= '0' && c <= '9');
@@ -920,6 +911,29 @@ static AVStream* create_stream(AVFormatContext *av_format_context, AVCodecContex
     stream->time_base = codec_context->time_base;
     stream->avg_frame_rate = codec_context->framerate;
     return stream;
+}
+
+static void run_recording_saved_script_async(const char *script_file, const char *video_file, const char *type) {
+    const char *args[] = { script_file, video_file, type, NULL };
+    pid_t pid = fork();
+    if(pid == -1) {
+        perror(script_file);
+        return;
+    } else if(pid == 0) { // child
+        setsid();
+        signal(SIGHUP, SIG_IGN);
+
+        pid_t second_child = fork();
+        if(second_child == 0) { // child
+            execvp(script_file, (char* const*)args);
+            perror(script_file);
+            _exit(127);
+        } else if(second_child != -1) { // parent
+            _exit(0);
+        }
+    } else { // parent
+        waitpid(pid, NULL, 0);
+    }
 }
 
 struct AudioDevice {
@@ -1271,15 +1285,20 @@ static bool is_xwayland(Display *display) {
     return xwayland_found;
 }
 
-struct ReceivePacketData {
-    AVCodecContext *codec_context;
-    int stream_index;
-    AVStream *stream;
-    int64_t pts;
+struct Arg {
+    std::vector<const char*> values;
+    bool optional = false;
+    bool list = false;
+
+    const char* value() const {
+        if(values.empty())
+            return nullptr;
+        return values.front();
+    }
 };
 
 int main(int argc, char **argv) {
-    signal(SIGINT, int_handler);
+    signal(SIGINT, stop_handler);
     signal(SIGUSR1, save_replay_handler);
 
     if(argc <= 1)
@@ -1306,6 +1325,7 @@ int main(int argc, char **argv) {
         { "-pixfmt", Arg { {}, true, false } },
         { "-v", Arg { {}, true, false } },
         { "-mf", Arg { {}, true, false } },
+        { "-sc", Arg { {}, true, false } },
     };
 
     for(int i = 1; i < argc; i += 2) {
@@ -1413,6 +1433,15 @@ int main(int argc, char **argv) {
     } else {
         fprintf(stderr, "Error: -mf should either be either 'yes' or 'no', got: '%s'\n", make_folders_str);
         usage();
+    }
+
+    const char *recording_saved_script = args["-sc"].value();
+    if(recording_saved_script) {
+        struct stat buf;
+        if(stat(recording_saved_script, &buf) == -1 || !S_ISREG(buf.st_mode)) {
+            fprintf(stderr, "Error: Script \"%s\" either doesn't exist or it's not a file\n", recording_saved_script);
+            usage();
+        }
     }
 
     PixelFormat pixel_format = PixelFormat::YUV420;
@@ -1957,6 +1986,11 @@ int main(int argc, char **argv) {
         framerate_mode_str = "cfr";
     }
 
+    if(is_livestream) {
+        fprintf(stderr, "Warning: live stream detected, -sc script is ignored\n");
+        recording_saved_script = nullptr;
+    }
+
     AVStream *video_stream = nullptr;
     std::vector<AudioTrack> audio_tracks;
 
@@ -2341,6 +2375,8 @@ int main(int argc, char **argv) {
             save_replay_thread.get();
             puts(save_replay_output_filepath.c_str());
             fflush(stdout);
+            if(recording_saved_script)
+                run_recording_saved_script_async(recording_saved_script, save_replay_output_filepath.c_str(), "replay");
             std::lock_guard<std::mutex> lock(write_output_mutex);
             save_replay_packets.clear();
         }
@@ -2363,6 +2399,8 @@ int main(int argc, char **argv) {
         save_replay_thread.get();
         puts(save_replay_output_filepath.c_str());
         fflush(stdout);
+        if(recording_saved_script)
+            run_recording_saved_script_async(recording_saved_script, save_replay_output_filepath.c_str(), "replay");
         std::lock_guard<std::mutex> lock(write_output_mutex);
         save_replay_packets.clear();
     }
@@ -2384,6 +2422,9 @@ int main(int argc, char **argv) {
         avio_close(av_format_context->pb);
 
     gsr_capture_destroy(capture, video_codec_context);
+
+    if(replay_buffer_size_secs == -1 && recording_saved_script)
+        run_recording_saved_script_async(recording_saved_script, filename, "regular");
 
     if(dpy) {
         // TODO: This causes a crash, why? maybe some other library dlclose xlib and that also happened to unload this???

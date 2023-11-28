@@ -78,7 +78,7 @@ enum class VideoQuality {
 
 enum class VideoCodec {
     H264,
-    H265,
+    HEVC,
     AV1
 };
 
@@ -813,11 +813,15 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -v    Prints per second, fps updates. Optional, set to 'yes' by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -h    Show this help.\n");
+    fprintf(stderr, "  -h, --help\n");
+    fprintf(stderr, "        Show this help.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -mf   Organise replays in folders based on the current date.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -sc   Run a script on the saved video file (non-blocking). The first argument to the script is the filepath to the saved video file and the second argument is the recording type (either \"regular\" or \"replay\"). Not applicable for live streams.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  --list-supported-video-codecs\n");
+    fprintf(stderr, "        List supported video codecs and exit.\n");
     fprintf(stderr, "\n");
     //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, defaults to yuv420\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r).\n");
@@ -1301,6 +1305,55 @@ static bool is_xwayland(Display *display) {
     return xwayland_found;
 }
 
+static void list_supported_video_codecs() {
+    bool wayland = false;
+    Display *dpy = XOpenDisplay(nullptr);
+    if (!dpy) {
+        wayland = true;
+        fprintf(stderr, "Warning: failed to connect to the X server. Assuming wayland is running without Xwayland\n");
+    }
+
+    XSetErrorHandler(x11_error_handler);
+    XSetIOErrorHandler(x11_io_error_handler);
+
+    if(!wayland)
+        wayland = is_xwayland(dpy);
+
+    gsr_egl egl;
+    if(!gsr_egl_load(&egl, dpy, wayland)) {
+        fprintf(stderr, "gsr error: failed to load opengl\n");
+        _exit(1);
+    }
+
+    gsr_gpu_info gpu_inf;
+    if(!gl_get_gpu_info(&egl, &gpu_inf))
+        _exit(2);
+
+    gsr_egl_unload(&egl);
+    XCloseDisplay(dpy);
+
+    char card_path[128];
+    card_path[0] = '\0';
+    if(wayland || gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA) {
+        // TODO: Allow specifying another card, and in other places
+        if(!gsr_get_valid_card_path(card_path)) {
+            fprintf(stderr, "Error: no /dev/dri/cardX device found\n");
+            _exit(2);
+        }
+    }
+
+    av_log_set_level(AV_LOG_FATAL);
+
+    if(find_h264_encoder(gpu_inf.vendor, card_path))
+        puts("h264");
+    if(find_h265_encoder(gpu_inf.vendor, card_path))
+        puts("hevc");
+    if(find_av1_encoder(gpu_inf.vendor, card_path))
+        puts("av1");
+
+    fflush(stdout);
+}
+
 struct Arg {
     std::vector<const char*> values;
     bool optional = false;
@@ -1322,6 +1375,11 @@ int main(int argc, char **argv) {
 
     if(argc == 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0))
         usage_full();
+
+    if(argc == 2 && strcmp(argv[1], "--list-supported-video-codecs") == 0) {
+        list_supported_video_codecs();
+        _exit(0);
+    }
 
     //av_log_set_level(AV_LOG_TRACE);
 
@@ -1371,7 +1429,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    VideoCodec video_codec = VideoCodec::H265;
+    VideoCodec video_codec = VideoCodec::HEVC;
     const char *video_codec_to_use = args["-k"].value();
     if(!video_codec_to_use)
         video_codec_to_use = "auto";
@@ -1379,7 +1437,7 @@ int main(int argc, char **argv) {
     if(strcmp(video_codec_to_use, "h264") == 0) {
         video_codec = VideoCodec::H264;
     } else if(strcmp(video_codec_to_use, "h265") == 0) {
-        video_codec = VideoCodec::H265;
+        video_codec = VideoCodec::HEVC;
     } else if(strcmp(video_codec_to_use, "av1") == 0) {
         video_codec = VideoCodec::AV1;
     } else if(strcmp(video_codec_to_use, "auto") != 0) {
@@ -1886,7 +1944,7 @@ int main(int argc, char **argv) {
             if(!h264_codec) {
                 fprintf(stderr, "Info: using h265 encoder because a codec was not specified and your gpu does not support h264\n");
                 video_codec_to_use = "h265";
-                video_codec = VideoCodec::H265;
+                video_codec = VideoCodec::HEVC;
             } else {
                 fprintf(stderr, "Info: using h264 encoder because a codec was not specified\n");
                 video_codec_to_use = "h264";
@@ -1909,7 +1967,7 @@ int main(int argc, char **argv) {
             } else {
                 fprintf(stderr, "Info: using h265 encoder because a codec was not specified\n");
                 video_codec_to_use = "h265";
-                video_codec = VideoCodec::H265;
+                video_codec = VideoCodec::HEVC;
             }
         }
     }
@@ -1927,7 +1985,7 @@ int main(int argc, char **argv) {
         case VideoCodec::H264:
             video_codec_f = find_h264_encoder(gpu_inf.vendor, card_path);
             break;
-        case VideoCodec::H265:
+        case VideoCodec::HEVC:
             video_codec_f = find_h265_encoder(gpu_inf.vendor, card_path);
             break;
         case VideoCodec::AV1:
@@ -1940,11 +1998,11 @@ int main(int argc, char **argv) {
             case VideoCodec::H264: {
                 fprintf(stderr, "Warning: selected video codec h264 is not supported, trying h265 instead\n");
                 video_codec_to_use = "h265";
-                video_codec = VideoCodec::H265;
+                video_codec = VideoCodec::HEVC;
                 video_codec_f = find_h265_encoder(gpu_inf.vendor, card_path);
                 break;
             }
-            case VideoCodec::H265: {
+            case VideoCodec::HEVC: {
                 fprintf(stderr, "Warning: selected video codec h265 is not supported, trying h264 instead\n");
                 video_codec_to_use = "h264";
                 video_codec = VideoCodec::H264;
@@ -1968,7 +2026,7 @@ int main(int argc, char **argv) {
                 video_codec_name = "h265";
                 break;
             }
-            case VideoCodec::H265: {
+            case VideoCodec::HEVC: {
                 video_codec_name = "h265";
                 break;
             }

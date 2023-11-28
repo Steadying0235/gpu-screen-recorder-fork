@@ -705,21 +705,6 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
         } else if(codec_context->codec_id == AV_CODEC_ID_H264) {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 32, 0);
-                    break;
-                case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 28, 0);
-                    break;
-                case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 24, 0);
-                    break;
-                case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 18, 0);
-                    break;
-            }
-        } else {
-            switch(video_quality) {
-                case VideoQuality::MEDIUM:
                     av_dict_set_int(&options, "qp", 34, 0);
                     break;
                 case VideoQuality::HIGH:
@@ -730,6 +715,21 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
                     break;
                 case VideoQuality::ULTRA:
                     av_dict_set_int(&options, "qp", 20, 0);
+                    break;
+            }
+        } else {
+            switch(video_quality) {
+                case VideoQuality::MEDIUM:
+                    av_dict_set_int(&options, "qp", 40, 0);
+                    break;
+                case VideoQuality::HIGH:
+                    av_dict_set_int(&options, "qp", 35, 0);
+                    break;
+                case VideoQuality::VERY_HIGH:
+                    av_dict_set_int(&options, "qp", 30, 0);
+                    break;
+                case VideoQuality::ULTRA:
+                    av_dict_set_int(&options, "qp", 24, 0);
                     break;
             }
         }
@@ -817,7 +817,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -mf   Organise replays in folders based on the current date.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -sc   Run a script on the created video file. The first argument to the script is the video filepath and the second argument is the recording type (either \"regular\" or \"replay\"). Not applicable for live streams.\n");
+    fprintf(stderr, "  -sc   Run a script on the saved video file (non-blocking). The first argument to the script is the filepath to the saved video file and the second argument is the recording type (either \"regular\" or \"replay\"). Not applicable for live streams.\n");
     fprintf(stderr, "\n");
     //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, defaults to yuv420\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r).\n");

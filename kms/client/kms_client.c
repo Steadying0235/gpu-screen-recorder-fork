@@ -191,29 +191,28 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
         return -1;
     }
 
-    bool has_perm = 0;
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
-    if(!inside_flatpak) {
-        if(geteuid() == 0) {
-            has_perm = true;
-        } else {
-            cap_t kms_server_cap = cap_get_file(server_filepath);
-            if(kms_server_cap) {
-                cap_flag_value_t res = 0;
-                cap_get_flag(kms_server_cap, CAP_SYS_ADMIN, CAP_PERMITTED, &res);
-                if(res == CAP_SET) {
-                    //fprintf(stderr, "has permission!\n");
-                    has_perm = true;
-                } else {
-                    //fprintf(stderr, "No permission:(\n");
-                }
-                cap_free(kms_server_cap);
+
+    bool has_perm = 0;
+    if(geteuid() == 0) {
+        has_perm = true;
+    } else {
+        cap_t kms_server_cap = cap_get_file(server_filepath);
+        if(kms_server_cap) {
+            cap_flag_value_t res = 0;
+            cap_get_flag(kms_server_cap, CAP_SYS_ADMIN, CAP_PERMITTED, &res);
+            if(res == CAP_SET) {
+                //fprintf(stderr, "has permission!\n");
+                has_perm = true;
             } else {
-                if(errno == ENODATA)
-                    fprintf(stderr, "gsr info: gsr_kms_client_init: gsr-kms-server is missing sys_admin cap and will require root authentication. To bypass this automatically, run: sudo setcap cap_sys_admin+ep '%s'\n", server_filepath);
-                else
-                    fprintf(stderr, "gsr info: gsr_kms_client_init: failed to get cap\n");
+                //fprintf(stderr, "No permission:(\n");
             }
+            cap_free(kms_server_cap);
+        } else {
+            if(errno == ENODATA)
+                fprintf(stderr, "gsr info: gsr_kms_client_init: gsr-kms-server is missing sys_admin cap and will require root authentication. To bypass this automatically, run: sudo setcap cap_sys_admin+ep '%s'\n", server_filepath);
+            else
+                fprintf(stderr, "gsr info: gsr_kms_client_init: failed to get cap\n");
         }
     }
 

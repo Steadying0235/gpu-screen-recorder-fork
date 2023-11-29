@@ -244,11 +244,11 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
         fprintf(stderr, "gsr error: gsr_kms_client_init: fork failed, error: %s\n", strerror(errno));
         goto err;
     } else if(pid == 0) { /* child */
-        if(inside_flatpak) {
-            const char *args[] = { "flatpak-spawn", "--host", "pkexec", "flatpak", "run", "--command=gsr-kms-server", "com.dec05eba.gpu_screen_recorder", self->initial_socket_path, card_path, NULL };
-            execvp(args[0], (char *const*)args);
-        } else if(has_perm) {
+        if(has_perm) {
             const char *args[] = { server_filepath, self->initial_socket_path, card_path, NULL };
+            execvp(args[0], (char *const*)args);
+        } else if(inside_flatpak) {
+            const char *args[] = { "flatpak-spawn", "--host", "pkexec", "flatpak", "run", "--command=gsr-kms-server", "com.dec05eba.gpu_screen_recorder", self->initial_socket_path, card_path, NULL };
             execvp(args[0], (char *const*)args);
         } else {
             const char *args[] = { "pkexec", server_filepath, self->initial_socket_path, card_path, NULL };

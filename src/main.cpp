@@ -799,8 +799,9 @@ static void usage_full() {
     fprintf(stderr, "        and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature.\n");
     fprintf(stderr, "        This option has be between 5 and 1200. Note that the replay buffer size will not always be precise, because of keyframes. Optional, disabled by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'h265', 'av1'. Defaults to 'auto' which defaults to 'h265' unless recording at fps higher than 60. Defaults to 'h264' on intel.\n");
-    fprintf(stderr, "        Forcefully set to 'h264' if -c is 'flv'.\n");
+    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'h265' or 'av1'. Defaults to 'auto' which defaults to 'h265' on AMD/Nvidia and 'h264' on intel.\n");
+    fprintf(stderr, "        Forcefully set to 'h264' if the file container type is 'flv'.\n");
+    fprintf(stderr, "        Forcefully set to 'h265' on AMD/intel if video codec is 'h264' and if the file container type is 'mkv'.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'.\n");
     fprintf(stderr, "        'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
@@ -1913,6 +1914,12 @@ int main(int argc, char **argv) {
             file_extension = file_extension.substr(0, comma_index);
     }
 
+    if(gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA && file_extension == "mkv" && strcmp(video_codec_to_use, "h264") == 0) {
+        video_codec_to_use = "h265";
+        video_codec = VideoCodec::HEVC;
+        fprintf(stderr, "Warning: video codec was forcefully set to h265 because mkv container is used and mesa (AMD and Intel driver) does not support h264 in mkv files\n");
+    }
+
     switch(audio_codec) {
         case AudioCodec::AAC: {
             break;
@@ -1958,10 +1965,6 @@ int main(int argc, char **argv) {
             // while with h264 the fps doesn't drop.
             if(!h265_codec) {
                 fprintf(stderr, "Info: using h264 encoder because a codec was not specified and your gpu does not support h265\n");
-                video_codec_to_use = "h264";
-                video_codec = VideoCodec::H264;
-            } else if(fps > 60) {
-                fprintf(stderr, "Info: using h264 encoder because a codec was not specified and fps is more than 60\n");
                 video_codec_to_use = "h264";
                 video_codec = VideoCodec::H264;
             } else {

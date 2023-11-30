@@ -1436,12 +1436,12 @@ int main(int argc, char **argv) {
 
     if(strcmp(video_codec_to_use, "h264") == 0) {
         video_codec = VideoCodec::H264;
-    } else if(strcmp(video_codec_to_use, "h265") == 0) {
+    } else if(strcmp(video_codec_to_use, "h265") == 0 || strcmp(video_codec_to_use, "hevc") == 0) {
         video_codec = VideoCodec::HEVC;
     } else if(strcmp(video_codec_to_use, "av1") == 0) {
         video_codec = VideoCodec::AV1;
     } else if(strcmp(video_codec_to_use, "auto") != 0) {
-        fprintf(stderr, "Error: -k should either be either 'auto', 'h264', 'h265' or 'av1', got: '%s'\n", video_codec_to_use);
+        fprintf(stderr, "Error: -k should either be either 'auto', 'h264', 'h265', 'hevc' or 'av1', got: '%s'\n", video_codec_to_use);
         usage();
     }
 

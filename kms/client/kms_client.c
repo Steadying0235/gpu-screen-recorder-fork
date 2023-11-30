@@ -199,7 +199,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     } else {
         cap_t kms_server_cap = cap_get_file(server_filepath);
         if(kms_server_cap) {
-            cap_flag_value_t res = 0;
+            cap_flag_value_t res = CAP_CLEAR;
             cap_get_flag(kms_server_cap, CAP_SYS_ADMIN, CAP_PERMITTED, &res);
             if(res == CAP_SET) {
                 //fprintf(stderr, "has permission!\n");

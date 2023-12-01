@@ -393,13 +393,13 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
                 codec_context->global_quality = 180;
                 break;
             case VideoQuality::HIGH:
-                codec_context->global_quality = 120;
+                codec_context->global_quality = 140;
                 break;
             case VideoQuality::VERY_HIGH:
-                codec_context->global_quality = 100;
+                codec_context->global_quality = 120;
                 break;
             case VideoQuality::ULTRA:
-                codec_context->global_quality = 70;
+                codec_context->global_quality = 100;
                 break;
         }
     }
@@ -720,16 +720,16 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
         } else {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 40, 0);
+                    av_dict_set_int(&options, "qp", 36, 0);
                     break;
                 case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 35, 0);
+                    av_dict_set_int(&options, "qp", 32, 0);
                     break;
                 case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 30, 0);
+                    av_dict_set_int(&options, "qp", 28, 0);
                     break;
                 case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 24, 0);
+                    av_dict_set_int(&options, "qp", 22, 0);
                     break;
             }
         }

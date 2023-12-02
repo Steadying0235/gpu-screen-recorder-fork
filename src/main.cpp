@@ -205,7 +205,7 @@ static AVCodecID audio_codec_get_id(AudioCodec audio_codec) {
     return AV_CODEC_ID_AAC;
 }
 
-static AVSampleFormat audio_codec_get_sample_format(AudioCodec audio_codec, const AVCodec *codec) {
+static AVSampleFormat audio_codec_get_sample_format(AudioCodec audio_codec, const AVCodec *codec, bool mix_audio) {
     switch(audio_codec) {
         case AudioCodec::AAC: {
             return AV_SAMPLE_FMT_FLTP;
@@ -221,6 +221,10 @@ static AVSampleFormat audio_codec_get_sample_format(AudioCodec audio_codec, cons
                     supports_flt = true;
                 }
             }
+
+            // Amix only works with float audio
+            if(mix_audio)
+                supports_s16 = false;
 
             if(!supports_s16 && !supports_flt) {
                 fprintf(stderr, "Warning: opus audio codec is chosen but your ffmpeg version does not support s16/flt sample format and performance might be slightly worse. You can either rebuild ffmpeg with libopus instead of the built-in opus, use the flatpak version of gpu screen recorder or record with flac audio codec instead (-ac flac). Falling back to fltp audio sample format instead.\n");
@@ -271,7 +275,7 @@ static AVSampleFormat audio_format_to_sample_format(const AudioFormat audio_form
     return AV_SAMPLE_FMT_S16;
 }
 
-static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_codec) {
+static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_codec, bool mix_audio) {
     const AVCodec *codec = avcodec_find_encoder(audio_codec_get_id(audio_codec));
     if (!codec) {
         fprintf(stderr, "Error: Could not find %s audio encoder\n", audio_codec_get_name(audio_codec));
@@ -282,7 +286,7 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
 
     assert(codec->type == AVMEDIA_TYPE_AUDIO);
     codec_context->codec_id = codec->id;
-    codec_context->sample_fmt = audio_codec_get_sample_format(audio_codec, codec);
+    codec_context->sample_fmt = audio_codec_get_sample_format(audio_codec, codec, mix_audio);
     codec_context->bit_rate = audio_codec_get_get_bitrate(audio_codec);
     codec_context->sample_rate = 48000;
     if(audio_codec == AudioCodec::AAC)
@@ -295,9 +299,10 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
 #endif
 
     codec_context->time_base.num = 1;
-    codec_context->time_base.den = AV_TIME_BASE;
+    codec_context->time_base.den = codec_context->sample_rate;
     codec_context->framerate.num = fps;
     codec_context->framerate.den = 1;
+    codec_context->thread_count = 1;
     codec_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
     return codec_context;
@@ -323,7 +328,7 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     codec_context->framerate.den = 1;
     codec_context->sample_aspect_ratio.num = 0;
     codec_context->sample_aspect_ratio.den = 0;
-    // High values reeduce file size but increases time it takes to seek
+    // High values reduce file size but increases time it takes to seek
     if(is_livestream) {
         codec_context->flags |= (AV_CODEC_FLAG_CLOSED_GOP | AV_CODEC_FLAG_LOW_DELAY);
         codec_context->flags2 |= AV_CODEC_FLAG2_FAST;
@@ -974,6 +979,7 @@ struct AudioTrack {
     AVFilterGraph *graph = nullptr;
     AVFilterContext *sink = nullptr;
     int stream_index = 0;
+    int64_t pts = 0;
 };
 
 static std::future<void> save_replay_thread;
@@ -1449,7 +1455,7 @@ int main(int argc, char **argv) {
     AudioCodec audio_codec = AudioCodec::OPUS;
     const char *audio_codec_to_use = args["-ac"].value();
     if(!audio_codec_to_use)
-        audio_codec_to_use = "aac";
+        audio_codec_to_use = "opus";
 
     if(strcmp(audio_codec_to_use, "aac") == 0) {
         audio_codec = AudioCodec::AAC;
@@ -1460,12 +1466,6 @@ int main(int argc, char **argv) {
     } else {
         fprintf(stderr, "Error: -ac should either be either 'aac', 'opus' or 'flac', got: '%s'\n", audio_codec_to_use);
         usage();
-    }
-
-    if(audio_codec != AudioCodec::AAC) {
-        audio_codec_to_use = "aac";
-        audio_codec = AudioCodec::AAC;
-        fprintf(stderr, "Info: audio codec is forcefully set to aac at the moment because of issues with opus/flac. This is a temporary issue\n");
     }
 
     bool overclock = false;
@@ -1538,6 +1538,7 @@ int main(int argc, char **argv) {
     if(!audio_input_arg.values.empty())
         audio_inputs = get_pulseaudio_inputs();
     std::vector<MergedAudioInputs> requested_audio_inputs;
+    bool uses_amix = false;
 
     // Manually check if the audio inputs we give exist. This is only needed for pipewire, not pulseaudio.
     // Pipewire instead DEFAULTS TO THE DEFAULT AUDIO INPUT. THAT'S RETARDED.
@@ -1547,6 +1548,9 @@ int main(int argc, char **argv) {
             continue;
 
         requested_audio_inputs.push_back({parse_audio_input_arg(audio_input)});
+        if(requested_audio_inputs.back().audio_inputs.size() > 1)
+            uses_amix = true;
+
         for(AudioInput &request_audio_input : requested_audio_inputs.back().audio_inputs) {
             bool match = false;
             for(const auto &existing_audio_input : audio_inputs) {
@@ -1937,6 +1941,10 @@ int main(int argc, char **argv) {
                 audio_codec_to_use = "aac";
                 audio_codec = AudioCodec::AAC;
                 fprintf(stderr, "Warning: flac audio codec is only supported by .mp4 and .mkv files, falling back to aac instead\n");
+            } else if(uses_amix) {
+                audio_codec_to_use = "opus";
+                audio_codec = AudioCodec::OPUS;
+                fprintf(stderr, "Warning: flac audio codec is not supported when mixing audio sources, falling back to opus instead\n");
             }
             break;
         }
@@ -2063,7 +2071,7 @@ int main(int argc, char **argv) {
         framerate_mode_str = "cfr";
     }
 
-    if(is_livestream) {
+    if(is_livestream && recording_saved_script) {
         fprintf(stderr, "Warning: live stream detected, -sc script is ignored\n");
         recording_saved_script = nullptr;
     }
@@ -2087,7 +2095,8 @@ int main(int argc, char **argv) {
 
     int audio_stream_index = VIDEO_STREAM_INDEX + 1;
     for(const MergedAudioInputs &merged_audio_inputs : requested_audio_inputs) {
-        AVCodecContext *audio_codec_context = create_audio_codec_context(fps, audio_codec);
+        const bool use_amix = merged_audio_inputs.audio_inputs.size() > 1;
+        AVCodecContext *audio_codec_context = create_audio_codec_context(fps, audio_codec, use_amix);
 
         AVStream *audio_stream = nullptr;
         if(replay_buffer_size_secs == -1)
@@ -2108,7 +2117,6 @@ int main(int argc, char **argv) {
         std::vector<AVFilterContext*> src_filter_ctx;
         AVFilterGraph *graph = nullptr;
         AVFilterContext *sink = nullptr;
-        bool use_amix = merged_audio_inputs.audio_inputs.size() > 1;
         if(use_amix) {
             int err = init_filter_graph(audio_codec_context, &graph, &sink, src_filter_ctx, merged_audio_inputs.audio_inputs.size());
             if(err < 0) {
@@ -2133,14 +2141,15 @@ int main(int argc, char **argv) {
             if(audio_input.name.empty()) {
                 audio_device.sound_device.handle = NULL;
                 audio_device.sound_device.frames = 0;
-                audio_device.frame = NULL;
             } else {
                 if(sound_device_get_by_name(&audio_device.sound_device, audio_input.name.c_str(), audio_input.description.c_str(), num_channels, audio_codec_context->frame_size, audio_codec_context_get_audio_format(audio_codec_context)) != 0) {
                     fprintf(stderr, "Error: failed to get \"%s\" sound device\n", audio_input.name.c_str());
                     _exit(1);
                 }
-                audio_device.frame = create_audio_frame(audio_codec_context);
             }
+
+            audio_device.frame = create_audio_frame(audio_codec_context);
+            audio_device.frame->pts = 0;
 
             audio_devices.push_back(std::move(audio_device));
         }
@@ -2182,8 +2191,8 @@ int main(int argc, char **argv) {
 
     const double start_time_pts = clock_get_monotonic_seconds();
 
-    double start_time = clock_get_monotonic_seconds(); // todo - target_fps to make first frame start immediately?
-    double frame_timer_start = start_time;
+    double start_time = clock_get_monotonic_seconds();
+    double frame_timer_start = start_time - target_fps; // We want to capture the first frame immediately
     int fps_counter = 0;
 
     AVFrame *frame = av_frame_alloc();
@@ -2239,7 +2248,6 @@ int main(int argc, char **argv) {
                 const double target_audio_hz = 1.0 / (double)audio_track.codec_context->sample_rate;
                 double received_audio_time = clock_get_monotonic_seconds();
                 const int64_t timeout_ms = std::round((1000.0 / (double)audio_track.codec_context->sample_rate) * 1000.0);
-                int64_t prev_pts = 0;
 
                 while(running) {
                     void *sound_buffer;
@@ -2259,7 +2267,7 @@ int main(int argc, char **argv) {
                     }
 
                     // TODO: Is this |received_audio_time| really correct?
-                    int64_t num_missing_frames = std::round((this_audio_frame_time - received_audio_time) / target_audio_hz / (int64_t)audio_device.frame->nb_samples);
+                    int64_t num_missing_frames = std::round((this_audio_frame_time - received_audio_time) / target_audio_hz / (int64_t)audio_track.codec_context->frame_size);
                     if(got_audio_data)
                         num_missing_frames = std::max((int64_t)0, num_missing_frames - 1);
 
@@ -2278,7 +2286,7 @@ int main(int argc, char **argv) {
                         //audio_track.frame->data[0] = empty_audio;
                         received_audio_time = this_audio_frame_time;
                         if(needs_audio_conversion)
-                            swr_convert(swr, &audio_device.frame->data[0], audio_device.frame->nb_samples, (const uint8_t**)&empty_audio, audio_track.codec_context->frame_size);
+                            swr_convert(swr, &audio_device.frame->data[0], audio_track.codec_context->frame_size, (const uint8_t**)&empty_audio, audio_track.codec_context->frame_size);
                         else
                             audio_device.frame->data[0] = empty_audio;
 
@@ -2291,12 +2299,6 @@ int main(int argc, char **argv) {
                                     fprintf(stderr, "Error: failed to add audio frame to filter\n");
                                 }
                             } else {
-                                audio_device.frame->pts = (this_audio_frame_time - record_start_time) * (double)AV_TIME_BASE;
-                                const bool same_pts = audio_device.frame->pts == prev_pts;
-                                prev_pts = audio_device.frame->pts;
-                                if(same_pts)
-                                    continue;
-
                                 ret = avcodec_send_frame(audio_track.codec_context, audio_device.frame);
                                 if(ret >= 0) {
                                     // TODO: Move to separate thread because this could write to network (for example when livestreaming)
@@ -2305,6 +2307,7 @@ int main(int argc, char **argv) {
                                     fprintf(stderr, "Failed to encode audio!\n");
                                 }
                             }
+                            audio_device.frame->pts += audio_track.codec_context->frame_size;
                         }
                     }
 
@@ -2314,15 +2317,9 @@ int main(int argc, char **argv) {
                     if(got_audio_data) {
                         // TODO: Instead of converting audio, get float audio from alsa. Or does alsa do conversion internally to get this format?
                         if(needs_audio_conversion)
-                            swr_convert(swr, &audio_device.frame->data[0], audio_device.frame->nb_samples, (const uint8_t**)&sound_buffer, audio_track.codec_context->frame_size);
+                            swr_convert(swr, &audio_device.frame->data[0], audio_track.codec_context->frame_size, (const uint8_t**)&sound_buffer, audio_track.codec_context->frame_size);
                         else
                             audio_device.frame->data[0] = (uint8_t*)sound_buffer;
-
-                        audio_device.frame->pts = (this_audio_frame_time - record_start_time) * (double)AV_TIME_BASE;
-                        const bool same_pts = audio_device.frame->pts == prev_pts;
-                        prev_pts = audio_device.frame->pts;
-                        if(same_pts)
-                            continue;
 
                         if(audio_track.graph) {
                             std::lock_guard<std::mutex> lock(audio_filter_mutex);
@@ -2339,6 +2336,8 @@ int main(int argc, char **argv) {
                                 fprintf(stderr, "Failed to encode audio!\n");
                             }
                         }
+
+                        audio_device.frame->pts += audio_track.codec_context->frame_size;
                     }
                 }
 
@@ -2356,7 +2355,6 @@ int main(int argc, char **argv) {
 
     int64_t video_pts_counter = 0;
     int64_t video_prev_pts = 0;
-    int64_t audio_prev_pts = 0;
 
     while(running) {
         double frame_start = clock_get_monotonic_seconds();
@@ -2377,15 +2375,7 @@ int main(int argc, char **argv) {
 
                 int err = 0;
                 while ((err = av_buffersink_get_frame(audio_track.sink, aframe)) >= 0) {
-                    const double this_audio_frame_time = clock_get_monotonic_seconds();
-                    aframe->pts = (this_audio_frame_time - record_start_time) * (double)AV_TIME_BASE;
-                    const bool same_pts = aframe->pts == audio_prev_pts;
-                    audio_prev_pts = aframe->pts;
-                    if(same_pts) {
-                        av_frame_unref(aframe);
-                        continue;
-                    }
-
+                    aframe->pts = audio_track.pts;
                     err = avcodec_send_frame(audio_track.codec_context, aframe);
                     if(err >= 0){
                         // TODO: Move to separate thread because this could write to network (for example when livestreaming)
@@ -2394,6 +2384,7 @@ int main(int argc, char **argv) {
                         fprintf(stderr, "Failed to encode audio!\n");
                     }
                     av_frame_unref(aframe);
+                    audio_track.pts += audio_track.codec_context->frame_size;
                 }
             }
         }

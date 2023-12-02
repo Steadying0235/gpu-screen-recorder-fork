@@ -143,6 +143,7 @@ static uint32_t plane_get_properties(int drmfd, uint32_t plane_id, bool *is_curs
     if(!props)
         return false;
 
+    // TODO: Dont do this every frame
     for(uint32_t i = 0; i < props->count_props; ++i) {
         drmModePropertyPtr prop = drmModeGetProperty(drmfd, props->props[i]);
         if(!prop)

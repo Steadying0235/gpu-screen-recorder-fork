@@ -3,12 +3,20 @@ This is a screen recorder that has minimal impact on system performance by recor
 similar to shadowplay on windows. This is the fastest screen recording tool for Linux.
 
 This screen recorder can be used for recording your desktop offline, for live streaming and for nvidia shadowplay-like instant replay,
-where only the last few seconds are saved.
+where only the last moments are saved.
+
+Supported video codecs:
+* H264 (default on Intel)
+* HEVC (default on AMD and NVIDIA)
+* AV1 (not currently supported on NVIDIA if you use GPU Screen Recorder flatpak)
+
+Supported audio codecs:
+* Opus (default)
+* AAC
+* FLAC
 
 ## Note
-This software works with x11 and wayland, but when using AMD/Intel or Wayland then only monitors can be recorded.\
-GPU Screen Recorder only supports h264 and hevc codecs at the moment which means that webm files are not supported.\
-CPU usage may be higher on wayland than on x11 when using nvidia.
+This software works with x11 and wayland, but when using AMD/Intel or Wayland then only monitors can be recorded.
 ### TEMPORARY ISSUES
 1) screen-direct capture has been temporary disabled as it causes issues with stuttering. This might be a nvfbc bug.
 2) Recording the monitor on steam deck might fail sometimes. This happens even when using ffmpeg directly. This might be a steam deck driver bug. Recording a single window doesn't have this issue.

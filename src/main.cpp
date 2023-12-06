@@ -1929,6 +1929,7 @@ int main(int argc, char **argv) {
             break;
         }
         case AudioCodec::OPUS: {
+            // TODO: Also check mpegts?
             if(file_extension != "mp4" && file_extension != "mkv") {
                 audio_codec_to_use = "aac";
                 audio_codec = AudioCodec::AAC;
@@ -1937,6 +1938,7 @@ int main(int argc, char **argv) {
             break;
         }
         case AudioCodec::FLAC: {
+            // TODO: Also check mpegts?
             if(file_extension != "mp4" && file_extension != "mkv") {
                 audio_codec_to_use = "aac";
                 audio_codec = AudioCodec::AAC;

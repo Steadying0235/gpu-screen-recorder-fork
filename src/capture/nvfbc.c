@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 #include <X11/Xlib.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_cuda.h>
@@ -297,7 +298,7 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     if(capture_region)
         create_capture_params.captureBox = (NVFBC_BOX){ x, y, width, height };
     create_capture_params.eTrackingType = tracking_type;
-    create_capture_params.dwSamplingRateMs = 1000u / ((uint32_t)cap_nvfbc->params.fps + 1);
+    create_capture_params.dwSamplingRateMs = (uint32_t)ceilf(1000.0f / (float)cap_nvfbc->params.fps);
     create_capture_params.bAllowDirectCapture = direct_capture ? NVFBC_TRUE : NVFBC_FALSE;
     create_capture_params.bPushModel = direct_capture ? NVFBC_TRUE : NVFBC_FALSE;
     //create_capture_params.bDisableAutoModesetRecovery = true; // TODO:

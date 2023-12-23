@@ -5,7 +5,7 @@ This is a screen recorder that has minimal impact on system performance by recor
 similar to shadowplay on windows. This is the fastest screen recording tool for Linux.
 
 This screen recorder can be used for recording your desktop offline, for live streaming and for nvidia shadowplay-like instant replay,
-where only the last moments are saved.
+where only the last few minutes are saved.
 
 Supported video codecs:
 * H264 (default on Intel)
@@ -31,8 +31,7 @@ For you as a user this only means that if you installed GPU Screen Recorder as a
 On a system with a i5 4690k CPU and a GTX 1080 GPU:\
 When recording Legend of Zelda Breath of the Wild at 4k, fps drops from 30 to 7 when using OBS Studio + nvenc, however when using this screen recorder the fps remains at 30.\
 When recording GTA V at 4k on highest settings, fps drops from 60 to 23 when using obs-nvfbc + nvenc, however when using this screen recorder the fps only drops to 58. The quality is also much better when using gpu screen recorder.\
-It is recommended to save the video to a SSD because of the large file size, which a slow HDD might not be fast enough to handle.\
-Note that if you have a very powerful CPU and a not so powerful GPU and play a game that is bottlenecked by your GPU and barely uses your CPU then a CPU based screen recording (such as OBS with libx264 instead of nvenc) might perform slightly better than GPU Screen Recorder. At least on NVIDIA.
+It is recommended to save the video to a SSD because of the large file size, which a slow HDD might not be fast enough to handle.
 ## Note about optimal performance on NVIDIA
 NVIDIA driver has a "feature" (read: bug) where it will downclock memory transfer rate when a program uses cuda (or nvenc, which uses cuda), such as GPU Screen Recorder. To work around this bug, GPU Screen Recorder can overclock your GPU memory transfer rate to it's normal optimal level.\
 To enable overclocking for optimal performance use the `-oc` option when running GPU Screen Recorder. You also need to have "Coolbits" NVIDIA X setting set to "12" to enable overclocking. You can automatically add this option if you run `sudo nvidia-xconfig --cool-bits=12` and then reboot your computer.\
@@ -139,7 +138,7 @@ Some linux distros (such as manjaro) disable hardware accelerated h264/hevc on A
 ## I have an old nvidia GPU that supports nvenc but I get a cuda error when trying to record
 Newer ffmpeg versions don't support older nvidia cards. Try installing GPU Screen Recorder flatpak from [flathub](https://flathub.org/apps/details/com.dec05eba.gpu_screen_recorder) instead. It comes with an older ffmpeg version which might work for your GPU.
 ## I get a black screen/glitches while live streaming
-It seems like ffmpeg earlier than version 6.1 has some type of bug. Install ffmpeg 6.1 and then reinstall GPU Screen Recorder to fix this issue.
+It seems like ffmpeg earlier than version 6.1 has some type of bug. Install ffmpeg 6.1 and then reinstall GPU Screen Recorder to fix this issue. The flatpak version of GPU Screen Recorder comes with ffmpeg 6.1 so no extra steps are needed.
 
 # Donations
 If you want to donate you can donate via bitcoin or monero.

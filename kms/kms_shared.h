@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define GSR_KMS_PROTOCOL_VERSION 2
+#define GSR_KMS_PROTOCOL_VERSION 1
 #define GSR_KMS_MAX_PLANES 32
 
 typedef enum {

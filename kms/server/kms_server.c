@@ -9,7 +9,6 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <sys/stat.h>
 #include <time.h>
 
 #include <xf86drm.h>
@@ -362,7 +361,6 @@ static void strncpy_safe(char *dst, const char *src, int len) {
 int main(int argc, char **argv) {
     int res = 0;
     int socket_fd = 0;
-    int client_socket_fd = 0;
     gsr_drm drm;
     drm.drmfd = 0;
     drm.planes = NULL;
@@ -409,59 +407,36 @@ int main(int argc, char **argv) {
     c2crtc_map.num_maps = 0;
     map_crtc_to_connector_ids(&drm, &c2crtc_map);
 
-    struct sockaddr_un local_addr = {0};
-    local_addr.sun_family = AF_UNIX;
-    strncpy_safe(local_addr.sun_path, domain_socket_path, sizeof(local_addr.sun_path));
-
-    const mode_t prev_mask = umask(0000);
-    const int bind_res = bind(socket_fd, (struct sockaddr*)&local_addr, sizeof(local_addr.sun_family) + strlen(local_addr.sun_path));
-    umask(prev_mask);
-
-    if(bind_res == -1) {
-        fprintf(stderr, "kms server error: failed to bind socket, error: %s\n", strerror(errno));
-        res = 2;
-        goto done;
-    }
-
-    if(listen(socket_fd, 1) == -1) {
-        fprintf(stderr, "kms server error: failed to listen on socket, error: %s\n", strerror(errno));
-        res = 2;
-        goto done;
-    }
-
-    fprintf(stderr, "kms server info: waiting for client to connect\n");
+    fprintf(stderr, "kms server info: connecting to the client\n");
     bool connected = false;
     const double connect_timeout_sec = 5.0;
     const double start_time = clock_get_monotonic_seconds();
     while(clock_get_monotonic_seconds() - start_time < connect_timeout_sec) {
-        struct timeval tv;
-        fd_set rfds;
-        FD_ZERO(&rfds);
-        FD_SET(socket_fd, &rfds);
-
-        tv.tv_sec = 0;
-        tv.tv_usec = 100 * 1000; // 100 ms
-
-        int select_res = select(1 + socket_fd, &rfds, NULL, NULL, &tv);
-        if(select_res > 0) {
-            struct sockaddr_un remote_addr = {0};
-            socklen_t sock_len = 0;
-            client_socket_fd = accept(socket_fd, (struct sockaddr*)&remote_addr, &sock_len);
-            if(client_socket_fd == -1) {
-                fprintf(stderr, "kms server error: accept failed on socket, error: %s\n", strerror(errno));
-                res = 2;
-                goto done;
+        struct sockaddr_un remote_addr = {0};
+        remote_addr.sun_family = AF_UNIX;
+        strncpy_safe(remote_addr.sun_path, domain_socket_path, sizeof(remote_addr.sun_path));
+        // TODO: Check if parent disconnected
+        if(connect(socket_fd, (struct sockaddr*)&remote_addr, sizeof(remote_addr.sun_family) + strlen(remote_addr.sun_path)) == -1) {
+            if(errno == ECONNREFUSED || errno == ENOENT) {
+                goto next;
+            } else if(errno == EISCONN) {
+                connected = true;
+                break;
             }
 
-            connected = true;
-            break;
+            fprintf(stderr, "kms server error: connect failed, error: %s (%d)\n", strerror(errno), errno);
+            res = 2;
+            goto done;
         }
+
+        next:
+        usleep(30 * 1000); // 30 milliseconds
     }
 
     if(connected) {
-        fprintf(stderr, "kms server info: client connected\n");
+        fprintf(stderr, "kms server info: connected to the client\n");
     } else {
-        fprintf(stderr, "kms server error: client failed to connect in %f seconds\n", connect_timeout_sec);
+        fprintf(stderr, "kms server error: failed to connect to the client in %f seconds\n", connect_timeout_sec);
         res = 2;
         goto done;
     }
@@ -472,7 +447,7 @@ int main(int argc, char **argv) {
         request.type = -1;
         request.new_connection_fd = 0;
 
-        const int recv_res = recv_msg_from_client(client_socket_fd, &request);
+        const int recv_res = recv_msg_from_client(socket_fd, &request);
         if(recv_res == 0) {
             fprintf(stderr, "kms server info: kms client shutdown, shutting down the server\n");
             res = 3;
@@ -504,29 +479,18 @@ int main(int argc, char **argv) {
                 response.num_fds = 0;
 
                 if(request.new_connection_fd > 0) {
-                    if(socket_fd > 0) {
+                    if(socket_fd > 0)
                         close(socket_fd);
-                        socket_fd = -1;
-                    }
-
-                    if(client_socket_fd > 0)
-                        close(client_socket_fd);
-
-                    client_socket_fd = request.new_connection_fd;
+                    socket_fd = request.new_connection_fd;
 
                     response.result = KMS_RESULT_OK;
-                    if(send_msg_to_client(client_socket_fd, &response) == -1)
+                    if(send_msg_to_client(socket_fd, &response) == -1)
                         fprintf(stderr, "kms server error: failed to respond to client KMS_REQUEST_TYPE_REPLACE_CONNECTION request\n");
-
-                    if(domain_socket_path) {
-                        remove(domain_socket_path);
-                        domain_socket_path = NULL;
-                    }
                 } else {
                     response.result = KMS_RESULT_INVALID_REQUEST;
                     snprintf(response.err_msg, sizeof(response.err_msg), "received invalid connection fd");
                     fprintf(stderr, "kms server error: %s\n", response.err_msg);
-                    if(send_msg_to_client(client_socket_fd, &response) == -1)
+                    if(send_msg_to_client(socket_fd, &response) == -1)
                         fprintf(stderr, "kms server error: failed to respond to client request\n");
                 }
 
@@ -538,10 +502,10 @@ int main(int argc, char **argv) {
                 response.num_fds = 0;
                 
                 if(kms_get_fb(&drm, &response, &c2crtc_map) == 0) {
-                    if(send_msg_to_client(client_socket_fd, &response) == -1)
+                    if(send_msg_to_client(socket_fd, &response) == -1)
                         fprintf(stderr, "kms server error: failed to respond to client KMS_REQUEST_TYPE_GET_KMS request\n");
                 } else {
-                    if(send_msg_to_client(client_socket_fd, &response) == -1)
+                    if(send_msg_to_client(socket_fd, &response) == -1)
                         fprintf(stderr, "kms server error: failed to respond to client KMS_REQUEST_TYPE_GET_KMS request\n");
                 }
 
@@ -559,7 +523,7 @@ int main(int argc, char **argv) {
 
                 snprintf(response.err_msg, sizeof(response.err_msg), "invalid request type %d, expected %d (%s)", request.type, KMS_REQUEST_TYPE_GET_KMS, "KMS_REQUEST_TYPE_GET_KMS");
                 fprintf(stderr, "kms server error: %s\n", response.err_msg);
-                if(send_msg_to_client(client_socket_fd, &response) == -1)
+                if(send_msg_to_client(socket_fd, &response) == -1)
                     fprintf(stderr, "kms server error: failed to respond to client request\n");
 
                 break;
@@ -572,11 +536,7 @@ int main(int argc, char **argv) {
         drmModeFreePlaneResources(drm.planes);
     if(drm.drmfd > 0)
         close(drm.drmfd);
-    if(client_socket_fd > 0)
-        close(client_socket_fd);
     if(socket_fd > 0)
         close(socket_fd);
-    if(domain_socket_path)
-        remove(domain_socket_path);
     return res;
 }

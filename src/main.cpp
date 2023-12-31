@@ -1970,6 +1970,10 @@ int main(int argc, char **argv) {
         } else {
             const AVCodec *h265_codec = find_h265_encoder(gpu_inf.vendor, card_path);
 
+            if(h265_codec && fps > 60) {
+                fprintf(stderr, "Warning: recording at higher fps than 60 with h265 might result in recording at a very low fps. If this happens, switch to h264\n");
+            }
+
             // h265 generally allows recording at a higher resolution than h264 on nvidia cards. On a gtx 1080 4k is the max resolution for h264 but for h265 it's 8k.
             // Another important info is that when recording at a higher fps than.. 60? h265 has very bad performance. For example when recording at 144 fps the fps drops to 1
             // while with h264 the fps doesn't drop.
@@ -2050,10 +2054,12 @@ int main(int argc, char **argv) {
         }
 
         fprintf(stderr, "Error: your gpu does not support '%s' video codec. If you are sure that your gpu does support '%s' video encoding and you are using an AMD/Intel GPU,\n"
-            "  then it's possible that your distro has disabled hardware accelerated video encoding for '%s' video codec.\n"
-            "  This may be the case on corporate distros such as Manjaro.\n"
-            "  You can test this by running 'vainfo | grep VAEntrypointEncSlice' to see if it matches any H264/HEVC/AV1 profile. vainfo is part of libva-utils.\n"
-            "  On such distros, you need to manually install mesa from source to enable H264/HEVC/AV1 hardware acceleration, or use a more user friendly distro.\n", video_codec_name, video_codec_name, video_codec_name);
+            "  then make sure you have installed the GPU specific vaapi packages.\n"
+            "  It's also possible that your distro has disabled hardware accelerated video encoding for '%s' video codec.\n"
+            "  This may be the case on corporate distros such as Manjaro, Fedora or OpenSUSE.\n"
+            "  You can test this by running 'vainfo | grep VAEntrypointEncSlice' to see if it matches any H264/HEVC profile. Also make sure 'ffmpeg -h encoder=h264_vaapi' doesn't return any error.\n"
+            "  vainfo is part of libva-utils.\n"
+            "  On such distros, you need to manually install mesa from source to enable H264/HEVC hardware acceleration, or use a more user friendly distro. Alternatively record with AV1 if supported by your GPU.\n", video_codec_name, video_codec_name, video_codec_name);
         _exit(2);
     }
 

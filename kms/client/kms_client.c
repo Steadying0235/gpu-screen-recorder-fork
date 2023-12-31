@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <sys/capability.h>
 
 #define GSR_SOCKET_PAIR_LOCAL  0
@@ -229,7 +230,12 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
 
     local_addr.sun_family = AF_UNIX;
     strncpy_safe(local_addr.sun_path, self->initial_socket_path, sizeof(local_addr.sun_path));
-    if(bind(self->initial_socket_fd, (struct sockaddr*)&local_addr, sizeof(local_addr.sun_family) + strlen(local_addr.sun_path)) == -1) {
+
+    const mode_t prev_mask = umask(0000);
+    int bind_res = bind(self->initial_socket_fd, (struct sockaddr*)&local_addr, sizeof(local_addr.sun_family) + strlen(local_addr.sun_path));
+    umask(prev_mask);
+
+    if(bind_res == -1) {
         fprintf(stderr, "gsr error: gsr_kms_client_init: failed to bind socket, error: %s\n", strerror(errno));
         goto err;
     }

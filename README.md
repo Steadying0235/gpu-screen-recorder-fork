@@ -1,7 +1,7 @@
 ![](https://dec05eba.com/images/gpu_screen_recorder_logo_small.png)
 
 # GPU Screen Recorder
-This is a screen recorder that has minimal impact on system performance by recording a window using the GPU only,
+This is a screen recorder that has minimal impact on system performance by recording your monitor using the GPU only,
 similar to shadowplay on windows. This is the fastest screen recording tool for Linux.
 
 This screen recorder can be used for recording your desktop offline, for live streaming and for nvidia shadowplay-like instant replay,
@@ -37,8 +37,6 @@ NVIDIA driver has a "feature" (read: bug) where it will downclock memory transfe
 To enable overclocking for optimal performance use the `-oc` option when running GPU Screen Recorder. You also need to have "Coolbits" NVIDIA X setting set to "12" to enable overclocking. You can automatically add this option if you run `sudo nvidia-xconfig --cool-bits=12` and then reboot your computer.\
 Note that this only works when Xorg server is running as root, and using this option will only give you a performance boost if the game you are recording is bottlenecked by your GPU.\
 Note! use at your own risk!
-## Note about optimal performance on AMD/Intel
-Performance is the same when recording a single window or the monitor, however in some cases, such as when gpu usage is 100%, the video capture rate might be slower than the games fps when recording a single window instead of a monitor. Recording the monitor instead is recommended in such cases.
 
 # Installation
 If you are running an Arch Linux based distro, then you can find gpu screen recorder on aur under the name gpu-screen-recorder-git (`yay -S gpu-screen-recorder-git`).\

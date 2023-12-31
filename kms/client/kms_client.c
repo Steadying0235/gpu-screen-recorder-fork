@@ -251,10 +251,11 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
         goto err;
     } else if(pid == 0) { /* child */
         if(inside_flatpak) {
-            if(has_perm) {
-                const char *args[] = { "flatpak-spawn", "--host", "/var/lib/flatpak/app/com.dec05eba.gpu_screen_recorder/current/active/files/bin/gsr-kms-server", self->initial_socket_path, card_path, NULL };
-                execvp(args[0], (char *const*)args);
-            } else {
+            const char *args[] = { "flatpak-spawn", "--host", "/var/lib/flatpak/app/com.dec05eba.gpu_screen_recorder/current/active/files/bin/gsr-kms-server", self->initial_socket_path, card_path, NULL };
+            execvp(args[0], (char *const*)args);
+
+            // If above fails for whatever reason we try this. Maybe some distros dont install flatpak in /var/lib/flatpak/app ?
+            if(!has_perm) {
                 const char *args[] = { "flatpak-spawn", "--host", "pkexec", "flatpak", "run", "--command=gsr-kms-server", "com.dec05eba.gpu_screen_recorder", self->initial_socket_path, card_path, NULL };
                 execvp(args[0], (char *const*)args);
             }
@@ -265,6 +266,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
             const char *args[] = { "pkexec", server_filepath, self->initial_socket_path, card_path, NULL };
             execvp(args[0], (char *const*)args);
         }
+
         fprintf(stderr, "gsr error: gsr_kms_client_init: execvp failed, error: %s\n", strerror(errno));
         _exit(127);
     } else { /* parent */

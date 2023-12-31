@@ -174,12 +174,10 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     int result = -1;
     self->kms_server_pid = -1;
     self->initial_socket_fd = -1;
-    self->initial_client_fd = -1;
     self->initial_socket_path[0] = '\0';
     self->socket_pair[0] = -1;
     self->socket_pair[1] = -1;
     struct sockaddr_un local_addr = {0};
-    struct sockaddr_un remote_addr = {0};
 
     if(!create_socket_path(self->initial_socket_path, sizeof(self->initial_socket_path))) {
         fprintf(stderr, "gsr error: gsr_kms_client_init: failed to create path to kms socket\n");
@@ -231,20 +229,6 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     local_addr.sun_family = AF_UNIX;
     strncpy_safe(local_addr.sun_path, self->initial_socket_path, sizeof(local_addr.sun_path));
 
-    const mode_t prev_mask = umask(0000);
-    int bind_res = bind(self->initial_socket_fd, (struct sockaddr*)&local_addr, sizeof(local_addr.sun_family) + strlen(local_addr.sun_path));
-    umask(prev_mask);
-
-    if(bind_res == -1) {
-        fprintf(stderr, "gsr error: gsr_kms_client_init: failed to bind socket, error: %s\n", strerror(errno));
-        goto err;
-    }
-
-    if(listen(self->initial_socket_fd, 1) == -1) {
-        fprintf(stderr, "gsr error: gsr_kms_client_init: failed to listen on socket, error: %s\n", strerror(errno));
-        goto err;
-    }
-
     pid_t pid = fork();
     if(pid == -1) {
         fprintf(stderr, "gsr error: gsr_kms_client_init: fork failed, error: %s\n", strerror(errno));
@@ -271,41 +255,50 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
         self->kms_server_pid = pid;
     }
 
-    fprintf(stderr, "gsr info: gsr_kms_client_init: waiting for server to connect\n");
-    for(;;) {
-        struct timeval tv;
-        fd_set rfds;
-        FD_ZERO(&rfds);
-        FD_SET(self->initial_socket_fd, &rfds);
-
-        tv.tv_sec = 0;
-        tv.tv_usec = 100 * 1000; // 100 ms
-
-        int select_res = select(1 + self->initial_socket_fd, &rfds, NULL, NULL, &tv);
-        if(select_res > 0) {
-            socklen_t sock_len = 0;
-            self->initial_client_fd = accept(self->initial_socket_fd, (struct sockaddr*)&remote_addr, &sock_len);
-            if(self->initial_client_fd == -1) {
-                fprintf(stderr, "gsr error: gsr_kms_client_init: accept failed on socket, error: %s\n", strerror(errno));
-                goto err;
+    fprintf(stderr, "gsr info: connecting to the server\n");
+    bool connected = false;
+    while(true) {
+        struct sockaddr_un remote_addr = {0};
+        remote_addr.sun_family = AF_UNIX;
+        strncpy_safe(remote_addr.sun_path, self->initial_socket_path, sizeof(remote_addr.sun_path));
+        // TODO: Check if parent disconnected
+        if(connect(self->initial_socket_fd, (struct sockaddr*)&remote_addr, sizeof(remote_addr.sun_family) + strlen(remote_addr.sun_path)) == -1) {
+            if(errno == ECONNREFUSED || errno == ENOENT) {
+                goto next;
+            } else if(errno == EISCONN) {
+                connected = true;
+                break;
             }
-            break;
-        } else {
-            int status = 0;
-            int wait_result = waitpid(self->kms_server_pid, &status, WNOHANG);
-            if(wait_result != 0) {
-                int exit_code = -1;
-                if(WIFEXITED(status))
-                    exit_code = WEXITSTATUS(status);
-                fprintf(stderr, "gsr error: gsr_kms_client_init: kms server died or never started, exit code: %d\n", exit_code);
-                self->kms_server_pid = -1;
-                if(exit_code != 0)
-                    result = exit_code;
-                goto err;
-            }
+
+            fprintf(stderr, "gsr error: gsr_kms_client_init: connect failed, error: %s (%d)\n", strerror(errno), errno);
+            goto err;
         }
+
+        next:
+        if(connected)
+            break;
+
+        int status = 0;
+        int wait_result = waitpid(self->kms_server_pid, &status, WNOHANG);
+        if(wait_result != 0) {
+            int exit_code = -1;
+            if(WIFEXITED(status))
+                exit_code = WEXITSTATUS(status);
+            fprintf(stderr, "gsr error: gsr_kms_client_init: kms server died or never started, exit code: %d\n", exit_code);
+            self->kms_server_pid = -1;
+            if(exit_code != 0)
+                result = exit_code;
+            goto err;
+        }
+        usleep(30 * 1000); // 30 milliseconds
     }
-    fprintf(stderr, "gsr info: gsr_kms_client_init: server connected\n");
+
+    if(connected) {
+        fprintf(stderr, "gsr info: connected to the server\n");
+    } else {
+        fprintf(stderr, "gsr error: gsr_kms_client_init: failed to connect to the server\n");
+        goto err;
+    }
 
     fprintf(stderr, "gsr info: replacing file-backed unix domain socket with socketpair\n");
     if(gsr_kms_client_replace_connection(self) != 0)
@@ -322,11 +315,6 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
 }
 
 void cleanup_socket(gsr_kms_client *self, bool kill_server) {
-    if(self->initial_client_fd != -1) {
-        close(self->initial_client_fd);
-        self->initial_client_fd = -1;
-    }
-
     if(self->initial_socket_fd != -1) {
         close(self->initial_socket_fd);
         self->initial_socket_fd = -1;
@@ -366,7 +354,7 @@ int gsr_kms_client_replace_connection(gsr_kms_client *self) {
     request.version = GSR_KMS_PROTOCOL_VERSION;
     request.type = KMS_REQUEST_TYPE_REPLACE_CONNECTION;
     request.new_connection_fd = self->socket_pair[GSR_SOCKET_PAIR_REMOTE];
-    if(send_msg_to_server(self->initial_client_fd, &request) == -1) {
+    if(send_msg_to_server(self->initial_socket_fd, &request) == -1) {
         fprintf(stderr, "gsr error: gsr_kms_client_replace_connection: failed to send request message to server\n");
         return -1;
     }

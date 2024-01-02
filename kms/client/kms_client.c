@@ -232,7 +232,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     strncpy_safe(local_addr.sun_path, self->initial_socket_path, sizeof(local_addr.sun_path));
 
     const mode_t prev_mask = umask(0000);
-    int bind_res = bind(self->initial_socket_fd, (struct sockaddr*)&local_addr, sizeof(local_addr.sun_family) + strlen(local_addr.sun_path));
+    const int bind_res = bind(self->initial_socket_fd, (struct sockaddr*)&local_addr, sizeof(local_addr.sun_family) + strlen(local_addr.sun_path));
     umask(prev_mask);
 
     if(bind_res == -1) {
@@ -260,8 +260,8 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
 
                 // If above fails for whatever reason we try this. Maybe some distros dont install flatpak in /var/lib/flatpak/app ?
                 {
-                    const char *args[] = { "flatpak-spawn", "--host", "pkexec", "flatpak", "run", "--command=gsr-kms-server", "com.dec05eba.gpu_screen_recorder", self->initial_socket_path, card_path, NULL };
-                    execvp(args[0], (char *const*)args);
+                    const char *args2[] = { "flatpak-spawn", "--host", "pkexec", "flatpak", "run", "--command=gsr-kms-server", "com.dec05eba.gpu_screen_recorder", self->initial_socket_path, card_path, NULL };
+                    execvp(args2[0], (char *const*)args2);
                 }
             }
         } else if(has_perm) {

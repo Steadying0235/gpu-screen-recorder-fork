@@ -110,3 +110,5 @@ Test if p2 state can be worked around by using pure nvenc api and overwriting cu
 Mesa doesn't support global headers (AV_CODEC_FLAG_GLOBAL_HEADER) with h264... which also breaks mkv since mkv requires global header. Right now gpu screen recorder will forcefully set video codec to hevc when h264 is requested for mkv files.
 
 Drop frames if live streaming cant keep up with target fps, or dynamically change resolution/quality.
+
+Support low power option (does it even work with vaapi in ffmpeg??). Would be very useful for steam deck.

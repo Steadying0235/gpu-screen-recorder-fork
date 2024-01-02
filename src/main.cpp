@@ -21,6 +21,7 @@ extern "C" {
 #include <sys/stat.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <libgen.h>
 
 #include "../include/sound.hpp"
 
@@ -832,12 +833,13 @@ static void usage_full() {
     //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, defaults to yuv420\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r).\n");
     fprintf(stderr, "        In replay mode this has to be a directory instead of a file.\n");
+    fprintf(stderr, "        The directory to the file is created (recursively) if it doesn't already exist.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "NOTES:\n");
-    fprintf(stderr, "  Send signal SIGINT to gpu-screen-recorder (Ctrl+C, or killall gpu-screen-recorder) to stop and save the recording (when not using replay mode).\n");
+    fprintf(stderr, "  Send signal SIGINT to gpu-screen-recorder (Ctrl+C, or killall -SIGINT gpu-screen-recorder) to stop and save the recording (when not using replay mode).\n");
     fprintf(stderr, "  Send signal SIGUSR1 to gpu-screen-recorder (killall -SIGUSR1 gpu-screen-recorder) to save a replay (when in replay mode).\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "EXAMPLES\n");
+    fprintf(stderr, "EXAMPLES:\n");
     fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -o video.mp4\n");
     fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -a \"$(pactl get-default-sink).monitor|$(pactl get-default-source)\" -o video.mp4\n");
     //fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -q ultra -pixfmt yuv444 -o video.mp4\n");
@@ -1872,7 +1874,17 @@ int main(int argc, char **argv) {
 
     const char *filename = args["-o"].value();
     if(filename) {
-        if(replay_buffer_size_secs != -1) {
+        if(replay_buffer_size_secs == -1) {
+            char directory_buf[PATH_MAX];
+            strcpy(directory_buf, filename);
+            char *directory = dirname(directory_buf);
+            if(strcmp(directory, ".") != 0 && strcmp(directory, "/") != 0) {
+                if(create_directory_recursive(directory) != 0) {
+                    fprintf(stderr, "Error: failed to create directory for output file: %s\n", filename);
+                    _exit(1);
+                }
+            }
+        } else {
             if(!container_format) {
                 fprintf(stderr, "Error: option -c is required when using option -r\n");
                 usage();

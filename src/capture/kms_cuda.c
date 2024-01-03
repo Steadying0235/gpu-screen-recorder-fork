@@ -28,7 +28,6 @@ typedef struct {
 
 typedef struct {
     gsr_capture_kms_cuda_params params;
-    XEvent xev;
 
     bool should_stop;
     bool stop_is_error;

@@ -22,7 +22,6 @@ typedef struct {
 
 typedef struct {
     gsr_capture_kms_vaapi_params params;
-    XEvent xev;
 
     bool should_stop;
     bool stop_is_error;
@@ -135,7 +134,7 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
     cap_kms->monitor_id.num_connector_ids = 0;
     if(gsr_egl_start_capture(cap_kms->params.egl, cap_kms->params.display_to_capture)) {
         if(!get_monitor_by_name(cap_kms->params.egl, GSR_CONNECTION_WAYLAND, cap_kms->params.display_to_capture, &monitor)) {
-            fprintf(stderr, "gsr error: gsr_capture_kms_cuda_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
+            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
             gsr_capture_kms_vaapi_stop(cap, video_codec_context);
             return -1;
         }

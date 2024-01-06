@@ -93,7 +93,8 @@ Run `gpu-screen-recorder` with the `-c mp4` and `-r` option, for example: `gpu-s
 If `-mf yes` is set, replays are save in folders based on the date.
 To save a video in replay mode, you need to send signal SIGUSR1 to gpu screen recorder. You can do this by running `killall -SIGUSR1 gpu-screen-recorder`.\
 To stop recording, send SIGINT to gpu screen recorder. You can do this by running `killall -SIGINT gpu-screen-recorder` or pressing `Ctrl-C` in the terminal that runs gpu screen recorder.\
-The file path to the saved replay is output to stdout. All other output from GPU Screen Recorder is output to stderr.
+The file path to the saved replay is output to stdout. All other output from GPU Screen Recorder is output to stderr.\
+The replay buffer is stored in ram (as encoded video), so don't use a too large replay time and/or video quality unless you have enough ram to store it.
 ## Finding audio device name
 You can find the default output audio device (headset, speakers (in other words, desktop audio)) with the command `pactl get-default-sink`. Add `monitor` to the end of that to use that as an audio input in gpu screen recorder.\
 You can find the default input audio device (microphone) with the command `pactl get-default-source`. This input should not have `monitor` added to the end when used in gpu screen recorder.\

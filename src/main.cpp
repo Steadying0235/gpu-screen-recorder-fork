@@ -126,7 +126,8 @@ static void receive_frames(AVCodecContext *av_codec_context, int stream_index, A
                            std::deque<std::shared_ptr<PacketData>> &frame_data_queue,
                            int replay_buffer_size_secs,
                            bool &frames_erased,
-                           std::mutex &write_output_mutex) {
+                           std::mutex &write_output_mutex,
+                           double paused_time_offset) {
     for (;;) {
         // TODO: Use av_packet_alloc instead because sizeof(av_packet) might not be future proof(?)
         AVPacket *av_packet = av_packet_alloc();
@@ -152,7 +153,7 @@ static void receive_frames(AVCodecContext *av_codec_context, int stream_index, A
                 new_packet->data.data = (uint8_t*)av_malloc(av_packet->size);
                 memcpy(new_packet->data.data, av_packet->data, av_packet->size);
 
-                double time_now = clock_get_monotonic_seconds();
+                double time_now = clock_get_monotonic_seconds() - paused_time_offset;
                 double replay_time_elapsed = time_now - replay_start_time;
 
                 frame_data_queue.push_back(std::move(new_packet));
@@ -836,8 +837,9 @@ static void usage_full() {
     fprintf(stderr, "        The directory to the file is created (recursively) if it doesn't already exist.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "NOTES:\n");
-    fprintf(stderr, "  Send signal SIGINT to gpu-screen-recorder (Ctrl+C, or killall -SIGINT gpu-screen-recorder) to stop and save the recording (when not using replay mode).\n");
+    fprintf(stderr, "  Send signal SIGINT to gpu-screen-recorder (Ctrl+C, or killall -SIGINT gpu-screen-recorder) to stop and save the recording. When in replay mode this stops recording without saving.\n");
     fprintf(stderr, "  Send signal SIGUSR1 to gpu-screen-recorder (killall -SIGUSR1 gpu-screen-recorder) to save a replay (when in replay mode).\n");
+    fprintf(stderr, "  Send signal SIGUSR2 tp gpu-screen-recorder (killall -SIGUSR2 gpu-screen-recorder) to pause/unpause recording. Only applicable and useful when recording (not streaming nor replay).\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "EXAMPLES:\n");
     fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -o video.mp4\n");
@@ -853,6 +855,7 @@ static void usage() {
 
 static sig_atomic_t running = 1;
 static sig_atomic_t save_replay = 0;
+static sig_atomic_t toggle_pause = 0;
 
 static void stop_handler(int) {
     running = 0;
@@ -860,6 +863,10 @@ static void stop_handler(int) {
 
 static void save_replay_handler(int) {
     save_replay = 1;
+}
+
+static void toggle_pause_handler(int) {
+    toggle_pause = 1;
 }
 
 static bool is_hex_num(char c) {
@@ -1378,6 +1385,7 @@ struct Arg {
 int main(int argc, char **argv) {
     signal(SIGINT, stop_handler);
     signal(SIGUSR1, save_replay_handler);
+    signal(SIGUSR2, toggle_pause_handler);
 
     if(argc <= 1)
         usage_full();
@@ -2215,6 +2223,10 @@ int main(int argc, char **argv) {
     double frame_timer_start = start_time - target_fps; // We want to capture the first frame immediately
     int fps_counter = 0;
 
+    bool paused = false;
+    double paused_time_offset = 0.0;
+    double paused_time_start = 0.0;
+
     AVFrame *frame = av_frame_alloc();
     if (!frame) {
         fprintf(stderr, "Error: Failed to allocate frame\n");
@@ -2276,7 +2288,7 @@ int main(int argc, char **argv) {
                         sound_buffer_size = sound_device_read_next_chunk(&audio_device.sound_device, &sound_buffer);
                     const bool got_audio_data = sound_buffer_size >= 0;
 
-                    const double this_audio_frame_time = clock_get_monotonic_seconds();
+                    const double this_audio_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
                     if(got_audio_data)
                         received_audio_time = this_audio_frame_time;
 
@@ -2293,6 +2305,12 @@ int main(int argc, char **argv) {
 
                     if(!audio_device.sound_device.handle)
                         num_missing_frames = std::max((int64_t)1, num_missing_frames);
+
+                    if(paused) {
+                        if(!audio_device.sound_device.handle)
+                            usleep(timeout_ms * 1000);
+                        continue;
+                    }
 
                     // Jesus is there a better way to do this? I JUST WANT TO KEEP VIDEO AND AUDIO SYNCED HOLY FUCK I WANT TO KILL MYSELF NOW.
                     // THIS PIECE OF SHIT WANTS EMPTY FRAMES OTHERWISE VIDEO PLAYS TOO FAST TO KEEP UP WITH AUDIO OR THE AUDIO PLAYS TOO EARLY.
@@ -2322,7 +2340,7 @@ int main(int argc, char **argv) {
                                 ret = avcodec_send_frame(audio_track.codec_context, audio_device.frame);
                                 if(ret >= 0) {
                                     // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                                    receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_device.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+                                    receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_device.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
                                 } else {
                                     fprintf(stderr, "Failed to encode audio!\n");
                                 }
@@ -2351,7 +2369,7 @@ int main(int argc, char **argv) {
                             ret = avcodec_send_frame(audio_track.codec_context, audio_device.frame);
                             if(ret >= 0) {
                                 // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                                receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_device.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+                                receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_device.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
                             } else {
                                 fprintf(stderr, "Failed to encode audio!\n");
                             }
@@ -2399,7 +2417,7 @@ int main(int argc, char **argv) {
                     err = avcodec_send_frame(audio_track.codec_context, aframe);
                     if(err >= 0){
                         // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                        receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, aframe->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+                        receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, aframe->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
                     } else {
                         fprintf(stderr, "Failed to encode audio!\n");
                     }
@@ -2425,11 +2443,11 @@ int main(int argc, char **argv) {
             frame_time_overflow = std::min(frame_time_overflow, target_fps);
             frame_timer_start = time_now - frame_time_overflow;
 
-            const double this_video_frame_time = clock_get_monotonic_seconds();
+            const double this_video_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
             const int64_t expected_frames = std::round((this_video_frame_time - start_time_pts) / target_fps);
             const int num_frames = framerate_mode == FramerateMode::CONSTANT ? std::max((int64_t)0LL, expected_frames - video_pts_counter) : 1;
 
-            if(num_frames > 0) {
+            if(num_frames > 0 && !paused) {
                 gsr_capture_capture(capture, frame);
 
                 // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
@@ -2448,7 +2466,7 @@ int main(int argc, char **argv) {
                     if(ret == 0) {
                         // TODO: Move to separate thread because this could write to network (for example when livestreaming)
                         receive_frames(video_codec_context, VIDEO_STREAM_INDEX, video_stream, frame->pts, av_format_context,
-                            record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex);
+                            record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
                     } else {
                         fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
                     }
@@ -2457,6 +2475,20 @@ int main(int argc, char **argv) {
                 gsr_capture_end(capture, frame);
                 video_pts_counter += num_frames;
             }
+        }
+
+        if(toggle_pause == 1) {
+            const bool new_paused_state = !paused;
+            if(new_paused_state) {
+                paused_time_start = clock_get_monotonic_seconds();
+                fprintf(stderr, "Paused\n");
+            } else {
+                paused_time_offset += (clock_get_monotonic_seconds() - paused_time_start);
+                fprintf(stderr, "Unpaused\n");
+            }
+
+            toggle_pause = 0;
+            paused = !paused;
         }
 
         if(save_replay_thread.valid() && save_replay_thread.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {

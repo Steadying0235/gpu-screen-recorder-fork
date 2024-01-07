@@ -109,10 +109,10 @@ Run the script `scripts/start-replay.sh` to start replay and then `scripts/save-
 You can use these scripts to start replay at system startup if you add `scripts/start-replay.sh` to startup (this can be done differently depending on your desktop environment / window manager) and then go into
 hotkey settings on your system and choose a hotkey to run the script `scripts/save-replay.sh`. Modify `scripts/start-replay.sh` if you want to use other replay options.
 ## Run replay on system startup
-If you are running a distro that uses systemd then the `install.sh` script installs `extra/gpu-screen-recorder.service` on the system and that systemd service can be started with `systemctl enable --now --user gpu-screen-recorder`
-and it's configured with `$HOME/.config/gpu-screen-recorder.env` (create it if it doesn't exist).
-You can see which variables that you can use in the `gpu-screen-recorder.env` file by looking at the `extra/gpu-screen-recorder.service` file. In general you only need to set the `WINDOW` variable to a monitor to make it work.
-You can use the `scripts/save-replay.sh` script to save a replay and by default the systemd service saves files in `$HOME/Videos`.\
+If you installed GPU Screen Recorder from AUR or if you installed GPU Screen Recorder from source and you are running a distro that uses systemd then you will have a systemd service installed that can be started with `systemctl enable --now --user gpu-screen-recorder`
+and it's configured with `$HOME/.config/gpu-screen-recorder.env` (create it if it doesn't exist). This systemd service runs GPU Screen Recorder on system startup.
+You can see which variables that you can use in the `gpu-screen-recorder.env` file by looking at the `extra/gpu-screen-recorder.service` file.
+You can use the `scripts/save-replay.sh` script to save a replay and by default the systemd service saves videos in `$HOME/Videos`.\
 If you are using a NVIDIA GPU then it's recommended to set PreserveVideoMemoryAllocations=1 as mentioned in the section below.
 ## Issues
 ### NVIDIA

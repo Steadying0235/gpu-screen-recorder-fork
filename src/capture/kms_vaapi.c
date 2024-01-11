@@ -545,6 +545,8 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     }
 
     cap_kms->params.egl->eglSwapBuffers(cap_kms->params.egl->egl_display, cap_kms->params.egl->egl_surface);
+    //cap_kms->params.egl->glFlush();
+    //cap_kms->params.egl->glFinish();
 
     return 0;
 }

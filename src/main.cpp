@@ -598,6 +598,7 @@ static AVFrame* create_audio_frame(AVCodecContext *audio_codec_context) {
 static void open_video(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu, gsr_gpu_vendor vendor, PixelFormat pixel_format) {
     AVDictionary *options = nullptr;
     if(vendor == GSR_GPU_VENDOR_NVIDIA) {
+#if 0
         bool supports_p4 = false;
         bool supports_p5 = false;
 
@@ -610,6 +611,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
                     supports_p5 = true;
             }
         }
+#endif
 
         if(codec_context->codec_id == AV_CODEC_ID_AV1) {
             switch(video_quality) {
@@ -657,7 +659,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
                     break;
             }
         }
-
+#if 0
         if(!supports_p4 && !supports_p5)
             fprintf(stderr, "Info: your ffmpeg version is outdated. It's recommended that you use the flatpak version of gpu-screen-recorder version instead, which you can find at https://flathub.org/apps/details/com.dec05eba.gpu_screen_recorder\n");
 
@@ -680,6 +682,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
             av_dict_set(&options, "preset", supports_p4 ? "p4" : "medium", 0);
         else
             av_dict_set(&options, "preset", supports_p5 ? "p5" : "slow", 0);
+#endif
 
         av_dict_set(&options, "tune", "hq", 0);
         av_dict_set(&options, "rc", "constqp", 0);
@@ -1386,6 +1389,9 @@ int main(int argc, char **argv) {
     signal(SIGINT, stop_handler);
     signal(SIGUSR1, save_replay_handler);
     signal(SIGUSR2, toggle_pause_handler);
+
+    // Stop nvidia driver from buffering frames
+    setenv("__GL_MaxFramesAllowed", "1", true);
 
     if(argc <= 1)
         usage_full();

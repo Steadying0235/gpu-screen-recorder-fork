@@ -180,6 +180,8 @@ typedef struct {
 
     unsigned int (*glGetError)(void);
     const unsigned char* (*glGetString)(unsigned int name);
+    void (*glFlush)(void);
+    void (*glFinish)(void);
     void (*glClear)(unsigned int mask);
     void (*glClearColor)(float red, float green, float blue, float alpha);
     void (*glGenTextures)(int n, unsigned int *textures);

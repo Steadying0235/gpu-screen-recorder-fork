@@ -445,6 +445,8 @@ static int gsr_capture_xcomposite_vaapi_capture(gsr_capture *cap, AVFrame *frame
         texture_rotation);
 
     cap_xcomp->params.egl->eglSwapBuffers(cap_xcomp->params.egl->egl_display, cap_xcomp->params.egl->egl_surface);
+    //cap_xcomp->params.egl->glFlush();
+    //cap_xcomp->params.egl->glFinish();
 
     return 0;
 }

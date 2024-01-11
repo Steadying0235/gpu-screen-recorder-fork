@@ -363,6 +363,8 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
     dlsym_assign required_dlsym[] = {
         { (void**)&self->glGetError, "glGetError" },
         { (void**)&self->glGetString, "glGetString" },
+        { (void**)&self->glFlush, "glFlush" },
+        { (void**)&self->glFinish, "glFinish" },
         { (void**)&self->glClear, "glClear" },
         { (void**)&self->glClearColor, "glClearColor" },
         { (void**)&self->glGenTextures, "glGenTextures" },

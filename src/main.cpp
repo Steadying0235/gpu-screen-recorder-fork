@@ -841,7 +841,7 @@ static void usage_full() {
     fprintf(stderr, "NOTES:\n");
     fprintf(stderr, "  Send signal SIGINT to gpu-screen-recorder (Ctrl+C, or killall -SIGINT gpu-screen-recorder) to stop and save the recording. When in replay mode this stops recording without saving.\n");
     fprintf(stderr, "  Send signal SIGUSR1 to gpu-screen-recorder (killall -SIGUSR1 gpu-screen-recorder) to save a replay (when in replay mode).\n");
-    fprintf(stderr, "  Send signal SIGUSR2 tp gpu-screen-recorder (killall -SIGUSR2 gpu-screen-recorder) to pause/unpause recording. Only applicable and useful when recording (not streaming nor replay).\n");
+    fprintf(stderr, "  Send signal SIGUSR2 to gpu-screen-recorder (killall -SIGUSR2 gpu-screen-recorder) to pause/unpause recording. Only applicable and useful when recording (not streaming nor replay).\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "EXAMPLES:\n");
     fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -o video.mp4\n");

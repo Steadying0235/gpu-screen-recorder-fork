@@ -129,7 +129,6 @@ static void receive_frames(AVCodecContext *av_codec_context, int stream_index, A
                            std::mutex &write_output_mutex,
                            double paused_time_offset) {
     for (;;) {
-        // TODO: Use av_packet_alloc instead because sizeof(av_packet) might not be future proof(?)
         AVPacket *av_packet = av_packet_alloc();
         if(!av_packet)
             break;
@@ -780,8 +779,8 @@ static void usage_full() {
     usage_header();
     fprintf(stderr, "\n");
     fprintf(stderr, "OPTIONS:\n");
-    fprintf(stderr, "  -w    Window to record, a display, \"screen\", \"screen-direct\", \"screen-direct-force\" or \"focused\".\n");
-    fprintf(stderr, "        The display is the display (monitor) name in xrandr and if \"screen\", \"screen-direct\" or \"screen-direct-force\" is selected then all displays are recorded.\n");
+    fprintf(stderr, "  -w    Window id to record, a display (monitor name), \"screen\", \"screen-direct\", \"screen-direct-force\" or \"focused\".\n");
+    fprintf(stderr, "        If this is \"screen\", \"screen-direct\" or \"screen-direct-force\" then all displays are recorded.\n");
     fprintf(stderr, "        If this is \"focused\" then the currently focused window is recorded. When recording the focused window then the -s option has to be used as well.\n");
     fprintf(stderr, "        \"screen-direct\"/\"screen-direct-force\" skips one texture copy for fullscreen applications so it may lead to better performance and it works with VRR monitors\n");
     fprintf(stderr, "        when recording fullscreen application but may break some applications, such as mpv in fullscreen mode or might cause games to freeze/crash because of nvidia driver issues.\n");
@@ -2295,8 +2294,6 @@ int main(int argc, char **argv) {
                     const bool got_audio_data = sound_buffer_size >= 0;
 
                     const double this_audio_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
-                    if(got_audio_data)
-                        received_audio_time = this_audio_frame_time;
 
                     int ret = av_frame_make_writable(audio_device.frame);
                     if (ret < 0) {
@@ -2311,6 +2308,9 @@ int main(int argc, char **argv) {
 
                     if(!audio_device.sound_device.handle)
                         num_missing_frames = std::max((int64_t)1, num_missing_frames);
+
+                    if(got_audio_data)
+                        received_audio_time = this_audio_frame_time;
 
                     if(paused) {
                         if(!audio_device.sound_device.handle)

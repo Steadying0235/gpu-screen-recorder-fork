@@ -2265,7 +2265,8 @@ int main(int argc, char **argv) {
         for(AudioDevice &audio_device : audio_track.audio_devices) {
             audio_device.thread = std::thread([&]() mutable {
                 const AVSampleFormat sound_device_sample_format = audio_format_to_sample_format(audio_codec_context_get_audio_format(audio_track.codec_context));
-                const bool needs_audio_conversion = audio_track.codec_context->sample_fmt != sound_device_sample_format;
+                // TODO: Always do conversion for now. This fixes issue with stuttering audio on pulseaudio with opus + multiple audio sources merged
+                const bool needs_audio_conversion = true;//audio_track.codec_context->sample_fmt != sound_device_sample_format;
                 SwrContext *swr = nullptr;
                 if(needs_audio_conversion) {
                     swr = swr_alloc();
@@ -2313,6 +2314,7 @@ int main(int argc, char **argv) {
                         received_audio_time = this_audio_frame_time;
 
                     if(paused) {
+                        received_audio_time = this_audio_frame_time;
                         if(!audio_device.sound_device.handle)
                             usleep(timeout_ms * 1000);
                         continue;

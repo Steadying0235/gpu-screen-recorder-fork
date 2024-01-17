@@ -139,6 +139,10 @@ Some linux distros (such as manjaro) disable hardware accelerated h264/hevc on A
 Newer ffmpeg versions don't support older nvidia cards. Try installing GPU Screen Recorder flatpak from [flathub](https://flathub.org/apps/details/com.dec05eba.gpu_screen_recorder) instead. It comes with an older ffmpeg version which might work for your GPU.
 ## I get a black screen/glitches while live streaming
 It seems like ffmpeg earlier than version 6.1 has some type of bug. Install ffmpeg 6.1 and then reinstall GPU Screen Recorder to fix this issue. The flatpak version of GPU Screen Recorder comes with ffmpeg 6.1 so no extra steps are needed.
+## I can't play the video in my browser directly or in discord
+Browsers and discord don't support hevc video codec at the moment. Choose h264 video codec instead with the -k h264 option.
+Note that websites such as youtube support hevc so there is no need to choose h264 video codec if you intend to upload the video to youtube or if you want to play the video locally or if you intend to
+edit the video with a video editor. Hevc allows for better video quality (especially at lower file sizes) so hevc (or av1) is recommended for source videos.
 
 # Donations
 If you want to donate you can donate via bitcoin or monero.

@@ -143,6 +143,9 @@ It seems like ffmpeg earlier than version 6.1 has some type of bug. Install ffmp
 Browsers and discord don't support hevc video codec at the moment. Choose h264 video codec instead with the -k h264 option.
 Note that websites such as youtube support hevc so there is no need to choose h264 video codec if you intend to upload the video to youtube or if you want to play the video locally or if you intend to
 edit the video with a video editor. Hevc allows for better video quality (especially at lower file sizes) so hevc (or av1) is recommended for source videos.
+## I get a black bar on the right/bottom in the video
+This is mostly an issue on AMD and it's a hardware issue/ffmpeg issue. If you use HEVC video codec then it's an issue in ffmpeg and if you use AV1 then it's an issue in the video encoding unit on certain AMD gpus, see: https://gitlab.freedesktop.org/mesa/mesa/-/issues/9185.
+If you get black bars then the workaround is to record with h264 video codec instead (using the -k h264 option).
 
 # Donations
 If you want to donate you can donate via bitcoin or monero.

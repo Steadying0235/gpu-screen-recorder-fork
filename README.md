@@ -115,6 +115,8 @@ and it's configured with `$HOME/.config/gpu-screen-recorder.env` (create it if i
 You can see which variables that you can use in the `gpu-screen-recorder.env` file by looking at the `extra/gpu-screen-recorder.service` file.
 You can use the `scripts/save-replay.sh` script to save a replay and by default the systemd service saves videos in `$HOME/Videos`.\
 If you are using a NVIDIA GPU then it's recommended to set PreserveVideoMemoryAllocations=1 as mentioned in the section below.
+## Examples
+Look at the [scripts](https://git.dec05eba.com/gpu-screen-recorder/tree/scripts) directory for script examples. For example if you want to automatically save a recording/replay into a folder with the same name as the game you are recording.
 ## Issues
 ### NVIDIA
 Nvidia drivers have an issue where CUDA breaks if CUDA is running when suspend/hibernation happens, and it remains broken until you reload the nvidia driver. To fix this, either disable suspend or tell the NVIDIA driver to preserve video memory on suspend/hibernate by using the `NVreg_PreserveVideoMemoryAllocations=1` option. You can run `sudo extra/install_preserve_video_memory.sh` to automatically add that option to your system.

@@ -17,7 +17,7 @@
     and copy the input textures to the pixel buffer objects. Use sw_format NV12 as well. Then this is
     similar to kms_vaapi. This allows us to remove one extra texture and texture copy.
 */
-/* TODO: Support cursor plane capture when nvidia supports cursor plane */
+// TODO: Wayland capture
 
 #define MAX_CONNECTOR_IDS 32
 
@@ -48,7 +48,9 @@ typedef struct {
     CUarray mapped_array;
 
     unsigned int input_texture;
+    unsigned int cursor_texture;
     unsigned int target_texture;
+
     gsr_color_conversion color_conversion;
 } gsr_capture_kms_cuda;
 
@@ -275,6 +277,14 @@ static void gsr_capture_kms_cuda_tick(gsr_capture *cap, AVCodecContext *video_co
         cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
+        cap_kms->params.egl->glGenTextures(1, &cap_kms->cursor_texture);
+        cap_kms->params.egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, cap_kms->cursor_texture);
+        cap_kms->params.egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        cap_kms->params.egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        cap_kms->params.egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        cap_kms->params.egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        cap_kms->params.egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+
         cap_kms->target_texture = gl_create_texture(cap_kms, video_codec_context->width, video_codec_context->height);
         if(cap_kms->target_texture == 0) {
             fprintf(stderr, "gsr error: gsr_capture_kms_cuda_tick: failed to create opengl texture\n");
@@ -486,7 +496,33 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
         (vec2i){0, 0}, cap_kms->capture_size,
         capture_pos, cap_kms->capture_size,
-        0.0f);
+        0.0f, false);
+
+    if(cursor_drm_fd) {
+        const intptr_t img_attr_cursor[] = {
+            EGL_LINUX_DRM_FOURCC_EXT,       cursor_drm_fd->pixel_format,
+            EGL_WIDTH,                      cursor_drm_fd->width,
+            EGL_HEIGHT,                     cursor_drm_fd->height,
+            EGL_DMA_BUF_PLANE0_FD_EXT,      cursor_drm_fd->fd,
+            EGL_DMA_BUF_PLANE0_OFFSET_EXT,  cursor_drm_fd->offset,
+            EGL_DMA_BUF_PLANE0_PITCH_EXT,   cursor_drm_fd->pitch,
+            EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, cursor_drm_fd->modifier & 0xFFFFFFFFULL,
+            EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, cursor_drm_fd->modifier >> 32ULL,
+            EGL_NONE
+        };
+
+        EGLImage cursor_image = cap_kms->params.egl->eglCreateImage(cap_kms->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr_cursor);
+        cap_kms->params.egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, cap_kms->cursor_texture);
+        cap_kms->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, cursor_image);
+        cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, cursor_image);
+        cap_kms->params.egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+
+        vec2i cursor_size = {cursor_drm_fd->width, cursor_drm_fd->height};
+        gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->cursor_texture,
+            (vec2i){cursor_drm_fd->x, cursor_drm_fd->y}, cursor_size,
+            (vec2i){0, 0}, cursor_size,
+            0.0f, true);
+    }
 
     cap_kms->params.egl->eglSwapBuffers(cap_kms->params.egl->egl_display, cap_kms->params.egl->egl_surface);
 
@@ -537,6 +573,11 @@ static void gsr_capture_kms_cuda_stop(gsr_capture *cap, AVCodecContext *video_co
         if(cap_kms->input_texture) {
             cap_kms->params.egl->glDeleteTextures(1, &cap_kms->input_texture);
             cap_kms->input_texture = 0;
+        }
+
+        if(cap_kms->cursor_texture) {
+            cap_kms->params.egl->glDeleteTextures(1, &cap_kms->cursor_texture);
+            cap_kms->cursor_texture = 0;
         }
 
         if(cap_kms->target_texture) {

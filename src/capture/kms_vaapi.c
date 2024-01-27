@@ -505,7 +505,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
             (vec2i){0, 0}, cap_kms->capture_size,
             (vec2i){0, 0}, cap_kms->capture_size,
-            0.0f);
+            0.0f, false);
     } else {
         if(!capture_is_combined_plane)
             capture_pos = (vec2i){drm_fd->x, drm_fd->y};
@@ -515,7 +515,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
             (vec2i){0, 0}, cap_kms->capture_size,
             capture_pos, cap_kms->capture_size,
-            texture_rotation);
+            texture_rotation, false);
 
         if(cursor_drm_fd) {
             const intptr_t img_attr_cursor[] = {
@@ -540,7 +540,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
             gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->cursor_texture,
                 (vec2i){cursor_drm_fd->x, cursor_drm_fd->y}, cursor_size,
                 (vec2i){0, 0}, cursor_size,
-                0.0f);
+                0.0f, false);
         }
     }
 

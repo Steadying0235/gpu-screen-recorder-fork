@@ -4,6 +4,8 @@
 #include <math.h>
 #include <assert.h>
 
+/* TODO: highp instead of mediump? */
+
 #define MAX_SHADERS 2
 #define MAX_FRAMEBUFFERS 2
 
@@ -48,6 +50,43 @@ static int load_shader_bgr(gsr_shader *shader, gsr_egl *egl, int *rotation_unifo
         "void main()                                                                     \n"
         "{                                                                               \n"
         "  FragColor = texture(tex1, texcoords_out).bgra;                                 \n"
+        "}                                                                               \n";
+
+    if(gsr_shader_init(shader, egl, vertex_shader, fragment_shader) != 0)
+        return -1;
+
+    gsr_shader_bind_attribute_location(shader, "pos", 0);
+    gsr_shader_bind_attribute_location(shader, "texcoords", 1);
+    *rotation_uniform = egl->glGetUniformLocation(shader->program_id, "rotation");
+    return 0;
+}
+
+static int load_shader_bgr_external_texture(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform) {
+    char vertex_shader[2048];
+    snprintf(vertex_shader, sizeof(vertex_shader),
+        "#version 300 es                                   \n"
+        "in vec2 pos;                                      \n"
+        "in vec2 texcoords;                                \n"
+        "out vec2 texcoords_out;                           \n"
+        "uniform float rotation;                           \n"
+        ROTATE_Z
+        "void main()                                       \n"
+        "{                                                 \n"
+        "  texcoords_out = texcoords;                      \n"
+        "  gl_Position = vec4(pos.x, pos.y, 0.0, 1.0) * rotate_z(rotation);    \n"
+        "}                                                 \n");
+
+    char fragment_shader[] =
+        "#version 300 es                                                                 \n"
+        "#extension GL_OES_EGL_image_external : enable                                   \n"
+        "#extension GL_OES_EGL_image_external_essl3 : require                            \n"
+        "precision mediump float;                                                        \n"
+        "in vec2 texcoords_out;                                                          \n"
+        "uniform samplerExternalOES tex1;                                                \n"
+        "out vec4 FragColor;                                                             \n"
+        "void main()                                                                     \n"
+        "{                                                                               \n"
+        "  FragColor = texture(tex1, texcoords_out).bgra;                                \n"
         "}                                                                               \n";
 
     if(gsr_shader_init(shader, egl, vertex_shader, fragment_shader) != 0)
@@ -202,6 +241,11 @@ int gsr_color_conversion_init(gsr_color_conversion *self, const gsr_color_conver
                 fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load bgr shader\n");
                 goto err;
             }
+
+            if(load_shader_bgr_external_texture(&self->shaders[1], self->params.egl, &self->rotation_uniforms[1]) != 0) {
+                fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load bgr shader (external texture)\n");
+                goto err;
+            }
             break;
         }
         case GSR_DESTINATION_COLOR_NV12: {
@@ -263,18 +307,25 @@ void gsr_color_conversion_deinit(gsr_color_conversion *self) {
 }
 
 /* |source_pos| is in pixel coordinates and |source_size|  */
-int gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_id, vec2i source_pos, vec2i source_size, vec2i texture_pos, vec2i texture_size, float rotation) {
+int gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_id, vec2i source_pos, vec2i source_size, vec2i texture_pos, vec2i texture_size, float rotation, bool external_texture) {
     /* TODO: Do not call this every frame? */
     vec2i dest_texture_size = {0, 0};
     self->params.egl->glBindTexture(GL_TEXTURE_2D, self->params.destination_textures[0]);
     self->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &dest_texture_size.x);
     self->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &dest_texture_size.y);
+    self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
-    /* TODO: Do not call this every frame? */
+    const int texture_target = external_texture ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
+
     vec2i source_texture_size = {0, 0};
-    self->params.egl->glBindTexture(GL_TEXTURE_2D, texture_id);
-    self->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &source_texture_size.x);
-    self->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &source_texture_size.y);
+    if(external_texture) {
+        source_texture_size = source_size;
+    } else {
+        /* TODO: Do not call this every frame? */
+        self->params.egl->glBindTexture(texture_target, texture_id);
+        self->params.egl->glGetTexLevelParameteriv(texture_target, 0, GL_TEXTURE_WIDTH, &source_texture_size.x);
+        self->params.egl->glGetTexLevelParameteriv(texture_target, 0, GL_TEXTURE_HEIGHT, &source_texture_size.y);
+    }
 
     if(abs_f(M_PI * 0.5f - rotation) <= 0.001f || abs_f(M_PI * 1.5f - rotation) <= 0.001f) {
         float tmp = source_texture_size.x;
@@ -314,7 +365,7 @@ int gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_i
 
     self->params.egl->glBindVertexArray(self->vertex_array_object_id);
     self->params.egl->glViewport(0, 0, dest_texture_size.x, dest_texture_size.y);
-    self->params.egl->glBindTexture(GL_TEXTURE_2D, texture_id);
+    self->params.egl->glBindTexture(texture_target, texture_id);
 
     /* TODO: this, also cleanup */
     //self->params.egl->glBindBuffer(GL_ARRAY_BUFFER, self->vertex_buffer_object_id);
@@ -324,8 +375,13 @@ int gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_i
         self->params.egl->glBindFramebuffer(GL_FRAMEBUFFER, self->framebuffers[0]);
         //cap_xcomp->params.egl->glClear(GL_COLOR_BUFFER_BIT); // TODO: Do this in a separate clear_ function. We want to do that when using multiple drm to create the final image (multiple monitors for example)
 
-        gsr_shader_use(&self->shaders[0]);
-        self->params.egl->glUniform1f(self->rotation_uniforms[0], rotation);
+        if(external_texture) {
+            gsr_shader_use(&self->shaders[1]);
+            self->params.egl->glUniform1f(self->rotation_uniforms[1], rotation);
+        } else {
+            gsr_shader_use(&self->shaders[0]);
+            self->params.egl->glUniform1f(self->rotation_uniforms[0], rotation);
+        }
         self->params.egl->glDrawArrays(GL_TRIANGLES, 0, 6);
     }
 
@@ -340,7 +396,7 @@ int gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_i
 
     self->params.egl->glBindVertexArray(0);
     gsr_shader_use_none(&self->shaders[0]);
-    self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
+    self->params.egl->glBindTexture(texture_target, 0);
     self->params.egl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
     return 0;
 }

@@ -317,12 +317,13 @@ int gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_i
 
     const int texture_target = external_texture ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
 
+    self->params.egl->glBindTexture(texture_target, texture_id);
+
     vec2i source_texture_size = {0, 0};
     if(external_texture) {
         source_texture_size = source_size;
     } else {
         /* TODO: Do not call this every frame? */
-        self->params.egl->glBindTexture(texture_target, texture_id);
         self->params.egl->glGetTexLevelParameteriv(texture_target, 0, GL_TEXTURE_WIDTH, &source_texture_size.x);
         self->params.egl->glGetTexLevelParameteriv(texture_target, 0, GL_TEXTURE_HEIGHT, &source_texture_size.y);
     }
@@ -365,7 +366,6 @@ int gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_i
 
     self->params.egl->glBindVertexArray(self->vertex_array_object_id);
     self->params.egl->glViewport(0, 0, dest_texture_size.x, dest_texture_size.y);
-    self->params.egl->glBindTexture(texture_target, texture_id);
 
     /* TODO: this, also cleanup */
     //self->params.egl->glBindBuffer(GL_ARRAY_BUFFER, self->vertex_buffer_object_id);

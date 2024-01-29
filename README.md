@@ -21,8 +21,7 @@ Supported audio codecs:
 This software works with x11 and wayland, but when using AMD/Intel or Wayland then only monitors can be recorded.
 ### TEMPORARY ISSUES
 1) screen-direct capture has been temporary disabled as it causes issues with stuttering. This might be a nvfbc bug.
-2) Recording the monitor on steam deck might fail sometimes. This happens even when using ffmpeg directly. This might be a steam deck driver bug. Recording a single window doesn't have this issue.
-3) Videos are in variable framerate format. Use MPV to play such videos, otherwise you might experience stuttering in the video if you are using a buggy video player. Try saving the video into a .mkv file instead when using AMD/Intel, as some software may have better support for .mkv files (such as kdenlive). You can use the "-fm cfr" option to to use constant framerate mode.
+2) Videos are in variable framerate format. Use MPV to play such videos, otherwise you might experience stuttering in the video if you are using a buggy video player. Try saving the video into a .mkv file instead when using AMD/Intel, as some software may have better support for .mkv files (such as kdenlive). You can use the "-fm cfr" option to to use constant framerate mode.
 ### AMD/Intel/Wayland root permission
 When recording a window under AMD/Intel no special user permission is required, however when recording a monitor (or when using wayland) the program needs root permission (to access KMS).\
 To make this safer, the part that needs root access has been moved to its own executable (to make it as small as possible).\

@@ -3,9 +3,10 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <drm_mode.h>
 
-#define GSR_KMS_PROTOCOL_VERSION 1
-#define GSR_KMS_MAX_PLANES 32
+#define GSR_KMS_PROTOCOL_VERSION 2
+#define GSR_KMS_MAX_PLANES 10
 
 typedef enum {
     KMS_REQUEST_TYPE_REPLACE_CONNECTION,
@@ -37,10 +38,12 @@ typedef struct {
     uint32_t connector_id; /* 0 if unknown */
     bool is_combined_plane;
     bool is_cursor;
+    bool has_hdr_metadata;
     int x;
     int y;
     int src_w;
     int src_h;
+    struct hdr_output_metadata hdr_metadata;
 } gsr_kms_response_fd;
 
 typedef struct {

@@ -1,7 +1,6 @@
 #include "../../include/capture/xcomposite_vaapi.h"
 #include "../../include/window_texture.h"
 #include "../../include/utils.h"
-#include "../../include/color_conversion.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -112,7 +111,7 @@ static bool drm_create_codec_context(gsr_capture_xcomposite_vaapi *cap_xcomp, AV
     return true;
 }
 
-#define DRM_FORMAT_MOD_INVALID 72057594037927935
+#define DRM_FORMAT_MOD_INVALID 0xffffffffffffffULL
 
 static int gsr_capture_xcomposite_vaapi_start(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
@@ -332,7 +331,7 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
 
             VASurfaceID target_surface_id = (uintptr_t)(*frame)->data[3];
 
-            VAStatus va_status = vaExportSurfaceHandle(cap_xcomp->va_dpy, target_surface_id, VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2, VA_EXPORT_SURFACE_READ_WRITE | VA_EXPORT_SURFACE_SEPARATE_LAYERS, &cap_xcomp->prime);
+            VAStatus va_status = vaExportSurfaceHandle(cap_xcomp->va_dpy, target_surface_id, VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2, VA_EXPORT_SURFACE_WRITE_ONLY | VA_EXPORT_SURFACE_SEPARATE_LAYERS, &cap_xcomp->prime);
             if(va_status != VA_STATUS_SUCCESS) {
                 fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: vaExportSurfaceHandle failed, error: %d\n", va_status);
                 cap_xcomp->should_stop = true;
@@ -397,6 +396,7 @@ static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *
                 }
 
                 gsr_color_conversion_params color_conversion_params = {0};
+                color_conversion_params.color_range = cap_xcomp->params.color_range;
                 color_conversion_params.egl = cap_xcomp->params.egl;
                 color_conversion_params.source_color = GSR_SOURCE_COLOR_RGB;
                 color_conversion_params.destination_color = GSR_DESTINATION_COLOR_NV12;

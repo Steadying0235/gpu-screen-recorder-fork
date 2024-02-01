@@ -4,6 +4,7 @@
 #include "capture.h"
 #include "../egl.h"
 #include "../vec2.h"
+#include "../color_conversion.h"
 #include <X11/X.h>
 
 typedef struct _XDisplay Display;
@@ -15,6 +16,7 @@ typedef struct {
     bool follow_focused; /* If this is set then |window| is ignored */
     vec2i region_size; /* This is currently only used with |follow_focused| */
     const char *card_path; /* reference */
+    gsr_color_range color_range;
 } gsr_capture_xcomposite_vaapi_params;
 
 gsr_capture* gsr_capture_xcomposite_vaapi_create(const gsr_capture_xcomposite_vaapi_params *params);

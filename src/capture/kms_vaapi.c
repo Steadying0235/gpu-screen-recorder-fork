@@ -1,7 +1,6 @@
 #include "../../include/capture/kms_vaapi.h"
 #include "../../kms/client/kms_client.h"
 #include "../../include/utils.h"
-#include "../../include/color_conversion.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -9,6 +8,7 @@
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_vaapi.h>
 #include <libavutil/frame.h>
+#include <libavutil/mastering_display_metadata.h>
 #include <libavcodec/avcodec.h>
 #include <va/va.h>
 #include <va/va_drmcommon.h>
@@ -44,6 +44,10 @@ typedef struct {
     unsigned int cursor_texture;
 
     gsr_color_conversion color_conversion;
+
+    AVCodecContext *video_codec_context;
+    AVMasteringDisplayMetadata *mastering_display_metadata;
+    AVContentLightMetadata *light_metadata;
 } gsr_capture_kms_vaapi;
 
 static int max_int(int a, int b) {
@@ -76,7 +80,7 @@ static bool drm_create_codec_context(gsr_capture_kms_vaapi *cap_kms, AVCodecCont
         (AVHWFramesContext *)frame_context->data;
     hw_frame_context->width = video_codec_context->width;
     hw_frame_context->height = video_codec_context->height;
-    hw_frame_context->sw_format = AV_PIX_FMT_NV12;//AV_PIX_FMT_0RGB32;//AV_PIX_FMT_YUV420P;//AV_PIX_FMT_0RGB32;//AV_PIX_FMT_NV12;
+    hw_frame_context->sw_format = cap_kms->params.hdr ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12;
     hw_frame_context->format = video_codec_context->pix_fmt;
     hw_frame_context->device_ref = device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
@@ -99,7 +103,7 @@ static bool drm_create_codec_context(gsr_capture_kms_vaapi *cap_kms, AVCodecCont
     return true;
 }
 
-#define DRM_FORMAT_MOD_INVALID 72057594037927935
+#define DRM_FORMAT_MOD_INVALID 0xffffffffffffffULL
 
 // TODO: On monitor reconfiguration, find monitor x, y, width and height again. Do the same for nvfbc.
 
@@ -129,6 +133,8 @@ static void monitor_callback(const gsr_monitor *monitor, void *userdata) {
 
 static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
+
+    cap_kms->video_codec_context = video_codec_context;
 
     gsr_monitor monitor;
     cap_kms->monitor_id.num_connector_ids = 0;
@@ -182,6 +188,7 @@ static uint32_t fourcc(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
 }
 
 #define FOURCC_NV12 842094158
+#define FOURCC_P010 808530000
 
 static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame **frame) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
@@ -219,7 +226,7 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
 
         VASurfaceID target_surface_id = (uintptr_t)(*frame)->data[3];
 
-        VAStatus va_status = vaExportSurfaceHandle(cap_kms->va_dpy, target_surface_id, VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2, VA_EXPORT_SURFACE_READ_WRITE | VA_EXPORT_SURFACE_SEPARATE_LAYERS, &cap_kms->prime);
+        VAStatus va_status = vaExportSurfaceHandle(cap_kms->va_dpy, target_surface_id, VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2, VA_EXPORT_SURFACE_WRITE_ONLY | VA_EXPORT_SURFACE_SEPARATE_LAYERS, &cap_kms->prime);
         if(va_status != VA_STATUS_SUCCESS) {
             fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: vaExportSurfaceHandle failed, error: %d\n", va_status);
             cap_kms->should_stop = true;
@@ -244,10 +251,14 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
         cap_kms->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
-        if(cap_kms->prime.fourcc == FOURCC_NV12) {
+        const uint32_t formats_nv12[2] = { fourcc('R', '8', ' ', ' '), fourcc('G', 'R', '8', '8') };
+        const uint32_t formats_p010[2] = { fourcc('R', '1', '6', ' '), fourcc('G', 'R', '3', '2') };
+
+        if(cap_kms->prime.fourcc == FOURCC_NV12 || cap_kms->prime.fourcc == FOURCC_P010) {
+            const uint32_t *formats = cap_kms->prime.fourcc == FOURCC_NV12 ? formats_nv12 : formats_p010;
+
             cap_kms->params.egl->glGenTextures(2, cap_kms->target_textures);
             for(int i = 0; i < 2; ++i) {
-                const uint32_t formats[2] = { fourcc('R', '8', ' ', ' '), fourcc('G', 'R', '8', '8') };
                 const int layer = i;
                 const int plane = 0;
 
@@ -300,9 +311,13 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
             }
 
             gsr_color_conversion_params color_conversion_params = {0};
+            color_conversion_params.color_range = cap_kms->params.color_range;
             color_conversion_params.egl = cap_kms->params.egl;
             color_conversion_params.source_color = GSR_SOURCE_COLOR_RGB;
-            color_conversion_params.destination_color = GSR_DESTINATION_COLOR_NV12;
+            if(cap_kms->prime.fourcc == FOURCC_NV12)
+                color_conversion_params.destination_color = GSR_DESTINATION_COLOR_NV12;
+            else
+                color_conversion_params.destination_color = GSR_DESTINATION_COLOR_P010;
 
             color_conversion_params.destination_textures[0] = cap_kms->target_textures[0];
             color_conversion_params.destination_textures[1] = cap_kms->target_textures[1];
@@ -315,7 +330,7 @@ static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_c
                 return;
             }
         } else {
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: unexpected fourcc %u for output drm fd, expected nv12\n", cap_kms->prime.fourcc);
+            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_tick: unexpected fourcc %u for output drm fd, expected nv12 or p010\n", cap_kms->prime.fourcc);
             cap_kms->should_stop = true;
             cap_kms->stop_is_error = true;
             return;
@@ -386,8 +401,65 @@ static gsr_kms_response_fd* find_cursor_drm(gsr_kms_response *kms_response) {
     return NULL;
 }
 
+static void copy_wayland_surface_data_to_drm_buffer(gsr_capture_kms_vaapi *cap_kms) {
+    cap_kms->wayland_kms_data.fd = cap_kms->params.egl->fd;
+    cap_kms->wayland_kms_data.width = cap_kms->params.egl->width;
+    cap_kms->wayland_kms_data.height = cap_kms->params.egl->height;
+    cap_kms->wayland_kms_data.pitch = cap_kms->params.egl->pitch;
+    cap_kms->wayland_kms_data.offset = cap_kms->params.egl->offset;
+    cap_kms->wayland_kms_data.pixel_format = cap_kms->params.egl->pixel_format;
+    cap_kms->wayland_kms_data.modifier = cap_kms->params.egl->modifier;
+    cap_kms->wayland_kms_data.connector_id = 0;
+    cap_kms->wayland_kms_data.is_combined_plane = false;
+    cap_kms->wayland_kms_data.is_cursor = false;
+    cap_kms->wayland_kms_data.x = cap_kms->wayland_kms_data.x; // TODO: Use these
+    cap_kms->wayland_kms_data.y = cap_kms->wayland_kms_data.y;
+    cap_kms->wayland_kms_data.src_w = cap_kms->wayland_kms_data.width;
+    cap_kms->wayland_kms_data.src_h = cap_kms->wayland_kms_data.height;
+
+    cap_kms->capture_pos.x = cap_kms->wayland_kms_data.x;
+    cap_kms->capture_pos.y = cap_kms->wayland_kms_data.y;
+}
+
+#define HDMI_STATIC_METADATA_TYPE1 0
+#define HDMI_EOTF_SMPTE_ST2084 2
+
+static bool hdr_metadata_is_supported_format(const struct hdr_output_metadata *hdr_metadata) {
+    return hdr_metadata->metadata_type == HDMI_STATIC_METADATA_TYPE1 &&
+        hdr_metadata->hdmi_metadata_type1.metadata_type == HDMI_STATIC_METADATA_TYPE1 &&
+        hdr_metadata->hdmi_metadata_type1.eotf == HDMI_EOTF_SMPTE_ST2084;
+}
+
+static void gsr_capture_kms_vaapi_set_hdr_metadata(gsr_capture_kms_vaapi *cap_kms, AVFrame *frame, gsr_kms_response_fd *drm_fd) {
+    if(!cap_kms->mastering_display_metadata)
+        cap_kms->mastering_display_metadata = av_mastering_display_metadata_create_side_data(frame);
+
+    if(!cap_kms->light_metadata)
+        cap_kms->light_metadata = av_content_light_metadata_create_side_data(frame);
+
+    if(cap_kms->mastering_display_metadata) {
+        for(int i = 0; i < 3; ++i) {
+            cap_kms->mastering_display_metadata->display_primaries[i][0] = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.display_primaries[i].x, 50000);
+            cap_kms->mastering_display_metadata->display_primaries[i][1] = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.display_primaries[i].y, 50000);
+        }
+
+        cap_kms->mastering_display_metadata->white_point[0] = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.white_point.x, 50000);
+        cap_kms->mastering_display_metadata->white_point[1] = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.white_point.y, 50000);
+
+        cap_kms->mastering_display_metadata->min_luminance = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.min_display_mastering_luminance, 10000);
+        cap_kms->mastering_display_metadata->max_luminance = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.max_display_mastering_luminance, 1);
+
+        cap_kms->mastering_display_metadata->has_primaries = cap_kms->mastering_display_metadata->display_primaries[0][0].num > 0;
+        cap_kms->mastering_display_metadata->has_luminance = cap_kms->mastering_display_metadata->max_luminance.num > 0;
+    }
+
+    if(cap_kms->light_metadata) {
+        cap_kms->light_metadata->MaxCLL = drm_fd->hdr_metadata.hdmi_metadata_type1.max_cll;
+        cap_kms->light_metadata->MaxFALL = drm_fd->hdr_metadata.hdmi_metadata_type1.max_fall;
+    }
+}
+
 static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
-    (void)frame;
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
     for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {
@@ -402,23 +474,7 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     bool capture_is_combined_plane = false;
     if(cap_kms->using_wayland_capture) {
         gsr_egl_update(cap_kms->params.egl);
-        cap_kms->wayland_kms_data.fd = cap_kms->params.egl->fd;
-        cap_kms->wayland_kms_data.width = cap_kms->params.egl->width;
-        cap_kms->wayland_kms_data.height = cap_kms->params.egl->height;
-        cap_kms->wayland_kms_data.pitch = cap_kms->params.egl->pitch;
-        cap_kms->wayland_kms_data.offset = cap_kms->params.egl->offset;
-        cap_kms->wayland_kms_data.pixel_format = cap_kms->params.egl->pixel_format;
-        cap_kms->wayland_kms_data.modifier = cap_kms->params.egl->modifier;
-        cap_kms->wayland_kms_data.connector_id = 0;
-        cap_kms->wayland_kms_data.is_combined_plane = false;
-        cap_kms->wayland_kms_data.is_cursor = false;
-        cap_kms->wayland_kms_data.x = cap_kms->wayland_kms_data.x; // TODO: Use these
-        cap_kms->wayland_kms_data.y = cap_kms->wayland_kms_data.y;
-        cap_kms->wayland_kms_data.src_w = cap_kms->wayland_kms_data.width;
-        cap_kms->wayland_kms_data.src_h = cap_kms->wayland_kms_data.height;
-
-        cap_kms->capture_pos.x = cap_kms->wayland_kms_data.x;
-        cap_kms->capture_pos.y = cap_kms->wayland_kms_data.y;
+        copy_wayland_surface_data_to_drm_buffer(cap_kms);
 
         if(cap_kms->wayland_kms_data.fd <= 0)
             return -1;
@@ -461,6 +517,9 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
 
     if(!capture_is_combined_plane && cursor_drm_fd && cursor_drm_fd->connector_id != drm_fd->connector_id)
         cursor_drm_fd = NULL;
+
+    if(drm_fd->has_hdr_metadata && cap_kms->params.hdr && hdr_metadata_is_supported_format(&drm_fd->hdr_metadata))
+        gsr_capture_kms_vaapi_set_hdr_metadata(cap_kms, frame, drm_fd);
 
     // TODO: This causes a crash sometimes on steam deck, why? is it a driver bug? a vaapi pure version doesn't cause a crash.
     // Even ffmpeg kmsgrab causes this crash. The error is:

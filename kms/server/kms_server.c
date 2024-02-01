@@ -25,6 +25,7 @@ typedef struct {
 typedef struct {
     uint32_t connector_id;
     uint64_t crtc_id;
+    uint64_t hdr_metadata_blob_id;
 } connector_crtc_pair;
 
 typedef struct {
@@ -188,12 +189,12 @@ static uint32_t plane_get_properties(int drmfd, uint32_t plane_id, bool *is_curs
 }
 
 /* Returns 0 if not found */
-static uint32_t get_connector_by_crtc_id(const connector_to_crtc_map *c2crtc_map, uint32_t crtc_id) {
+static const connector_crtc_pair* get_connector_pair_by_crtc_id(const connector_to_crtc_map *c2crtc_map, uint32_t crtc_id) {
     for(int i = 0; i < c2crtc_map->num_maps; ++i) {
         if(c2crtc_map->maps[i].crtc_id == crtc_id)
-            return c2crtc_map->maps[i].connector_id;
+            return &c2crtc_map->maps[i];
     }
-    return 0;
+    return NULL;
 }
 
 static void map_crtc_to_connector_ids(gsr_drm *drm, connector_to_crtc_map *c2crtc_map) {
@@ -210,8 +211,12 @@ static void map_crtc_to_connector_ids(gsr_drm *drm, connector_to_crtc_map *c2crt
         uint64_t crtc_id = 0;
         connector_get_property_by_name(drm->drmfd, connector, "CRTC_ID", &crtc_id);
 
+        uint64_t hdr_output_metadata_blob_id = 0;
+        connector_get_property_by_name(drm->drmfd, connector, "HDR_OUTPUT_METADATA", &hdr_output_metadata_blob_id);
+
         c2crtc_map->maps[c2crtc_map->num_maps].connector_id = connector->connector_id;
         c2crtc_map->maps[c2crtc_map->num_maps].crtc_id = crtc_id;
+        c2crtc_map->maps[c2crtc_map->num_maps].hdr_metadata_blob_id = hdr_output_metadata_blob_id;
         ++c2crtc_map->num_maps;
 
         drmModeFreeConnector(connector);
@@ -237,6 +242,18 @@ static void drm_mode_cleanup_handles(int drmfd, drmModeFB2Ptr drmfb) {
 
         drmCloseBufferHandle(drmfd, drmfb->handles[i]);
     }
+}
+
+static bool get_hdr_metadata(int drm_fd, uint64_t hdr_metadata_blob_id, struct hdr_output_metadata *hdr_metadata) {
+    drmModePropertyBlobPtr hdr_metadata_blob = drmModeGetPropertyBlob(drm_fd, hdr_metadata_blob_id);
+    if(!hdr_metadata_blob)
+        return false;
+
+    if(hdr_metadata_blob->length >= sizeof(struct hdr_output_metadata))
+        *hdr_metadata = *(struct hdr_output_metadata*)hdr_metadata_blob->data;
+
+    drmModeFreePropertyBlob(hdr_metadata_blob);
+    return true;
 }
 
 static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crtc_map *c2crtc_map) {
@@ -289,30 +306,39 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
             goto cleanup_handles;
         }
 
+        const int fd_index = response->num_fds;
+
         bool is_cursor = false;
         int x = 0, y = 0, src_x = 0, src_y = 0, src_w = 0, src_h = 0;
         plane_get_properties(drm->drmfd, plane->plane_id, &is_cursor, &x, &y, &src_x, &src_y, &src_w, &src_h);
 
-        response->fds[response->num_fds].fd = fb_fd;
-        response->fds[response->num_fds].width = drmfb->width;
-        response->fds[response->num_fds].height = drmfb->height;
-        response->fds[response->num_fds].pitch = drmfb->pitches[0];
-        response->fds[response->num_fds].offset = drmfb->offsets[0];
-        response->fds[response->num_fds].pixel_format = drmfb->pixel_format;
-        response->fds[response->num_fds].modifier = drmfb->modifier;
-        response->fds[response->num_fds].connector_id = get_connector_by_crtc_id(c2crtc_map, plane->crtc_id);
-        response->fds[response->num_fds].is_cursor = is_cursor;
-        response->fds[response->num_fds].is_combined_plane = false;
-        if(is_cursor) {
-            response->fds[response->num_fds].x = x;
-            response->fds[response->num_fds].y = y;
-            response->fds[response->num_fds].src_w = 0;
-            response->fds[response->num_fds].src_h = 0;
+        const connector_crtc_pair *crtc_pair = get_connector_pair_by_crtc_id(c2crtc_map, plane->crtc_id);
+        if(crtc_pair && crtc_pair->hdr_metadata_blob_id) {
+            response->fds[fd_index].has_hdr_metadata = get_hdr_metadata(drm->drmfd, crtc_pair->hdr_metadata_blob_id, &response->fds[fd_index].hdr_metadata);
         } else {
-            response->fds[response->num_fds].x = src_x;
-            response->fds[response->num_fds].y = src_y;
-            response->fds[response->num_fds].src_w = src_w;
-            response->fds[response->num_fds].src_h = src_h;
+            response->fds[fd_index].has_hdr_metadata = false;
+        }
+
+        response->fds[fd_index].fd = fb_fd;
+        response->fds[fd_index].width = drmfb->width;
+        response->fds[fd_index].height = drmfb->height;
+        response->fds[fd_index].pitch = drmfb->pitches[0];
+        response->fds[fd_index].offset = drmfb->offsets[0];
+        response->fds[fd_index].pixel_format = drmfb->pixel_format;
+        response->fds[fd_index].modifier = drmfb->modifier;
+        response->fds[fd_index].connector_id = crtc_pair ? crtc_pair->connector_id : 0;
+        response->fds[fd_index].is_cursor = is_cursor;
+        response->fds[fd_index].is_combined_plane = false;
+        if(is_cursor) {
+            response->fds[fd_index].x = x;
+            response->fds[fd_index].y = y;
+            response->fds[fd_index].src_w = 0;
+            response->fds[fd_index].src_h = 0;
+        } else {
+            response->fds[fd_index].x = src_x;
+            response->fds[fd_index].y = src_y;
+            response->fds[fd_index].src_w = src_w;
+            response->fds[fd_index].src_h = src_h;
         }
         ++response->num_fds;
 

@@ -5,12 +5,18 @@
 #include "vec2.h"
 
 typedef enum {
+    GSR_COLOR_RANGE_LIMITED,
+    GSR_COLOR_RANGE_FULL
+} gsr_color_range;
+
+typedef enum {
     GSR_SOURCE_COLOR_RGB
 } gsr_source_color;
 
 typedef enum {
     GSR_DESTINATION_COLOR_BGR,
-    GSR_DESTINATION_COLOR_NV12 /* YUV420, BT709, limited */
+    GSR_DESTINATION_COLOR_NV12, /* YUV420, BT709, 8-bit */
+    GSR_DESTINATION_COLOR_P010  /* YUV420, BT2020, 10-bit */
 } gsr_destination_color;
 
 typedef struct {
@@ -21,6 +27,8 @@ typedef struct {
 
     unsigned int destination_textures[2];
     int num_destination_textures;
+
+    gsr_color_range color_range;
 } gsr_color_conversion_params;
 
 typedef struct {

@@ -6,6 +6,7 @@ extern "C" {
 #include "../include/capture/kms_cuda.h"
 #include "../include/egl.h"
 #include "../include/utils.h"
+#include "../include/color_conversion.h"
 }
 
 #include <assert.h>
@@ -33,6 +34,7 @@ extern "C" {
 #include <libswresample/swresample.h>
 #include <libavutil/avutil.h>
 #include <libavutil/time.h>
+#include <libavutil/mastering_display_metadata.h>
 #include <libavfilter/avfilter.h>
 #include <libavfilter/buffersink.h>
 #include <libavfilter/buffersrc.h>
@@ -80,7 +82,9 @@ enum class VideoQuality {
 enum class VideoCodec {
     H264,
     HEVC,
-    AV1
+    HEVC_HDR,
+    AV1,
+    AV1_HDR
 };
 
 enum class AudioCodec {
@@ -105,6 +109,16 @@ static int x11_error_handler(Display*, XErrorEvent*) {
 
 static int x11_io_error_handler(Display*) {
     return 0;
+}
+
+static bool video_codec_is_hdr(VideoCodec video_codec) {
+    switch(video_codec) {
+        case VideoCodec::HEVC_HDR:
+        case VideoCodec::AV1_HDR:
+            return true;
+        default:
+            return false;
+    }
 }
 
 struct PacketData {
@@ -311,7 +325,8 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
 
 static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
                             VideoQuality video_quality,
-                            int fps, const AVCodec *codec, bool is_livestream, gsr_gpu_vendor vendor, FramerateMode framerate_mode) {
+                            int fps, const AVCodec *codec, bool is_livestream, gsr_gpu_vendor vendor, FramerateMode framerate_mode,
+                            bool hdr, gsr_color_range color_range) {
 
     AVCodecContext *codec_context = avcodec_alloc_context3(codec);
 
@@ -341,10 +356,16 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     }
     codec_context->max_b_frames = 0;
     codec_context->pix_fmt = pix_fmt;
-    //codec_context->color_range = AVCOL_RANGE_JPEG; // TODO: Amd/nvidia?
-    //codec_context->color_primaries = AVCOL_PRI_BT709;
-    //codec_context->color_trc = AVCOL_TRC_BT709;
-    //codec_context->colorspace = AVCOL_SPC_BT709;
+    codec_context->color_range = color_range == GSR_COLOR_RANGE_LIMITED ? AVCOL_RANGE_MPEG : AVCOL_RANGE_JPEG;
+    if(hdr) {
+        codec_context->color_primaries = AVCOL_PRI_BT2020;
+        codec_context->color_trc = AVCOL_TRC_SMPTE2084;
+        codec_context->colorspace = AVCOL_SPC_BT2020_NCL;
+    } else {
+        //codec_context->color_primaries = AVCOL_PRI_BT709;
+        //codec_context->color_trc = AVCOL_TRC_BT709;
+        //codec_context->colorspace = AVCOL_SPC_BT709;
+    }
     //codec_context->chroma_sample_location = AVCHROMA_LOC_CENTER;
     if(codec->id == AV_CODEC_ID_HEVC)
         codec_context->codec_tag = MKTAG('h', 'v', 'c', '1');
@@ -421,6 +442,8 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
         //codec_context->compression_level = 2;
     }
 
+    av_opt_set(codec_context->priv_data, "bsf", "hevc_metadata=colour_primaries=9:transfer_characteristics=16:matrix_coefficients=9", 0);
+
     //codec_context->rc_max_rate = codec_context->bit_rate;
     //codec_context->rc_min_rate = codec_context->bit_rate;
     //codec_context->rc_buffer_size = codec_context->bit_rate / 10;
@@ -478,7 +501,7 @@ static bool vaapi_create_codec_context(AVCodecContext *video_codec_context, cons
 
 static bool check_if_codec_valid_for_hardware(const AVCodec *codec, gsr_gpu_vendor vendor, const char *card_path) {
     // Do not use AV_PIX_FMT_CUDA because we dont want to do full check with hardware context
-    AVCodecContext *codec_context = create_video_codec_context(vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_YUV420P : AV_PIX_FMT_VAAPI, VideoQuality::VERY_HIGH, 60, codec, false, vendor, FramerateMode::CONSTANT);
+    AVCodecContext *codec_context = create_video_codec_context(vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_YUV420P : AV_PIX_FMT_VAAPI, VideoQuality::VERY_HIGH, 60, codec, false, vendor, FramerateMode::CONSTANT, false, GSR_COLOR_RANGE_LIMITED);
     if(!codec_context)
         return false;
 
@@ -594,7 +617,7 @@ static AVFrame* create_audio_frame(AVCodecContext *audio_codec_context) {
     return frame;
 }
 
-static void open_video(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu, gsr_gpu_vendor vendor, PixelFormat pixel_format) {
+static void open_video(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu, gsr_gpu_vendor vendor, PixelFormat pixel_format, bool hdr) {
     AVDictionary *options = nullptr;
     if(vendor == GSR_GPU_VENDOR_NVIDIA) {
 #if 0
@@ -754,7 +777,12 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
             av_dict_set(&options, "profile", "main", 0); // TODO: use professional instead?
             av_dict_set(&options, "tier", "main", 0);
         } else {
-            av_dict_set(&options, "profile", "main", 0);
+            if(hdr) {
+                av_dict_set(&options, "profile", "main10", 0);
+                av_dict_set(&options, "sei", "hdr", 0);
+            } else {
+                av_dict_set(&options, "profile", "main", 0);
+            }
         }
     }
 
@@ -772,7 +800,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 }
 
 static void usage_header() {
-    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|h265|av1] [-ac aac|opus|flac] [-oc yes|no] [-fm cfr|vfr] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no] [-sc <script_path>]\n");
+    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-oc yes|no] [-fm cfr|vfr] [-cr limited|full] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no] [-sc <script_path>]\n");
 }
 
 static void usage_full() {
@@ -808,9 +836,9 @@ static void usage_full() {
     fprintf(stderr, "        and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature.\n");
     fprintf(stderr, "        This option has be between 5 and 1200. Note that the replay buffer size will not always be precise, because of keyframes. Optional, disabled by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'h265' or 'av1'. Defaults to 'auto' which defaults to 'h265' on AMD/Nvidia and 'h264' on intel.\n");
+    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'hevc', 'hevc_hdr', 'av1' or 'av1_hdr'. Defaults to 'auto' which defaults to 'hevc' on AMD/Nvidia and 'h264' on intel.\n");
     fprintf(stderr, "        Forcefully set to 'h264' if the file container type is 'flv'.\n");
-    fprintf(stderr, "        Forcefully set to 'h265' on AMD/intel if video codec is 'h264' and if the file container type is 'mkv'.\n");
+    fprintf(stderr, "        Forcefully set to 'hevc' on AMD/intel if video codec is 'h264' and if the file container type is 'mkv'.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'.\n");
     fprintf(stderr, "        'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
@@ -820,6 +848,9 @@ static void usage_full() {
     fprintf(stderr, "        Works only if your have \"Coolbits\" set to \"12\" in NVIDIA X settings, see README for more information. Note! use at your own risk! Optional, disabled by default.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -fm   Framerate mode. Should be either 'cfr' or 'vfr'. Defaults to 'vfr'.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  -cr   Color range. Should be either 'limited' (aka mpeg) or 'full' (aka jpeg). Defaults to 'limited'.\n");
+    fprintf(stderr, "        Limited color range means that colors are in range 16-235 while full color range means that colors are in range 0-255 (when not recording with hdr).\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -v    Prints per second, fps updates. Optional, set to 'yes' by default.\n");
     fprintf(stderr, "\n");
@@ -831,7 +862,7 @@ static void usage_full() {
     fprintf(stderr, "  -sc   Run a script on the saved video file (non-blocking). The first argument to the script is the filepath to the saved video file and the second argument is the recording type (either \"regular\" or \"replay\"). Not applicable for live streams.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  --list-supported-video-codecs\n");
-    fprintf(stderr, "        List supported video codecs and exits. Prints h264, hevc and av1 (if supported).\n");
+    fprintf(stderr, "        List supported video codecs and exits. Prints h264, hevc, hevc_hdr, av1 and av1_hdr (if supported).\n");
     fprintf(stderr, "\n");
     //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, defaults to yuv420\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r).\n");
@@ -1362,6 +1393,7 @@ static void list_supported_video_codecs() {
 
     av_log_set_level(AV_LOG_FATAL);
 
+    // TODO: Output hdr
     if(find_h264_encoder(gpu_inf.vendor, card_path))
         puts("h264");
     if(find_h265_encoder(gpu_inf.vendor, card_path))
@@ -1370,6 +1402,198 @@ static void list_supported_video_codecs() {
         puts("av1");
 
     fflush(stdout);
+}
+
+static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_gpu_info gpu_inf, gsr_egl &egl, char *card_path, Display *dpy, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range) {
+    vec2i region_size = { 0, 0 };
+    Window src_window_id = None;
+    bool follow_focused = false;
+
+    gsr_capture *capture = nullptr;
+    if(strcmp(window_str, "focused") == 0) {
+        if(wayland) {
+            fprintf(stderr, "Error: GPU Screen Recorder window capture only works in a pure X11 session. Xwayland is not supported. You can record a monitor instead on wayland\n");
+            _exit(2);
+        }
+
+        if(!screen_region) {
+            fprintf(stderr, "Error: option -s is required when using -w focused\n");
+            usage();
+        }
+
+        if(sscanf(screen_region, "%dx%d", &region_size.x, &region_size.y) != 2) {
+            fprintf(stderr, "Error: invalid value for option -s '%s', expected a value in format WxH\n", screen_region);
+            usage();
+        }
+
+        if(region_size.x <= 0 || region_size.y <= 0) {
+            fprintf(stderr, "Error: invalud value for option -s '%s', expected width and height to be greater than 0\n", screen_region);
+            usage();
+        }
+
+        follow_focused = true;
+    } else if(contains_non_hex_number(window_str)) {
+        if(wayland || gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA) {
+            if(strcmp(window_str, "screen") == 0) {
+                FirstOutputCallback first_output;
+                first_output.output_name = NULL;
+                if(gsr_egl_supports_wayland_capture(&egl)) {
+                    for_each_active_monitor_output(&egl, GSR_CONNECTION_WAYLAND, get_first_output, &first_output);
+                } else {
+                    for_each_active_monitor_output(card_path, GSR_CONNECTION_DRM, get_first_output, &first_output);
+                }
+
+                if(first_output.output_name) {
+                    window_str = first_output.output_name;
+                } else {
+                    fprintf(stderr, "Error: no available output found\n");
+                }
+            }
+
+            if(gsr_egl_supports_wayland_capture(&egl)) {
+                gsr_monitor gmon;
+                if(!get_monitor_by_name(&egl, GSR_CONNECTION_WAYLAND, window_str, &gmon)) {
+                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
+                    fprintf(stderr, "    \"screen\"\n");
+                    for_each_active_monitor_output(&egl, GSR_CONNECTION_WAYLAND, monitor_output_callback_print, NULL);
+                    _exit(1);
+                }
+            } else {
+                gsr_monitor gmon;
+                if(!get_monitor_by_name(card_path, GSR_CONNECTION_DRM, window_str, &gmon)) {
+                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
+                    fprintf(stderr, "    \"screen\"\n");
+                    for_each_active_monitor_output(card_path, GSR_CONNECTION_DRM, monitor_output_callback_print, NULL);
+                    _exit(1);
+                }
+            }
+        } else {
+            if(strcmp(window_str, "screen") != 0 && strcmp(window_str, "screen-direct") != 0 && strcmp(window_str, "screen-direct-force") != 0) {
+                gsr_monitor gmon;
+                if(!get_monitor_by_name(dpy, GSR_CONNECTION_X11, window_str, &gmon)) {
+                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
+                    fprintf(stderr, "    \"screen\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
+                    fprintf(stderr, "    \"screen-direct\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
+                    fprintf(stderr, "    \"screen-direct-force\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
+                    for_each_active_monitor_output(dpy, GSR_CONNECTION_X11, monitor_output_callback_print, NULL);
+                    _exit(1);
+                }
+            }
+        }
+
+        if(gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA) {
+            if(wayland) {
+                gsr_capture_kms_cuda_params kms_params;
+                kms_params.egl = &egl;
+                kms_params.display_to_capture = window_str;
+                kms_params.gpu_inf = gpu_inf;
+                kms_params.card_path = card_path;
+                capture = gsr_capture_kms_cuda_create(&kms_params);
+                if(!capture)
+                    _exit(1);
+            } else {
+                const char *capture_target = window_str;
+                bool direct_capture = strcmp(window_str, "screen-direct") == 0;
+                if(direct_capture) {
+                    capture_target = "screen";
+                    // TODO: Temporary disable direct capture because push model causes stuttering when it's direct capturing. This might be a nvfbc bug. This does not happen when using a compositor.
+                    direct_capture = false;
+                    fprintf(stderr, "Warning: screen-direct has temporary been disabled as it causes stuttering. This is likely a NvFBC bug. Falling back to \"screen\".\n");
+                }
+
+                if(strcmp(window_str, "screen-direct-force") == 0) {
+                    direct_capture = true;
+                    capture_target = "screen";
+                }
+
+                gsr_egl_unload(&egl);
+
+                gsr_capture_nvfbc_params nvfbc_params;
+                nvfbc_params.dpy = dpy;
+                nvfbc_params.display_to_capture = capture_target;
+                nvfbc_params.fps = fps;
+                nvfbc_params.pos = { 0, 0 };
+                nvfbc_params.size = { 0, 0 };
+                nvfbc_params.direct_capture = direct_capture;
+                nvfbc_params.overclock = overclock;
+                capture = gsr_capture_nvfbc_create(&nvfbc_params);
+                if(!capture)
+                    _exit(1);
+            }
+        } else {
+            gsr_capture_kms_vaapi_params kms_params;
+            kms_params.egl = &egl;
+            kms_params.display_to_capture = window_str;
+            kms_params.gpu_inf = gpu_inf;
+            kms_params.card_path = card_path;
+            kms_params.wayland = wayland;
+            kms_params.hdr = video_codec_is_hdr(video_codec);
+            kms_params.color_range = color_range;
+            capture = gsr_capture_kms_vaapi_create(&kms_params);
+            if(!capture)
+                _exit(1);
+        }
+    } else {
+        if(wayland) {
+            fprintf(stderr, "Error: GPU Screen Recorder window capture only works in a pure X11 session. Xwayland is not supported. You can record a monitor instead on wayland\n");
+            _exit(2);
+        }
+
+        errno = 0;
+        src_window_id = strtol(window_str, nullptr, 0);
+        if(src_window_id == None || errno == EINVAL) {
+            fprintf(stderr, "Invalid window number %s\n", window_str);
+            usage();
+        }
+    }
+
+    if(!capture) {
+        switch(gpu_inf.vendor) {
+            case GSR_GPU_VENDOR_AMD: {
+                gsr_capture_xcomposite_vaapi_params xcomposite_params;
+                xcomposite_params.egl = &egl;
+                xcomposite_params.dpy = dpy;
+                xcomposite_params.window = src_window_id;
+                xcomposite_params.follow_focused = follow_focused;
+                xcomposite_params.region_size = region_size;
+                xcomposite_params.card_path = card_path;
+                xcomposite_params.color_range = color_range;
+                capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
+                if(!capture)
+                    _exit(1);
+                break;
+            }
+            case GSR_GPU_VENDOR_INTEL: {
+                gsr_capture_xcomposite_vaapi_params xcomposite_params;
+                xcomposite_params.egl = &egl;
+                xcomposite_params.dpy = dpy;
+                xcomposite_params.window = src_window_id;
+                xcomposite_params.follow_focused = follow_focused;
+                xcomposite_params.region_size = region_size;
+                xcomposite_params.card_path = card_path;
+                xcomposite_params.color_range = color_range;
+                capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
+                if(!capture)
+                    _exit(1);
+                break;
+            }
+            case GSR_GPU_VENDOR_NVIDIA: {
+                gsr_capture_xcomposite_cuda_params xcomposite_params;
+                xcomposite_params.egl = &egl;
+                xcomposite_params.dpy = dpy;
+                xcomposite_params.window = src_window_id;
+                xcomposite_params.follow_focused = follow_focused;
+                xcomposite_params.region_size = region_size;
+                xcomposite_params.overclock = overclock;
+                capture = gsr_capture_xcomposite_cuda_create(&xcomposite_params);
+                if(!capture)
+                    _exit(1);
+                break;
+            }
+        }
+    }
+
+    return capture;
 }
 
 struct Arg {
@@ -1422,6 +1646,7 @@ int main(int argc, char **argv) {
         { "-v", Arg { {}, true, false } },
         { "-mf", Arg { {}, true, false } },
         { "-sc", Arg { {}, true, false } },
+        { "-cr", Arg { {}, true, false } },
     };
 
     for(int i = 1; i < argc; i += 2) {
@@ -1460,10 +1685,14 @@ int main(int argc, char **argv) {
         video_codec = VideoCodec::H264;
     } else if(strcmp(video_codec_to_use, "h265") == 0 || strcmp(video_codec_to_use, "hevc") == 0) {
         video_codec = VideoCodec::HEVC;
+    } else if(strcmp(video_codec_to_use, "hevc_hdr") == 0) {
+        video_codec = VideoCodec::HEVC_HDR;
     } else if(strcmp(video_codec_to_use, "av1") == 0) {
         video_codec = VideoCodec::AV1;
+    } else if(strcmp(video_codec_to_use, "av1_hdr") == 0) {
+        video_codec = VideoCodec::AV1_HDR;
     } else if(strcmp(video_codec_to_use, "auto") != 0) {
-        fprintf(stderr, "Error: -k should either be either 'auto', 'h264', 'h265', 'hevc' or 'av1', got: '%s'\n", video_codec_to_use);
+        fprintf(stderr, "Error: -k should either be either 'auto', 'h264', 'hevc', 'hevc_hdr', 'av1' or 'av1_hdr', got: '%s'\n", video_codec_to_use);
         usage();
     }
 
@@ -1693,196 +1922,26 @@ int main(int argc, char **argv) {
         usage();
     }
 
+    gsr_color_range color_range;
+    const char *color_range_str = args["-cr"].value();
+    if(!color_range_str)
+        color_range_str = "limited";
+
+    if(strcmp(color_range_str, "limited") == 0) {
+        color_range = GSR_COLOR_RANGE_LIMITED;
+    } else if(strcmp(color_range_str, "full") == 0) {
+        color_range = GSR_COLOR_RANGE_FULL;
+    } else {
+        fprintf(stderr, "Error: -cr should either be either 'limited' or 'full', got: '%s'\n", color_range_str);
+        usage();
+    }
+
     const char *screen_region = args["-s"].value();
     const char *window_str = strdup(args["-w"].value());
 
     if(screen_region && strcmp(window_str, "focused") != 0) {
         fprintf(stderr, "Error: option -s is only available when using -w focused\n");
         usage();
-    }
-
-    vec2i region_size = { 0, 0 };
-    Window src_window_id = None;
-    bool follow_focused = false;
-
-    gsr_capture *capture = nullptr;
-    if(strcmp(window_str, "focused") == 0) {
-        if(wayland) {
-            fprintf(stderr, "Error: GPU Screen Recorder window capture only works in a pure X11 session. Xwayland is not supported. You can record a monitor instead on wayland\n");
-            _exit(2);
-        }
-
-        if(!screen_region) {
-            fprintf(stderr, "Error: option -s is required when using -w focused\n");
-            usage();
-        }
-
-        if(sscanf(screen_region, "%dx%d", &region_size.x, &region_size.y) != 2) {
-            fprintf(stderr, "Error: invalid value for option -s '%s', expected a value in format WxH\n", screen_region);
-            usage();
-        }
-
-        if(region_size.x <= 0 || region_size.y <= 0) {
-            fprintf(stderr, "Error: invalud value for option -s '%s', expected width and height to be greater than 0\n", screen_region);
-            usage();
-        }
-
-        follow_focused = true;
-    } else if(contains_non_hex_number(window_str)) {
-        if(wayland || gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA) {
-            if(strcmp(window_str, "screen") == 0) {
-                FirstOutputCallback first_output;
-                first_output.output_name = NULL;
-                if(gsr_egl_supports_wayland_capture(&egl)) {
-                    for_each_active_monitor_output(&egl, GSR_CONNECTION_WAYLAND, get_first_output, &first_output);
-                } else {
-                    for_each_active_monitor_output(card_path, GSR_CONNECTION_DRM, get_first_output, &first_output);
-                }
-
-                if(first_output.output_name) {
-                    window_str = first_output.output_name;
-                } else {
-                    fprintf(stderr, "Error: no available output found\n");
-                }
-            }
-
-            if(gsr_egl_supports_wayland_capture(&egl)) {
-                gsr_monitor gmon;
-                if(!get_monitor_by_name(&egl, GSR_CONNECTION_WAYLAND, window_str, &gmon)) {
-                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
-                    fprintf(stderr, "    \"screen\"\n");
-                    for_each_active_monitor_output(&egl, GSR_CONNECTION_WAYLAND, monitor_output_callback_print, NULL);
-                    _exit(1);
-                }
-            } else {
-                gsr_monitor gmon;
-                if(!get_monitor_by_name(card_path, GSR_CONNECTION_DRM, window_str, &gmon)) {
-                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
-                    fprintf(stderr, "    \"screen\"\n");
-                    for_each_active_monitor_output(card_path, GSR_CONNECTION_DRM, monitor_output_callback_print, NULL);
-                    _exit(1);
-                }
-            }
-        } else {
-            if(strcmp(window_str, "screen") != 0 && strcmp(window_str, "screen-direct") != 0 && strcmp(window_str, "screen-direct-force") != 0) {
-                gsr_monitor gmon;
-                if(!get_monitor_by_name(dpy, GSR_CONNECTION_X11, window_str, &gmon)) {
-                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
-                    fprintf(stderr, "    \"screen\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
-                    fprintf(stderr, "    \"screen-direct\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
-                    fprintf(stderr, "    \"screen-direct-force\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
-                    for_each_active_monitor_output(dpy, GSR_CONNECTION_X11, monitor_output_callback_print, NULL);
-                    _exit(1);
-                }
-            }
-        }
-
-        if(gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA) {
-            if(wayland) {
-                gsr_capture_kms_cuda_params kms_params;
-                kms_params.egl = &egl;
-                kms_params.display_to_capture = window_str;
-                kms_params.gpu_inf = gpu_inf;
-                kms_params.card_path = card_path;
-                capture = gsr_capture_kms_cuda_create(&kms_params);
-                if(!capture)
-                    _exit(1);
-            } else {
-                const char *capture_target = window_str;
-                bool direct_capture = strcmp(window_str, "screen-direct") == 0;
-                if(direct_capture) {
-                    capture_target = "screen";
-                    // TODO: Temporary disable direct capture because push model causes stuttering when it's direct capturing. This might be a nvfbc bug. This does not happen when using a compositor.
-                    direct_capture = false;
-                    fprintf(stderr, "Warning: screen-direct has temporary been disabled as it causes stuttering. This is likely a NvFBC bug. Falling back to \"screen\".\n");
-                }
-
-                if(strcmp(window_str, "screen-direct-force") == 0) {
-                    direct_capture = true;
-                    capture_target = "screen";
-                }
-
-                gsr_egl_unload(&egl);
-
-                gsr_capture_nvfbc_params nvfbc_params;
-                nvfbc_params.dpy = dpy;
-                nvfbc_params.display_to_capture = capture_target;
-                nvfbc_params.fps = fps;
-                nvfbc_params.pos = { 0, 0 };
-                nvfbc_params.size = { 0, 0 };
-                nvfbc_params.direct_capture = direct_capture;
-                nvfbc_params.overclock = overclock;
-                capture = gsr_capture_nvfbc_create(&nvfbc_params);
-                if(!capture)
-                    _exit(1);
-            }
-        } else {
-            gsr_capture_kms_vaapi_params kms_params;
-            kms_params.egl = &egl;
-            kms_params.display_to_capture = window_str;
-            kms_params.gpu_inf = gpu_inf;
-            kms_params.card_path = card_path;
-            kms_params.wayland = wayland;
-            capture = gsr_capture_kms_vaapi_create(&kms_params);
-            if(!capture)
-                _exit(1);
-        }
-    } else {
-        if(wayland) {
-            fprintf(stderr, "Error: GPU Screen Recorder window capture only works in a pure X11 session. Xwayland is not supported. You can record a monitor instead on wayland\n");
-            _exit(2);
-        }
-
-        errno = 0;
-        src_window_id = strtol(window_str, nullptr, 0);
-        if(src_window_id == None || errno == EINVAL) {
-            fprintf(stderr, "Invalid window number %s\n", window_str);
-            usage();
-        }
-    }
-
-    if(!capture) {
-        switch(gpu_inf.vendor) {
-            case GSR_GPU_VENDOR_AMD: {
-                gsr_capture_xcomposite_vaapi_params xcomposite_params;
-                xcomposite_params.egl = &egl;
-                xcomposite_params.dpy = dpy;
-                xcomposite_params.window = src_window_id;
-                xcomposite_params.follow_focused = follow_focused;
-                xcomposite_params.region_size = region_size;
-                xcomposite_params.card_path = card_path;
-                capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
-                if(!capture)
-                    _exit(1);
-                break;
-            }
-            case GSR_GPU_VENDOR_INTEL: {
-                gsr_capture_xcomposite_vaapi_params xcomposite_params;
-                xcomposite_params.egl = &egl;
-                xcomposite_params.dpy = dpy;
-                xcomposite_params.window = src_window_id;
-                xcomposite_params.follow_focused = follow_focused;
-                xcomposite_params.region_size = region_size;
-                xcomposite_params.card_path = card_path;
-                capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
-                if(!capture)
-                    _exit(1);
-                break;
-            }
-            case GSR_GPU_VENDOR_NVIDIA: {
-                gsr_capture_xcomposite_cuda_params xcomposite_params;
-                xcomposite_params.egl = &egl;
-                xcomposite_params.dpy = dpy;
-                xcomposite_params.window = src_window_id;
-                xcomposite_params.follow_focused = follow_focused;
-                xcomposite_params.region_size = region_size;
-                xcomposite_params.overclock = overclock;
-                capture = gsr_capture_xcomposite_cuda_create(&xcomposite_params);
-                if(!capture)
-                    _exit(1);
-                break;
-            }
-        }
     }
 
     const char *filename = args["-o"].value();
@@ -1944,9 +2003,9 @@ int main(int argc, char **argv) {
     }
 
     if(gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA && file_extension == "mkv" && strcmp(video_codec_to_use, "h264") == 0) {
-        video_codec_to_use = "h265";
+        video_codec_to_use = "hevc";
         video_codec = VideoCodec::HEVC;
-        fprintf(stderr, "Warning: video codec was forcefully set to h265 because mkv container is used and mesa (AMD and Intel driver) does not support h264 in mkv files\n");
+        fprintf(stderr, "Warning: video codec was forcefully set to hevc because mkv container is used and mesa (AMD and Intel driver) does not support h264 in mkv files\n");
     }
 
     switch(audio_codec) {
@@ -1984,8 +2043,8 @@ int main(int argc, char **argv) {
         if(gpu_inf.vendor == GSR_GPU_VENDOR_INTEL) {
             const AVCodec *h264_codec = find_h264_encoder(gpu_inf.vendor, card_path);
             if(!h264_codec) {
-                fprintf(stderr, "Info: using h265 encoder because a codec was not specified and your gpu does not support h264\n");
-                video_codec_to_use = "h265";
+                fprintf(stderr, "Info: using hevc encoder because a codec was not specified and your gpu does not support h264\n");
+                video_codec_to_use = "hevc";
                 video_codec = VideoCodec::HEVC;
             } else {
                 fprintf(stderr, "Info: using h264 encoder because a codec was not specified\n");
@@ -1996,19 +2055,19 @@ int main(int argc, char **argv) {
             const AVCodec *h265_codec = find_h265_encoder(gpu_inf.vendor, card_path);
 
             if(h265_codec && fps > 60) {
-                fprintf(stderr, "Warning: recording at higher fps than 60 with h265 might result in recording at a very low fps. If this happens, switch to h264\n");
+                fprintf(stderr, "Warning: recording at higher fps than 60 with hevc might result in recording at a very low fps. If this happens, switch to h264\n");
             }
 
-            // h265 generally allows recording at a higher resolution than h264 on nvidia cards. On a gtx 1080 4k is the max resolution for h264 but for h265 it's 8k.
-            // Another important info is that when recording at a higher fps than.. 60? h265 has very bad performance. For example when recording at 144 fps the fps drops to 1
+            // hevc generally allows recording at a higher resolution than h264 on nvidia cards. On a gtx 1080 4k is the max resolution for h264 but for hevc it's 8k.
+            // Another important info is that when recording at a higher fps than.. 60? hevc has very bad performance. For example when recording at 144 fps the fps drops to 1
             // while with h264 the fps doesn't drop.
             if(!h265_codec) {
-                fprintf(stderr, "Info: using h264 encoder because a codec was not specified and your gpu does not support h265\n");
+                fprintf(stderr, "Info: using h264 encoder because a codec was not specified and your gpu does not support hevc\n");
                 video_codec_to_use = "h264";
                 video_codec = VideoCodec::H264;
             } else {
-                fprintf(stderr, "Info: using h265 encoder because a codec was not specified\n");
-                video_codec_to_use = "h265";
+                fprintf(stderr, "Info: using hevc encoder because a codec was not specified\n");
+                video_codec_to_use = "hevc";
                 video_codec = VideoCodec::HEVC;
             }
         }
@@ -2019,7 +2078,7 @@ int main(int argc, char **argv) {
     if(video_codec != VideoCodec::H264 && is_flv) {
         video_codec_to_use = "h264";
         video_codec = VideoCodec::H264;
-        fprintf(stderr, "Warning: h265 is not compatible with flv, falling back to h264 instead.\n");
+        fprintf(stderr, "Warning: hevc/av1 is not compatible with flv, falling back to h264 instead.\n");
     }
 
     const AVCodec *video_codec_f = nullptr;
@@ -2028,9 +2087,11 @@ int main(int argc, char **argv) {
             video_codec_f = find_h264_encoder(gpu_inf.vendor, card_path);
             break;
         case VideoCodec::HEVC:
+        case VideoCodec::HEVC_HDR:
             video_codec_f = find_h265_encoder(gpu_inf.vendor, card_path);
             break;
         case VideoCodec::AV1:
+        case VideoCodec::AV1_HDR:
             video_codec_f = find_av1_encoder(gpu_inf.vendor, card_path);
             break;
     }
@@ -2038,20 +2099,22 @@ int main(int argc, char **argv) {
     if(!video_codec_auto && !video_codec_f && !is_flv) {
         switch(video_codec) {
             case VideoCodec::H264: {
-                fprintf(stderr, "Warning: selected video codec h264 is not supported, trying h265 instead\n");
-                video_codec_to_use = "h265";
+                fprintf(stderr, "Warning: selected video codec h264 is not supported, trying hevc instead\n");
+                video_codec_to_use = "hevc";
                 video_codec = VideoCodec::HEVC;
                 video_codec_f = find_h265_encoder(gpu_inf.vendor, card_path);
                 break;
             }
-            case VideoCodec::HEVC: {
-                fprintf(stderr, "Warning: selected video codec h265 is not supported, trying h264 instead\n");
+            case VideoCodec::HEVC:
+            case VideoCodec::HEVC_HDR: {
+                fprintf(stderr, "Warning: selected video codec hevc is not supported, trying h264 instead\n");
                 video_codec_to_use = "h264";
                 video_codec = VideoCodec::H264;
                 video_codec_f = find_h264_encoder(gpu_inf.vendor, card_path);
                 break;
             }
-            case VideoCodec::AV1: {
+            case VideoCodec::AV1:
+            case VideoCodec::AV1_HDR: {
                 fprintf(stderr, "Warning: selected video codec av1 is not supported, trying h264 instead\n");
                 video_codec_to_use = "h264";
                 video_codec = VideoCodec::H264;
@@ -2068,11 +2131,13 @@ int main(int argc, char **argv) {
                 video_codec_name = "h265";
                 break;
             }
-            case VideoCodec::HEVC: {
+            case VideoCodec::HEVC:
+            case VideoCodec::HEVC_HDR: {
                 video_codec_name = "h265";
                 break;
             }
-            case VideoCodec::AV1: {
+            case VideoCodec::AV1:
+            case VideoCodec::AV1_HDR: {
                 video_codec_name = "av1";
                 break;
             }
@@ -2087,6 +2152,8 @@ int main(int argc, char **argv) {
             "  On such distros, you need to manually install mesa from source to enable H264/HEVC hardware acceleration, or use a more user friendly distro. Alternatively record with AV1 if supported by your GPU.\n", video_codec_name, video_codec_name, video_codec_name);
         _exit(2);
     }
+
+    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, gpu_inf, egl, card_path, dpy, fps, overclock, video_codec, color_range);
 
     const bool is_livestream = is_livestream_path(filename);
     // (Some?) livestreaming services require at least one audio track to work.
@@ -2111,8 +2178,9 @@ int main(int argc, char **argv) {
 
     AVStream *video_stream = nullptr;
     std::vector<AudioTrack> audio_tracks;
+    const bool hdr = video_codec_is_hdr(video_codec);
 
-    AVCodecContext *video_codec_context = create_video_codec_context(gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_CUDA : AV_PIX_FMT_VAAPI, quality, fps, video_codec_f, is_livestream, gpu_inf.vendor, framerate_mode);
+    AVCodecContext *video_codec_context = create_video_codec_context(gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_CUDA : AV_PIX_FMT_VAAPI, quality, fps, video_codec_f, is_livestream, gpu_inf.vendor, framerate_mode, hdr, color_range);
     if(replay_buffer_size_secs == -1)
         video_stream = create_stream(av_format_context, video_codec_context);
 
@@ -2122,7 +2190,7 @@ int main(int argc, char **argv) {
         _exit(capture_result);
     }
 
-    open_video(video_codec_context, quality, very_old_gpu, gpu_inf.vendor, pixel_format);
+    open_video(video_codec_context, quality, very_old_gpu, gpu_inf.vendor, pixel_format, hdr);
     if(video_stream)
         avcodec_parameters_from_context(video_stream->codecpar, video_codec_context);
 
@@ -2232,6 +2300,7 @@ int main(int argc, char **argv) {
     double paused_time_offset = 0.0;
     double paused_time_start = 0.0;
 
+    // TODO: Remove?
     AVFrame *frame = av_frame_alloc();
     if (!frame) {
         fprintf(stderr, "Error: Failed to allocate frame\n");

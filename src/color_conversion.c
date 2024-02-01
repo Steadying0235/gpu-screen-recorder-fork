@@ -20,11 +20,59 @@ static float abs_f(float v) {
                    "                0.0,           0.0,      0.0, 1.0);\n"    \
                    "}\n"
 
-/* BT709 limited */
-#define RGB_TO_YUV "const mat4 RGBtoYUV = mat4(0.1826, -0.1006,  0.4392, 0.0,\n" \
-                   "                           0.6142, -0.3386, -0.3989, 0.0,\n" \
-                   "                           0.0620,  0.4392, -0.0403, 0.0,\n" \
-                   "                           0.0625,  0.5000,  0.5000, 1.0);"
+/* https://en.wikipedia.org/wiki/YCbCr, see study/color_space_transform_matrix.png */
+
+/* ITU-R BT2020, full */
+/* https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.2020-2-201510-I!!PDF-E.pdf */
+#define RGB_TO_P010_FULL "const mat4 RGBtoYUV = mat4(0.262700, -0.139630,  0.500000, 0.000000,\n" \
+                         "                           0.678000, -0.360370, -0.459786, 0.000000,\n" \
+                         "                           0.059300,  0.500000, -0.040214, 0.000000,\n" \
+                         "                           0.000000,  0.500000,  0.500000, 1.000000);"
+
+/* ITU-R BT2020, limited (full multiplied by (235-16)/255, adding 16/255 to luma) */
+#define RGB_TO_P010_LIMITED "const mat4 RGBtoYUV = mat4(0.225613, -0.119918,  0.429412, 0.000000,\n" \
+                            "                           0.582282, -0.309494, -0.394875, 0.000000,\n" \
+                            "                           0.050928,  0.429412, -0.034537, 0.000000,\n" \
+                            "                           0.062745,  0.500000,  0.500000, 1.000000)";
+
+/* ITU-R BT709, full */
+/* https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.709-6-201506-I!!PDF-E.pdf */
+#define RGB_TO_NV12_FULL "const mat4 RGBtoYUV = mat4(0.212600, -0.114572,  0.500000, 0.000000,\n" \
+                         "                           0.715200, -0.385428, -0.454153, 0.000000,\n" \
+                         "                           0.072200,  0.500000, -0.045847, 0.000000,\n" \
+                         "                           0.000000,  0.500000,  0.500000, 1.000000);"
+
+/* ITU-R BT709, limited (full multiplied by (235-16)/255, adding 16/255 to luma) */
+#define RGB_TO_NV12_LIMITED "const mat4 RGBtoYUV = mat4(0.182586, -0.098397,  0.429412, 0.000000,\n" \
+                            "                           0.614231, -0.331015, -0.390037, 0.000000,\n" \
+                            "                           0.062007,  0.429412, -0.039375, 0.000000,\n" \
+                            "                           0.062745,  0.500000,  0.500000, 1.000000);"
+
+static const char* color_format_range_get_transform_matrix(gsr_destination_color color_format, gsr_color_range color_range) {
+    switch(color_format) {
+        case GSR_DESTINATION_COLOR_NV12: {
+            switch(color_range) {
+                case GSR_COLOR_RANGE_LIMITED:
+                    return RGB_TO_NV12_LIMITED;
+                case GSR_COLOR_RANGE_FULL:
+                    return RGB_TO_NV12_FULL;
+            }
+            break;
+        }
+        case GSR_DESTINATION_COLOR_P010: {
+            switch(color_range) {
+                case GSR_COLOR_RANGE_LIMITED:
+                    return RGB_TO_P010_LIMITED;
+                case GSR_COLOR_RANGE_FULL:
+                    return RGB_TO_P010_FULL;
+            }
+            break;
+        }
+        default:
+            return NULL;
+    }
+    return NULL;
+}
 
 static int load_shader_bgr(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform) {
     char vertex_shader[2048];
@@ -98,7 +146,9 @@ static int load_shader_bgr_external_texture(gsr_shader *shader, gsr_egl *egl, in
     return 0;
 }
 
-static int load_shader_y(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform) {
+static int load_shader_y(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform, gsr_destination_color color_format, gsr_color_range color_range) {
+    const char *color_transform_matrix = color_format_range_get_transform_matrix(color_format, color_range);
+
     char vertex_shader[2048];
     snprintf(vertex_shader, sizeof(vertex_shader),
         "#version 300 es                                   \n"
@@ -113,19 +163,20 @@ static int load_shader_y(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform
         "  gl_Position = vec4(pos.x, pos.y, 0.0, 1.0) * rotate_z(rotation);    \n"
         "}                                                 \n");
 
-    char fragment_shader[] =
+    char fragment_shader[2048];
+    snprintf(fragment_shader, sizeof(fragment_shader),
         "#version 300 es                                                                 \n"
         "precision mediump float;                                                        \n"
         "in vec2 texcoords_out;                                                          \n"
         "uniform sampler2D tex1;                                                         \n"
         "out vec4 FragColor;                                                             \n"
-        RGB_TO_YUV
+        "%s"
         "void main()                                                                     \n"
         "{                                                                               \n"
         "  vec4 pixel = texture(tex1, texcoords_out);                                    \n"
         "  FragColor.x = (RGBtoYUV * vec4(pixel.rgb, 1.0)).x;                            \n"
         "  FragColor.w = pixel.a;                                                        \n"
-        "}                                                                               \n";
+        "}                                                                               \n", color_transform_matrix);
 
     if(gsr_shader_init(shader, egl, vertex_shader, fragment_shader) != 0)
         return -1;
@@ -136,7 +187,9 @@ static int load_shader_y(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform
     return 0;
 }
 
-static unsigned int load_shader_uv(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform) {
+static unsigned int load_shader_uv(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform, gsr_destination_color color_format, gsr_color_range color_range) {
+    const char *color_transform_matrix = color_format_range_get_transform_matrix(color_format, color_range);
+
     char vertex_shader[2048];
     snprintf(vertex_shader, sizeof(vertex_shader),
         "#version 300 es                                 \n"
@@ -151,19 +204,20 @@ static unsigned int load_shader_uv(gsr_shader *shader, gsr_egl *egl, int *rotati
         "  gl_Position = vec4(pos.x, pos.y, 0.0, 1.0) * rotate_z(rotation) * vec4(0.5, 0.5, 1.0, 1.0) - vec4(0.5, 0.5, 0.0, 0.0);   \n"
         "}                                               \n");
 
-    char fragment_shader[] =
+    char fragment_shader[2048];
+    snprintf(fragment_shader, sizeof(fragment_shader),
         "#version 300 es                                                                       \n"
         "precision mediump float;                                                              \n"
         "in vec2 texcoords_out;                                                                \n"
         "uniform sampler2D tex1;                                                               \n"
         "out vec4 FragColor;                                                                   \n"
-        RGB_TO_YUV
+        "%s"
         "void main()                                                                           \n"
         "{                                                                                     \n"
         "  vec4 pixel = texture(tex1, texcoords_out);                                          \n"
         "  FragColor.xy = (RGBtoYUV * vec4(pixel.rgb, 1.0)).yz;                                \n"
         "  FragColor.w = pixel.a;                                                              \n"
-        "}                                                                                     \n";
+        "}                                                                                     \n", color_transform_matrix);
 
     if(gsr_shader_init(shader, egl, vertex_shader, fragment_shader) != 0)
         return -1;
@@ -248,18 +302,19 @@ int gsr_color_conversion_init(gsr_color_conversion *self, const gsr_color_conver
             }
             break;
         }
-        case GSR_DESTINATION_COLOR_NV12: {
+        case GSR_DESTINATION_COLOR_NV12:
+        case GSR_DESTINATION_COLOR_P010: {
             if(self->params.num_destination_textures != 2) {
-                fprintf(stderr, "gsr error: gsr_color_conversion_init: expected 2 destination textures for destination color NV12, got %d destination texture(s)\n", self->params.num_destination_textures);
+                fprintf(stderr, "gsr error: gsr_color_conversion_init: expected 2 destination textures for destination color NV12/P010, got %d destination texture(s)\n", self->params.num_destination_textures);
                 return -1;
             }
 
-            if(load_shader_y(&self->shaders[0], self->params.egl, &self->rotation_uniforms[0]) != 0) {
+            if(load_shader_y(&self->shaders[0], self->params.egl, &self->rotation_uniforms[0], params->destination_color, params->color_range) != 0) {
                 fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load Y shader\n");
                 goto err;
             }
 
-            if(load_shader_uv(&self->shaders[1], self->params.egl, &self->rotation_uniforms[1]) != 0) {
+            if(load_shader_uv(&self->shaders[1], self->params.egl, &self->rotation_uniforms[1], params->destination_color, params->color_range) != 0) {
                 fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load UV shader\n");
                 goto err;
             }

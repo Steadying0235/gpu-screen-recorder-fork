@@ -112,3 +112,8 @@ Mesa doesn't support global headers (AV_CODEC_FLAG_GLOBAL_HEADER) with h264... w
 Drop frames if live streaming cant keep up with target fps, or dynamically change resolution/quality.
 
 Support low power option (does it even work with vaapi in ffmpeg??). Would be very useful for steam deck.
+
+Instead of sending a big list of drm data back to kms client, send the monitor we want to record to kms server and the server should respond with only the matching monitor, and cursor.
+
+Tonemap hdr to sdr when hdr is enabled and when hevc_hdr/av1_hdr is not used.
+Support hdr capture with kms cuda.

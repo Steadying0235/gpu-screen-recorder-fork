@@ -152,7 +152,7 @@ static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_co
         }
         cap_kms->using_wayland_capture = true;
     } else {
-        int kms_init_res = gsr_kms_client_init(&cap_kms->kms_client, cap_kms->params.card_path);
+        int kms_init_res = gsr_kms_client_init(&cap_kms->kms_client, cap_kms->params.egl->card_path);
         if(kms_init_res != 0) {
             gsr_capture_kms_cuda_stop(cap, video_codec_context);
             return kms_init_res;
@@ -163,9 +163,9 @@ static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_co
             cap_kms->params.display_to_capture, strlen(cap_kms->params.display_to_capture),
             0
         };
-        for_each_active_monitor_output((void*)cap_kms->params.card_path, GSR_CONNECTION_DRM, monitor_callback, &monitor_callback_userdata);
+        for_each_active_monitor_output(cap_kms->params.egl, GSR_CONNECTION_DRM, monitor_callback, &monitor_callback_userdata);
 
-        if(!get_monitor_by_name((void*)cap_kms->params.card_path, GSR_CONNECTION_DRM, cap_kms->params.display_to_capture, &monitor)) {
+        if(!get_monitor_by_name(cap_kms->params.egl, GSR_CONNECTION_DRM, cap_kms->params.display_to_capture, &monitor)) {
             fprintf(stderr, "gsr error: gsr_capture_kms_cuda_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
             gsr_capture_kms_cuda_stop(cap, video_codec_context);
             return -1;
@@ -238,9 +238,6 @@ static bool cuda_register_opengl_texture(gsr_capture_kms_cuda *cap_kms) {
 
 static void gsr_capture_kms_cuda_tick(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame **frame) {
     gsr_capture_kms_cuda *cap_kms = cap->priv;
-
-    // TODO:
-    cap_kms->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
     if(!cap_kms->created_hw_frame) {
         cap_kms->created_hw_frame = true;
@@ -397,6 +394,8 @@ static gsr_kms_response_fd* find_cursor_drm(gsr_kms_response *kms_response) {
 static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
     (void)frame;
     gsr_capture_kms_cuda *cap_kms = cap->priv;
+
+    cap_kms->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
     for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {
         if(cap_kms->kms_response.fds[i].fd > 0)

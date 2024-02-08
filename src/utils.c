@@ -24,7 +24,7 @@ static const XRRModeInfo* get_mode_info(const XRRScreenResources *sr, RRMode id)
     return NULL;
 }
 
-static void for_each_active_monitor_output_x11(Display *display, active_monitor_callback callback, void *userdata) {
+void for_each_active_monitor_output_x11(Display *display, active_monitor_callback callback, void *userdata) {
     XRRScreenResources *screen_res = XRRGetScreenResources(display, DefaultRootWindow(display));
     if(!screen_res)
         return;
@@ -99,7 +99,7 @@ static bool connector_get_property_by_name(int drmfd, drmModeConnectorPtr props,
     return false;
 }
 
-static void for_each_active_monitor_output_wayland(gsr_egl *egl, active_monitor_callback callback, void *userdata) {
+static void for_each_active_monitor_output_wayland(const gsr_egl *egl, active_monitor_callback callback, void *userdata) {
     if(!gsr_egl_supports_wayland_capture(egl))
         return;
 
@@ -119,8 +119,8 @@ static void for_each_active_monitor_output_wayland(gsr_egl *egl, active_monitor_
     }
 }
 
-static void for_each_active_monitor_output_drm(const char *drm_card_path, active_monitor_callback callback, void *userdata) {
-    int fd = open(drm_card_path, O_RDONLY);
+static void for_each_active_monitor_output_drm(const gsr_egl *egl, active_monitor_callback callback, void *userdata) {
+    int fd = open(egl->card_path, O_RDONLY);
     if(fd == -1)
         return;
 
@@ -176,16 +176,16 @@ static void for_each_active_monitor_output_drm(const char *drm_card_path, active
     close(fd);
 }
 
-void for_each_active_monitor_output(void *connection, gsr_connection_type connection_type, active_monitor_callback callback, void *userdata) {
+void for_each_active_monitor_output(const gsr_egl *egl, gsr_connection_type connection_type, active_monitor_callback callback, void *userdata) {
     switch(connection_type) {
         case GSR_CONNECTION_X11:
-            for_each_active_monitor_output_x11(connection, callback, userdata);
+            for_each_active_monitor_output_x11(egl->x11.dpy, callback, userdata);
             break;
         case GSR_CONNECTION_WAYLAND:
-            for_each_active_monitor_output_wayland(connection, callback, userdata);
+            for_each_active_monitor_output_wayland(egl, callback, userdata);
             break;
         case GSR_CONNECTION_DRM:
-            for_each_active_monitor_output_drm(connection, callback, userdata);
+            for_each_active_monitor_output_drm(egl, callback, userdata);
             break;
     }
 }
@@ -199,13 +199,13 @@ static void get_monitor_by_name_callback(const gsr_monitor *monitor, void *userd
     }
 }
 
-bool get_monitor_by_name(void *connection, gsr_connection_type connection_type, const char *name, gsr_monitor *monitor) {
+bool get_monitor_by_name(const gsr_egl *egl, gsr_connection_type connection_type, const char *name, gsr_monitor *monitor) {
     get_monitor_by_name_userdata userdata;
     userdata.name = name;
     userdata.name_len = strlen(name);
     userdata.monitor = monitor;
     userdata.found_monitor = false;
-    for_each_active_monitor_output(connection, connection_type, get_monitor_by_name_callback, &userdata);
+    for_each_active_monitor_output(egl, connection_type, get_monitor_by_name_callback, &userdata);
     return userdata.found_monitor;
 }
 

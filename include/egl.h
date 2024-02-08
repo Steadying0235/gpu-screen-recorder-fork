@@ -146,6 +146,7 @@ typedef struct {
 
     gsr_x11 x11;
     gsr_wayland wayland;
+    char card_path[128];
 
     int fd;
     uint32_t x;
@@ -234,7 +235,7 @@ bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland);
 void gsr_egl_unload(gsr_egl *self);
 
 /* wayland protocol capture, does not include kms capture */
-bool gsr_egl_supports_wayland_capture(gsr_egl *self);
+bool gsr_egl_supports_wayland_capture(const gsr_egl *self);
 bool gsr_egl_start_capture(gsr_egl *self, const char *monitor_to_capture);
 void gsr_egl_update(gsr_egl *self);
 void gsr_egl_cleanup_frame(gsr_egl *self);

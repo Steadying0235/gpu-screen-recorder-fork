@@ -58,8 +58,8 @@ static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_c
 
 static bool drm_create_codec_context(gsr_capture_kms_vaapi *cap_kms, AVCodecContext *video_codec_context) {
     char render_path[128];
-    if(!gsr_card_path_get_render_path(cap_kms->params.card_path, render_path)) {
-        fprintf(stderr, "gsr error: failed to get /dev/dri/renderDXXX file from %s\n", cap_kms->params.card_path);
+    if(!gsr_card_path_get_render_path(cap_kms->params.egl->card_path, render_path)) {
+        fprintf(stderr, "gsr error: failed to get /dev/dri/renderDXXX file from %s\n", cap_kms->params.egl->card_path);
         return false;
     }
 
@@ -146,7 +146,7 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         }
         cap_kms->using_wayland_capture = true;
     } else {
-        int kms_init_res = gsr_kms_client_init(&cap_kms->kms_client, cap_kms->params.card_path);
+        int kms_init_res = gsr_kms_client_init(&cap_kms->kms_client, cap_kms->params.egl->card_path);
         if(kms_init_res != 0) {
             gsr_capture_kms_vaapi_stop(cap, video_codec_context);
             return kms_init_res;
@@ -157,9 +157,9 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
             cap_kms->params.display_to_capture, strlen(cap_kms->params.display_to_capture),
             0,
         };
-        for_each_active_monitor_output((void*)cap_kms->params.card_path, GSR_CONNECTION_DRM, monitor_callback, &monitor_callback_userdata);
+        for_each_active_monitor_output(cap_kms->params.egl, GSR_CONNECTION_DRM, monitor_callback, &monitor_callback_userdata);
 
-        if(!get_monitor_by_name((void*)cap_kms->params.card_path, GSR_CONNECTION_DRM, cap_kms->params.display_to_capture, &monitor)) {
+        if(!get_monitor_by_name(cap_kms->params.egl, GSR_CONNECTION_DRM, cap_kms->params.display_to_capture, &monitor)) {
             fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
             gsr_capture_kms_vaapi_stop(cap, video_codec_context);
             return -1;
@@ -192,9 +192,6 @@ static uint32_t fourcc(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
 
 static void gsr_capture_kms_vaapi_tick(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame **frame) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
-
-    // TODO:
-    cap_kms->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
     if(!cap_kms->created_hw_frame) {
         cap_kms->created_hw_frame = true;
@@ -461,6 +458,8 @@ static void gsr_capture_kms_vaapi_set_hdr_metadata(gsr_capture_kms_vaapi *cap_km
 
 static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
+
+    cap_kms->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
     for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {
         if(cap_kms->kms_response.fds[i].fd > 0)

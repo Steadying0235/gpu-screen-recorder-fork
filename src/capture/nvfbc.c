@@ -189,7 +189,7 @@ static bool ffmpeg_create_cuda_contexts(gsr_capture_nvfbc *cap_nvfbc, AVCodecCon
 
 static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_nvfbc *cap_nvfbc = cap->priv;
-    if(!gsr_cuda_load(&cap_nvfbc->cuda, cap_nvfbc->params.dpy, cap_nvfbc->params.overclock))
+    if(!gsr_cuda_load(&cap_nvfbc->cuda, cap_nvfbc->params.egl->x11.dpy, cap_nvfbc->params.overclock))
         return -1;
 
     if(!gsr_capture_nvfbc_load_library(cap)) {
@@ -269,8 +269,8 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
         goto error_cleanup;
     }
 
-    uint32_t tracking_width = XWidthOfScreen(DefaultScreenOfDisplay(cap_nvfbc->params.dpy));
-    uint32_t tracking_height = XHeightOfScreen(DefaultScreenOfDisplay(cap_nvfbc->params.dpy));
+    uint32_t tracking_width = XWidthOfScreen(DefaultScreenOfDisplay(cap_nvfbc->params.egl->x11.dpy));
+    uint32_t tracking_height = XHeightOfScreen(DefaultScreenOfDisplay(cap_nvfbc->params.egl->x11.dpy));
     tracking_type = strcmp(cap_nvfbc->params.display_to_capture, "screen") == 0 ? NVFBC_TRACKING_SCREEN : NVFBC_TRACKING_OUTPUT;
     if(tracking_type == NVFBC_TRACKING_OUTPUT) {
         if(!status_params.bXRandRAvailable) {

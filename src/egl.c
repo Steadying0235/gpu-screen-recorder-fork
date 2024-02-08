@@ -555,7 +555,7 @@ void gsr_egl_unload(gsr_egl *self) {
     memset(self, 0, sizeof(gsr_egl));
 }
 
-bool gsr_egl_supports_wayland_capture(gsr_egl *self) {
+bool gsr_egl_supports_wayland_capture(const gsr_egl *self) {
     // TODO: wlroots capture is broken right now (black screen) on amd and multiple monitors
     // so it has to be disabled right now. Find out why it happens and fix it.
     (void)self;

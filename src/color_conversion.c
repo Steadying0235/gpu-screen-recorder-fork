@@ -456,29 +456,15 @@ void gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_
 }
 
 void gsr_color_conversion_clear(gsr_color_conversion *self) {
-    float color1[4];
-    float color2[4];
+    float color1[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    float color2[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 
     switch(self->params.destination_color) {
         case GSR_DESTINATION_COLOR_BGR: {
-            color1[0] = 0.0f;
-            color1[1] = 0.0f;
-            color1[2] = 0.0f;
-            color1[3] = 1.0f;
-
-            color2[0] = 0.0f;
-            color2[1] = 0.0f;
-            color2[2] = 0.0f;
-            color2[3] = 1.0f;
             break;
         }
         case GSR_DESTINATION_COLOR_NV12:
         case GSR_DESTINATION_COLOR_P010: {
-            color1[0] = 0.0f;
-            color1[1] = 0.0f;
-            color1[2] = 0.0f;
-            color1[3] = 1.0f;
-
             color2[0] = 0.5f;
             color2[1] = 0.5f;
             color2[2] = 0.0f;

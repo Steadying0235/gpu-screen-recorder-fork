@@ -1350,7 +1350,7 @@ static bool is_xwayland(Display *display) {
         return true;
 
     bool xwayland_found = false;
-    for_each_active_monitor_output(display, GSR_CONNECTION_X11, xwayland_check_callback, &xwayland_found);
+    for_each_active_monitor_output_x11(display, xwayland_check_callback, &xwayland_found);
     return xwayland_found;
 }
 
@@ -1404,7 +1404,7 @@ static void list_supported_video_codecs() {
     fflush(stdout);
 }
 
-static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_gpu_info gpu_inf, gsr_egl &egl, char *card_path, Display *dpy, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range) {
+static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_gpu_info gpu_inf, gsr_egl &egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range) {
     vec2i region_size = { 0, 0 };
     Window src_window_id = None;
     bool follow_focused = false;
@@ -1440,7 +1440,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 if(gsr_egl_supports_wayland_capture(&egl)) {
                     for_each_active_monitor_output(&egl, GSR_CONNECTION_WAYLAND, get_first_output, &first_output);
                 } else {
-                    for_each_active_monitor_output(card_path, GSR_CONNECTION_DRM, get_first_output, &first_output);
+                    for_each_active_monitor_output(&egl, GSR_CONNECTION_DRM, get_first_output, &first_output);
                 }
 
                 if(first_output.output_name) {
@@ -1460,22 +1460,24 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 }
             } else {
                 gsr_monitor gmon;
-                if(!get_monitor_by_name(card_path, GSR_CONNECTION_DRM, window_str, &gmon)) {
+                if(!get_monitor_by_name(&egl, GSR_CONNECTION_DRM, window_str, &gmon)) {
                     fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
                     fprintf(stderr, "    \"screen\"\n");
-                    for_each_active_monitor_output(card_path, GSR_CONNECTION_DRM, monitor_output_callback_print, NULL);
+                    for_each_active_monitor_output(&egl, GSR_CONNECTION_DRM, monitor_output_callback_print, NULL);
                     _exit(1);
                 }
             }
         } else {
             if(strcmp(window_str, "screen") != 0 && strcmp(window_str, "screen-direct") != 0 && strcmp(window_str, "screen-direct-force") != 0) {
                 gsr_monitor gmon;
-                if(!get_monitor_by_name(dpy, GSR_CONNECTION_X11, window_str, &gmon)) {
+                if(!get_monitor_by_name(&egl, GSR_CONNECTION_X11, window_str, &gmon)) {
+                    const int screens_width = XWidthOfScreen(DefaultScreenOfDisplay(egl.x11.dpy));
+                    const int screens_height = XWidthOfScreen(DefaultScreenOfDisplay(egl.x11.dpy));
                     fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
-                    fprintf(stderr, "    \"screen\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
-                    fprintf(stderr, "    \"screen-direct\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
-                    fprintf(stderr, "    \"screen-direct-force\"    (%dx%d+%d+%d)\n", XWidthOfScreen(DefaultScreenOfDisplay(dpy)), XHeightOfScreen(DefaultScreenOfDisplay(dpy)), 0, 0);
-                    for_each_active_monitor_output(dpy, GSR_CONNECTION_X11, monitor_output_callback_print, NULL);
+                    fprintf(stderr, "    \"screen\"    (%dx%d+%d+%d)\n", screens_width, screens_height, 0, 0);
+                    fprintf(stderr, "    \"screen-direct\"    (%dx%d+%d+%d)\n", screens_width, screens_height, 0, 0);
+                    fprintf(stderr, "    \"screen-direct-force\"    (%dx%d+%d+%d)\n", screens_width, screens_height, 0, 0);
+                    for_each_active_monitor_output(&egl, GSR_CONNECTION_X11, monitor_output_callback_print, NULL);
                     _exit(1);
                 }
             }
@@ -1487,7 +1489,6 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 kms_params.egl = &egl;
                 kms_params.display_to_capture = window_str;
                 kms_params.gpu_inf = gpu_inf;
-                kms_params.card_path = card_path;
                 capture = gsr_capture_kms_cuda_create(&kms_params);
                 if(!capture)
                     _exit(1);
@@ -1509,7 +1510,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 gsr_egl_unload(&egl);
 
                 gsr_capture_nvfbc_params nvfbc_params;
-                nvfbc_params.dpy = dpy;
+                nvfbc_params.egl->x11.dpy = egl.x11.dpy;
                 nvfbc_params.display_to_capture = capture_target;
                 nvfbc_params.fps = fps;
                 nvfbc_params.pos = { 0, 0 };
@@ -1525,7 +1526,6 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
             kms_params.egl = &egl;
             kms_params.display_to_capture = window_str;
             kms_params.gpu_inf = gpu_inf;
-            kms_params.card_path = card_path;
             kms_params.wayland = wayland;
             kms_params.hdr = video_codec_is_hdr(video_codec);
             kms_params.color_range = color_range;
@@ -1549,28 +1549,13 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
 
     if(!capture) {
         switch(gpu_inf.vendor) {
-            case GSR_GPU_VENDOR_AMD: {
-                gsr_capture_xcomposite_vaapi_params xcomposite_params;
-                xcomposite_params.egl = &egl;
-                xcomposite_params.dpy = dpy;
-                xcomposite_params.window = src_window_id;
-                xcomposite_params.follow_focused = follow_focused;
-                xcomposite_params.region_size = region_size;
-                xcomposite_params.card_path = card_path;
-                xcomposite_params.color_range = color_range;
-                capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
-                if(!capture)
-                    _exit(1);
-                break;
-            }
+            case GSR_GPU_VENDOR_AMD:
             case GSR_GPU_VENDOR_INTEL: {
                 gsr_capture_xcomposite_vaapi_params xcomposite_params;
                 xcomposite_params.egl = &egl;
-                xcomposite_params.dpy = dpy;
                 xcomposite_params.window = src_window_id;
                 xcomposite_params.follow_focused = follow_focused;
                 xcomposite_params.region_size = region_size;
-                xcomposite_params.card_path = card_path;
                 xcomposite_params.color_range = color_range;
                 capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
                 if(!capture)
@@ -1580,7 +1565,6 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
             case GSR_GPU_VENDOR_NVIDIA: {
                 gsr_capture_xcomposite_cuda_params xcomposite_params;
                 xcomposite_params.egl = &egl;
-                xcomposite_params.dpy = dpy;
                 xcomposite_params.window = src_window_id;
                 xcomposite_params.follow_focused = follow_focused;
                 xcomposite_params.region_size = region_size;
@@ -1895,11 +1879,10 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Info: overclocking is not possible on nvidia on wayland, ignoring option\n");
     }
 
-    char card_path[128];
-    card_path[0] = '\0';
+    egl.card_path[0] = '\0';
     if(wayland || gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA) {
         // TODO: Allow specifying another card, and in other places
-        if(!gsr_get_valid_card_path(card_path)) {
+        if(!gsr_get_valid_card_path(egl.card_path)) {
             fprintf(stderr, "Error: no /dev/dri/cardX device found\n");
             _exit(2);
         }
@@ -2041,7 +2024,7 @@ int main(int argc, char **argv) {
     const bool video_codec_auto = strcmp(video_codec_to_use, "auto") == 0;
     if(video_codec_auto) {
         if(gpu_inf.vendor == GSR_GPU_VENDOR_INTEL) {
-            const AVCodec *h264_codec = find_h264_encoder(gpu_inf.vendor, card_path);
+            const AVCodec *h264_codec = find_h264_encoder(gpu_inf.vendor, egl.card_path);
             if(!h264_codec) {
                 fprintf(stderr, "Info: using hevc encoder because a codec was not specified and your gpu does not support h264\n");
                 video_codec_to_use = "hevc";
@@ -2052,7 +2035,7 @@ int main(int argc, char **argv) {
                 video_codec = VideoCodec::H264;
             }
         } else {
-            const AVCodec *h265_codec = find_h265_encoder(gpu_inf.vendor, card_path);
+            const AVCodec *h265_codec = find_h265_encoder(gpu_inf.vendor, egl.card_path);
 
             if(h265_codec && fps > 60) {
                 fprintf(stderr, "Warning: recording at higher fps than 60 with hevc might result in recording at a very low fps. If this happens, switch to h264\n");
@@ -2084,15 +2067,15 @@ int main(int argc, char **argv) {
     const AVCodec *video_codec_f = nullptr;
     switch(video_codec) {
         case VideoCodec::H264:
-            video_codec_f = find_h264_encoder(gpu_inf.vendor, card_path);
+            video_codec_f = find_h264_encoder(gpu_inf.vendor, egl.card_path);
             break;
         case VideoCodec::HEVC:
         case VideoCodec::HEVC_HDR:
-            video_codec_f = find_h265_encoder(gpu_inf.vendor, card_path);
+            video_codec_f = find_h265_encoder(gpu_inf.vendor, egl.card_path);
             break;
         case VideoCodec::AV1:
         case VideoCodec::AV1_HDR:
-            video_codec_f = find_av1_encoder(gpu_inf.vendor, card_path);
+            video_codec_f = find_av1_encoder(gpu_inf.vendor, egl.card_path);
             break;
     }
 
@@ -2102,7 +2085,7 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "Warning: selected video codec h264 is not supported, trying hevc instead\n");
                 video_codec_to_use = "hevc";
                 video_codec = VideoCodec::HEVC;
-                video_codec_f = find_h265_encoder(gpu_inf.vendor, card_path);
+                video_codec_f = find_h265_encoder(gpu_inf.vendor, egl.card_path);
                 break;
             }
             case VideoCodec::HEVC:
@@ -2110,7 +2093,7 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "Warning: selected video codec hevc is not supported, trying h264 instead\n");
                 video_codec_to_use = "h264";
                 video_codec = VideoCodec::H264;
-                video_codec_f = find_h264_encoder(gpu_inf.vendor, card_path);
+                video_codec_f = find_h264_encoder(gpu_inf.vendor, egl.card_path);
                 break;
             }
             case VideoCodec::AV1:
@@ -2118,7 +2101,7 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "Warning: selected video codec av1 is not supported, trying h264 instead\n");
                 video_codec_to_use = "h264";
                 video_codec = VideoCodec::H264;
-                video_codec_f = find_h264_encoder(gpu_inf.vendor, card_path);
+                video_codec_f = find_h264_encoder(gpu_inf.vendor, egl.card_path);
                 break;
             }
         }
@@ -2153,7 +2136,7 @@ int main(int argc, char **argv) {
         _exit(2);
     }
 
-    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, gpu_inf, egl, card_path, dpy, fps, overclock, video_codec, color_range);
+    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, gpu_inf, egl, fps, overclock, video_codec, color_range);
 
     const bool is_livestream = is_livestream_path(filename);
     // (Some?) livestreaming services require at least one audio track to work.

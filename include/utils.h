@@ -43,8 +43,9 @@ typedef struct {
 double clock_get_monotonic_seconds(void);
 
 typedef void (*active_monitor_callback)(const gsr_monitor *monitor, void *userdata);
-void for_each_active_monitor_output(void *connection, gsr_connection_type connection_type, active_monitor_callback callback, void *userdata);
-bool get_monitor_by_name(void *connection, gsr_connection_type connection_type, const char *name, gsr_monitor *monitor);
+void for_each_active_monitor_output_x11(Display *display, active_monitor_callback callback, void *userdata);
+void for_each_active_monitor_output(const gsr_egl *egl, gsr_connection_type connection_type, active_monitor_callback callback, void *userdata);
+bool get_monitor_by_name(const gsr_egl *egl, gsr_connection_type connection_type, const char *name, gsr_monitor *monitor);
 
 bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info);
 

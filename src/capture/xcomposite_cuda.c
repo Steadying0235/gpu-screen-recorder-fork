@@ -429,10 +429,14 @@ static int gsr_capture_xcomposite_cuda_capture(gsr_capture *cap, AVFrame *frame)
 
     if(cap_xcomp->window_texture.texture_id != 0) {
         while(cap_xcomp->params.egl->glGetError()) {}
+
+        const int target_x = max_int(0, frame->width / 2 - cap_xcomp->texture_size.x / 2);
+        const int target_y = max_int(0, frame->height / 2 - cap_xcomp->texture_size.y / 2);
+
         /* TODO: Remove this copy, which is only possible by using nvenc directly and encoding window_pixmap.target_texture_id */
         cap_xcomp->params.egl->glCopyImageSubData(
             window_texture_get_opengl_texture_id(&cap_xcomp->window_texture), GL_TEXTURE_2D, 0, source_pos.x, source_pos.y, 0,
-            cap_xcomp->target_texture_id, GL_TEXTURE_2D, 0, 0, 0, 0,
+            cap_xcomp->target_texture_id, GL_TEXTURE_2D, 0, target_x, target_y, 0,
             source_size.x, source_size.y, 1);
         unsigned int err = cap_xcomp->params.egl->glGetError();
         if(err != 0) {

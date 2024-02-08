@@ -441,11 +441,13 @@ static int gsr_capture_xcomposite_vaapi_capture(gsr_capture *cap, AVFrame *frame
     (void)frame;
     gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
 
-    float texture_rotation = 0.0f;
+    const int target_x = max_int(0, frame->width / 2 - cap_xcomp->texture_size.x / 2);
+    const int target_y = max_int(0, frame->height / 2 - cap_xcomp->texture_size.y / 2);
+
     gsr_color_conversion_draw(&cap_xcomp->color_conversion, window_texture_get_opengl_texture_id(&cap_xcomp->window_texture),
+        (vec2i){target_x, target_y}, cap_xcomp->texture_size,
         (vec2i){0, 0}, cap_xcomp->texture_size,
-        (vec2i){0, 0}, cap_xcomp->texture_size,
-        texture_rotation, false);
+        0.0f, false);
 
     cap_xcomp->params.egl->eglSwapBuffers(cap_xcomp->params.egl->egl_display, cap_xcomp->params.egl->egl_surface);
     //cap_xcomp->params.egl->glFlush();

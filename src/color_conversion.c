@@ -362,7 +362,7 @@ void gsr_color_conversion_deinit(gsr_color_conversion *self) {
 }
 
 /* |source_pos| is in pixel coordinates and |source_size|  */
-int gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_id, vec2i source_pos, vec2i source_size, vec2i texture_pos, vec2i texture_size, float rotation, bool external_texture) {
+void gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_id, vec2i source_pos, vec2i source_size, vec2i texture_pos, vec2i texture_size, float rotation, bool external_texture) {
     /* TODO: Do not call this every frame? */
     vec2i dest_texture_size = {0, 0};
     self->params.egl->glBindTexture(GL_TEXTURE_2D, self->params.destination_textures[0]);
@@ -453,5 +453,44 @@ int gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_i
     gsr_shader_use_none(&self->shaders[0]);
     self->params.egl->glBindTexture(texture_target, 0);
     self->params.egl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    return 0;
+}
+
+void gsr_color_conversion_clear(gsr_color_conversion *self) {
+    float color1[4];
+    float color2[4];
+
+    switch(self->params.destination_color) {
+        case GSR_DESTINATION_COLOR_BGR: {
+            color1[0] = 0.0f;
+            color1[1] = 0.0f;
+            color1[2] = 0.0f;
+            color1[3] = 1.0f;
+            break;
+        }
+        case GSR_DESTINATION_COLOR_NV12:
+        case GSR_DESTINATION_COLOR_P010: {
+            color1[0] = 0.0f;
+            color1[1] = 0.0f;
+            color1[2] = 0.0f;
+            color1[3] = 1.0f;
+
+            color2[0] = 0.5f;
+            color2[1] = 0.5f;
+            color2[2] = 0.0f;
+            color2[3] = 1.0f;
+            break;
+        }
+    }
+
+    self->params.egl->glBindFramebuffer(GL_FRAMEBUFFER, self->framebuffers[0]);
+    self->params.egl->glClearColor(color1[0], color1[1], color1[2], color1[3]);
+    self->params.egl->glClear(GL_COLOR_BUFFER_BIT);
+
+    if(self->params.num_destination_textures > 1) {
+        self->params.egl->glBindFramebuffer(GL_FRAMEBUFFER, self->framebuffers[1]);
+        self->params.egl->glClearColor(color2[0], color2[1], color2[2], color2[3]);
+        self->params.egl->glClear(GL_COLOR_BUFFER_BIT);
+    }
+
+    self->params.egl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }

@@ -45,6 +45,7 @@ typedef struct {
 int gsr_color_conversion_init(gsr_color_conversion *self, const gsr_color_conversion_params *params);
 void gsr_color_conversion_deinit(gsr_color_conversion *self);
 
-int gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_id, vec2i source_pos, vec2i source_size, vec2i texture_pos, vec2i texture_size, float rotation, bool external_texture);
+void gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_id, vec2i source_pos, vec2i source_size, vec2i texture_pos, vec2i texture_size, float rotation, bool external_texture);
+void gsr_color_conversion_clear(gsr_color_conversion *self);
 
 #endif /* GSR_COLOR_CONVERSION_H */

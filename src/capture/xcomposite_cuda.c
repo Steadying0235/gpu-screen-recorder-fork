@@ -272,6 +272,7 @@ static void gsr_capture_xcomposite_cuda_stop(gsr_capture *cap, AVCodecContext *v
 static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame **frame) {
     gsr_capture_xcomposite_cuda *cap_xcomp = cap->priv;
 
+    cap_xcomp->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     cap_xcomp->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
     bool init_new_window = false;

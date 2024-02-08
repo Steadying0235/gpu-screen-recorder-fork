@@ -465,6 +465,11 @@ void gsr_color_conversion_clear(gsr_color_conversion *self) {
             color1[1] = 0.0f;
             color1[2] = 0.0f;
             color1[3] = 1.0f;
+
+            color2[0] = 0.0f;
+            color2[1] = 0.0f;
+            color2[2] = 0.0f;
+            color2[3] = 1.0f;
             break;
         }
         case GSR_DESTINATION_COLOR_NV12:

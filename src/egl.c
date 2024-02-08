@@ -8,7 +8,6 @@
 
 #include <wayland-client.h>
 #include <wayland-egl.h>
-#include "../external/wlr-export-dmabuf-unstable-v1-client-protocol.h"
 #include <unistd.h>
 #include <sys/capability.h>
 
@@ -105,12 +104,6 @@ static void registry_add_object(void *data, struct wl_registry *registry, uint32
             .name = NULL,
         };
         wl_output_add_listener(gsr_output->output, &output_listener, gsr_output);
-    } else if(strcmp(interface, zwlr_export_dmabuf_manager_v1_interface.name) == 0) {
-        if(egl->wayland.export_manager) {
-            zwlr_export_dmabuf_manager_v1_destroy(egl->wayland.export_manager);
-            egl->wayland.export_manager = NULL;
-        }
-        egl->wayland.export_manager = wl_registry_bind(registry, name, &zwlr_export_dmabuf_manager_v1_interface, 1);
     }
 }
 
@@ -124,88 +117,6 @@ static struct wl_registry_listener registry_listener = {
     .global = registry_add_object,
     .global_remove = registry_remove_object,
 };
-
-static void frame_capture_output(gsr_egl *egl);
-
-static void frame_start(void *data, struct zwlr_export_dmabuf_frame_v1 *frame,
-        uint32_t width, uint32_t height, uint32_t offset_x, uint32_t offset_y,
-        uint32_t buffer_flags, uint32_t flags, uint32_t format,
-        uint32_t mod_high, uint32_t mod_low, uint32_t num_objects) {
-    (void)buffer_flags;
-    (void)flags;
-    (void)num_objects;
-    gsr_egl *egl = data;
-    //fprintf(stderr, "frame start %p, width: %u, height: %u, offset x: %u, offset y: %u, format: %u, num objects: %u\n", (void*)frame, width, height, offset_x, offset_y, format, num_objects);
-    egl->x = offset_x;
-    egl->y = offset_y;
-    egl->width = width;
-    egl->height = height;
-    egl->pixel_format = format;
-    egl->modifier = ((uint64_t)mod_high << 32) | (uint64_t)mod_low;
-    egl->wayland.current_frame = frame;
-}
-
-static void frame_object(void *data, struct zwlr_export_dmabuf_frame_v1 *frame,
-        uint32_t index, int32_t fd, uint32_t size, uint32_t offset,
-        uint32_t stride, uint32_t plane_index) {
-    // TODO: What if we get multiple objects? then we get multiple fd per frame
-    (void)frame;
-    (void)index;
-    (void)size;
-    (void)plane_index;
-    gsr_egl *egl = data;
-    if(egl->fd > 0) {
-        close(egl->fd);
-        egl->fd = 0;
-    }
-    egl->fd = fd;
-    egl->pitch = stride;
-    egl->offset = offset;
-    //fprintf(stderr, "new frame %p, fd: %d, index: %u, size: %u, offset: %u, stride: %u, plane_index: %u\n", (void*)frame, fd, index, size, offset, stride, plane_index);
-}
-
-static void frame_ready(void *data, struct zwlr_export_dmabuf_frame_v1 *frame, uint32_t tv_sec_hi, uint32_t tv_sec_lo, uint32_t tv_nsec) {
-    (void)frame;
-    (void)tv_sec_hi;
-    (void)tv_sec_lo;
-    (void)tv_nsec;
-    frame_capture_output(data);
-}
-
-static void frame_cancel(void *data, struct zwlr_export_dmabuf_frame_v1 *frame, uint32_t reason) {
-    (void)frame;
-    (void)reason;
-    frame_capture_output(data);
-}
-
-static const struct zwlr_export_dmabuf_frame_v1_listener frame_listener = {
-    .frame = frame_start,
-    .object = frame_object,
-    .ready = frame_ready,
-    .cancel = frame_cancel,
-};
-
-static void frame_capture_output(gsr_egl *egl) {
-    assert(egl->wayland.output_to_capture);
-    bool with_cursor = true;
-
-    if(egl->wayland.frame_callback) {
-        zwlr_export_dmabuf_frame_v1_destroy(egl->wayland.frame_callback);
-        egl->wayland.frame_callback = NULL;
-    }
-
-    egl->wayland.frame_callback = zwlr_export_dmabuf_manager_v1_capture_output(egl->wayland.export_manager, with_cursor, egl->wayland.output_to_capture->output);
-    zwlr_export_dmabuf_frame_v1_add_listener(egl->wayland.frame_callback, &frame_listener, egl);
-}
-
-static gsr_wayland_output* get_wayland_output_by_name(gsr_egl *egl, const char *name) {
-    assert(name);
-    for(int i = 0; i < egl->wayland.num_outputs; ++i) {
-        if(egl->wayland.outputs[i].name && strcmp(egl->wayland.outputs[i].name, name) == 0)
-            return &egl->wayland.outputs[i];
-    }
-    return NULL;
-}
 
 static void reset_cap_nice(void) {
     cap_t caps = cap_get_proc();
@@ -492,18 +403,6 @@ void gsr_egl_unload(gsr_egl *self) {
         self->x11.window = None;
     }
 
-    gsr_egl_cleanup_frame(self);
-
-    if(self->wayland.frame_callback) {
-        zwlr_export_dmabuf_frame_v1_destroy(self->wayland.frame_callback);
-        self->wayland.frame_callback = NULL;
-    }
-
-    if(self->wayland.export_manager) {
-        zwlr_export_dmabuf_manager_v1_destroy(self->wayland.export_manager);
-        self->wayland.export_manager = NULL;
-    }
-
     if(self->wayland.window) {
         wl_egl_window_destroy(self->wayland.window);
         self->wayland.window = NULL;
@@ -555,55 +454,10 @@ void gsr_egl_unload(gsr_egl *self) {
     memset(self, 0, sizeof(gsr_egl));
 }
 
-bool gsr_egl_supports_wayland_capture(const gsr_egl *self) {
-    // TODO: wlroots capture is broken right now (black screen) on amd and multiple monitors
-    // so it has to be disabled right now. Find out why it happens and fix it.
-    (void)self;
-    return false;
-    //return !!self->wayland.export_manager && self->wayland.num_outputs > 0;
-}
-
-bool gsr_egl_start_capture(gsr_egl *self, const char *monitor_to_capture) {
-    assert(monitor_to_capture);
-    if(!monitor_to_capture)
-        return false;
-
-    if(!self->wayland.dpy)
-        return false;
-
-    if(!gsr_egl_supports_wayland_capture(self))
-        return false;
-
-    if(self->wayland.frame_callback)
-        return false;
-
-    self->wayland.output_to_capture = get_wayland_output_by_name(self, monitor_to_capture);
-    if(!self->wayland.output_to_capture)
-        return false;
-
-    frame_capture_output(self);
-    return true;
-}
-
 void gsr_egl_update(gsr_egl *self) {
     if(!self->wayland.dpy)
         return;
 
     // TODO: pselect on wl_display_get_fd before doing dispatch
     wl_display_dispatch(self->wayland.dpy);
-}
-
-void gsr_egl_cleanup_frame(gsr_egl *self) {
-    if(!self->wayland.dpy)
-        return;
-
-    if(self->fd > 0) {
-        close(self->fd);
-        self->fd = 0;
-    }
-
-    if(self->wayland.current_frame) {
-        //zwlr_export_dmabuf_frame_v1_destroy(self->wayland.current_frame);
-        self->wayland.current_frame = NULL;
-    }
 }

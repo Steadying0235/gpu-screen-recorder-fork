@@ -29,8 +29,6 @@ typedef struct {
     
     gsr_kms_client kms_client;
     gsr_kms_response kms_response;
-    gsr_kms_response_fd wayland_kms_data;
-    bool using_wayland_capture;
 
     vec2i capture_pos;
     vec2i capture_size;
@@ -138,32 +136,24 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
 
     gsr_monitor monitor;
     cap_kms->monitor_id.num_connector_ids = 0;
-    if(gsr_egl_start_capture(cap_kms->params.egl, cap_kms->params.display_to_capture)) {
-        if(!get_monitor_by_name(cap_kms->params.egl, GSR_CONNECTION_WAYLAND, cap_kms->params.display_to_capture, &monitor)) {
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
-            gsr_capture_kms_vaapi_stop(cap, video_codec_context);
-            return -1;
-        }
-        cap_kms->using_wayland_capture = true;
-    } else {
-        int kms_init_res = gsr_kms_client_init(&cap_kms->kms_client, cap_kms->params.egl->card_path);
-        if(kms_init_res != 0) {
-            gsr_capture_kms_vaapi_stop(cap, video_codec_context);
-            return kms_init_res;
-        }
 
-        MonitorCallbackUserdata monitor_callback_userdata = {
-            cap_kms,
-            cap_kms->params.display_to_capture, strlen(cap_kms->params.display_to_capture),
-            0,
-        };
-        for_each_active_monitor_output(cap_kms->params.egl, GSR_CONNECTION_DRM, monitor_callback, &monitor_callback_userdata);
+    int kms_init_res = gsr_kms_client_init(&cap_kms->kms_client, cap_kms->params.egl->card_path);
+    if(kms_init_res != 0) {
+        gsr_capture_kms_vaapi_stop(cap, video_codec_context);
+        return kms_init_res;
+    }
 
-        if(!get_monitor_by_name(cap_kms->params.egl, GSR_CONNECTION_DRM, cap_kms->params.display_to_capture, &monitor)) {
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
-            gsr_capture_kms_vaapi_stop(cap, video_codec_context);
-            return -1;
-        }
+    MonitorCallbackUserdata monitor_callback_userdata = {
+        cap_kms,
+        cap_kms->params.display_to_capture, strlen(cap_kms->params.display_to_capture),
+        0,
+    };
+    for_each_active_monitor_output(cap_kms->params.egl, GSR_CONNECTION_DRM, monitor_callback, &monitor_callback_userdata);
+
+    if(!get_monitor_by_name(cap_kms->params.egl, GSR_CONNECTION_DRM, cap_kms->params.display_to_capture, &monitor)) {
+        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_start: failed to find monitor by name \"%s\"\n", cap_kms->params.display_to_capture);
+        gsr_capture_kms_vaapi_stop(cap, video_codec_context);
+        return -1;
     }
 
     cap_kms->capture_pos = monitor.pos;
@@ -398,26 +388,6 @@ static gsr_kms_response_fd* find_cursor_drm(gsr_kms_response *kms_response) {
     return NULL;
 }
 
-static void copy_wayland_surface_data_to_drm_buffer(gsr_capture_kms_vaapi *cap_kms) {
-    cap_kms->wayland_kms_data.fd = cap_kms->params.egl->fd;
-    cap_kms->wayland_kms_data.width = cap_kms->params.egl->width;
-    cap_kms->wayland_kms_data.height = cap_kms->params.egl->height;
-    cap_kms->wayland_kms_data.pitch = cap_kms->params.egl->pitch;
-    cap_kms->wayland_kms_data.offset = cap_kms->params.egl->offset;
-    cap_kms->wayland_kms_data.pixel_format = cap_kms->params.egl->pixel_format;
-    cap_kms->wayland_kms_data.modifier = cap_kms->params.egl->modifier;
-    cap_kms->wayland_kms_data.connector_id = 0;
-    cap_kms->wayland_kms_data.is_combined_plane = false;
-    cap_kms->wayland_kms_data.is_cursor = false;
-    cap_kms->wayland_kms_data.x = cap_kms->wayland_kms_data.x; // TODO: Use these
-    cap_kms->wayland_kms_data.y = cap_kms->wayland_kms_data.y;
-    cap_kms->wayland_kms_data.src_w = cap_kms->wayland_kms_data.width;
-    cap_kms->wayland_kms_data.src_h = cap_kms->wayland_kms_data.height;
-
-    cap_kms->capture_pos.x = cap_kms->wayland_kms_data.x;
-    cap_kms->capture_pos.y = cap_kms->wayland_kms_data.y;
-}
-
 #define HDMI_STATIC_METADATA_TYPE1 0
 #define HDMI_EOTF_SMPTE_ST2084 2
 
@@ -471,45 +441,36 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_kms_response_fd *drm_fd = NULL;
     gsr_kms_response_fd *cursor_drm_fd = NULL;
     bool capture_is_combined_plane = false;
-    if(cap_kms->using_wayland_capture) {
-        gsr_egl_update(cap_kms->params.egl);
-        copy_wayland_surface_data_to_drm_buffer(cap_kms);
 
-        if(cap_kms->wayland_kms_data.fd <= 0)
-            return -1;
-
-        drm_fd = &cap_kms->wayland_kms_data;
-    } else {
-        if(gsr_kms_client_get_kms(&cap_kms->kms_client, &cap_kms->kms_response) != 0) {
-            fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: failed to get kms, error: %d (%s)\n", cap_kms->kms_response.result, cap_kms->kms_response.err_msg);
-            return -1;
-        }
-
-        if(cap_kms->kms_response.num_fds == 0) {
-            static bool error_shown = false;
-            if(!error_shown) {
-                error_shown = true;
-                fprintf(stderr, "gsr error: no drm found, capture will fail\n");
-            }
-            return -1;
-        }
-
-        for(int i = 0; i < cap_kms->monitor_id.num_connector_ids; ++i) {
-            drm_fd = find_drm_by_connector_id(&cap_kms->kms_response, cap_kms->monitor_id.connector_ids[i]);
-            if(drm_fd)
-                break;
-        }
-
-        // Will never happen on wayland unless the target monitor has been disconnected
-        if(!drm_fd) {
-            drm_fd = find_first_combined_drm(&cap_kms->kms_response);
-            if(!drm_fd)
-                drm_fd = find_largest_drm(&cap_kms->kms_response);
-            capture_is_combined_plane = true;
-        }
-
-        cursor_drm_fd = find_cursor_drm(&cap_kms->kms_response);
+    if(gsr_kms_client_get_kms(&cap_kms->kms_client, &cap_kms->kms_response) != 0) {
+        fprintf(stderr, "gsr error: gsr_capture_kms_vaapi_capture: failed to get kms, error: %d (%s)\n", cap_kms->kms_response.result, cap_kms->kms_response.err_msg);
+        return -1;
     }
+
+    if(cap_kms->kms_response.num_fds == 0) {
+        static bool error_shown = false;
+        if(!error_shown) {
+            error_shown = true;
+            fprintf(stderr, "gsr error: no drm found, capture will fail\n");
+        }
+        return -1;
+    }
+
+    for(int i = 0; i < cap_kms->monitor_id.num_connector_ids; ++i) {
+        drm_fd = find_drm_by_connector_id(&cap_kms->kms_response, cap_kms->monitor_id.connector_ids[i]);
+        if(drm_fd)
+            break;
+    }
+
+    // Will never happen on wayland unless the target monitor has been disconnected
+    if(!drm_fd) {
+        drm_fd = find_first_combined_drm(&cap_kms->kms_response);
+        if(!drm_fd)
+            drm_fd = find_largest_drm(&cap_kms->kms_response);
+        capture_is_combined_plane = true;
+    }
+
+    cursor_drm_fd = find_cursor_drm(&cap_kms->kms_response);
 
     if(!drm_fd)
         return -1;
@@ -559,47 +520,40 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
 
     vec2i capture_pos = cap_kms->capture_pos;
 
-    if(cap_kms->using_wayland_capture) {
-        gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
-            (vec2i){0, 0}, cap_kms->capture_size,
-            (vec2i){0, 0}, cap_kms->capture_size,
+    if(!capture_is_combined_plane)
+        capture_pos = (vec2i){drm_fd->x, drm_fd->y};
+
+    float texture_rotation = 0.0f;
+
+    gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
+        (vec2i){0, 0}, cap_kms->capture_size,
+        capture_pos, cap_kms->capture_size,
+        texture_rotation, false);
+
+    if(cursor_drm_fd) {
+        const intptr_t img_attr_cursor[] = {
+            EGL_LINUX_DRM_FOURCC_EXT,       cursor_drm_fd->pixel_format,
+            EGL_WIDTH,                      cursor_drm_fd->width,
+            EGL_HEIGHT,                     cursor_drm_fd->height,
+            EGL_DMA_BUF_PLANE0_FD_EXT,      cursor_drm_fd->fd,
+            EGL_DMA_BUF_PLANE0_OFFSET_EXT,  cursor_drm_fd->offset,
+            EGL_DMA_BUF_PLANE0_PITCH_EXT,   cursor_drm_fd->pitch,
+            EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, cursor_drm_fd->modifier & 0xFFFFFFFFULL,
+            EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, cursor_drm_fd->modifier >> 32ULL,
+            EGL_NONE
+        };
+
+        EGLImage cursor_image = cap_kms->params.egl->eglCreateImage(cap_kms->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr_cursor);
+        cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, cap_kms->cursor_texture);
+        cap_kms->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, cursor_image);
+        cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, cursor_image);
+        cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
+
+        vec2i cursor_size = {cursor_drm_fd->width, cursor_drm_fd->height};
+        gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->cursor_texture,
+            (vec2i){cursor_drm_fd->x, cursor_drm_fd->y}, cursor_size,
+            (vec2i){0, 0}, cursor_size,
             0.0f, false);
-    } else {
-        if(!capture_is_combined_plane)
-            capture_pos = (vec2i){drm_fd->x, drm_fd->y};
-
-        float texture_rotation = 0.0f;
-
-        gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
-            (vec2i){0, 0}, cap_kms->capture_size,
-            capture_pos, cap_kms->capture_size,
-            texture_rotation, false);
-
-        if(cursor_drm_fd) {
-            const intptr_t img_attr_cursor[] = {
-                EGL_LINUX_DRM_FOURCC_EXT,       cursor_drm_fd->pixel_format,
-                EGL_WIDTH,                      cursor_drm_fd->width,
-                EGL_HEIGHT,                     cursor_drm_fd->height,
-                EGL_DMA_BUF_PLANE0_FD_EXT,      cursor_drm_fd->fd,
-                EGL_DMA_BUF_PLANE0_OFFSET_EXT,  cursor_drm_fd->offset,
-                EGL_DMA_BUF_PLANE0_PITCH_EXT,   cursor_drm_fd->pitch,
-                EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, cursor_drm_fd->modifier & 0xFFFFFFFFULL,
-                EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, cursor_drm_fd->modifier >> 32ULL,
-                EGL_NONE
-            };
-
-            EGLImage cursor_image = cap_kms->params.egl->eglCreateImage(cap_kms->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr_cursor);
-            cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, cap_kms->cursor_texture);
-            cap_kms->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, cursor_image);
-            cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, cursor_image);
-            cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
-
-            vec2i cursor_size = {cursor_drm_fd->width, cursor_drm_fd->height};
-            gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->cursor_texture,
-                (vec2i){cursor_drm_fd->x, cursor_drm_fd->y}, cursor_size,
-                (vec2i){0, 0}, cursor_size,
-                0.0f, false);
-        }
     }
 
     cap_kms->params.egl->eglSwapBuffers(cap_kms->params.egl->egl_display, cap_kms->params.egl->egl_surface);
@@ -612,8 +566,6 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
 static void gsr_capture_kms_vaapi_capture_end(gsr_capture *cap, AVFrame *frame) {
     (void)frame;
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
-
-    gsr_egl_cleanup_frame(cap_kms->params.egl);
 
     for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {
         if(cap_kms->kms_response.fds[i].fd > 0)

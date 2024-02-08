@@ -100,9 +100,6 @@ static bool connector_get_property_by_name(int drmfd, drmModeConnectorPtr props,
 }
 
 static void for_each_active_monitor_output_wayland(const gsr_egl *egl, active_monitor_callback callback, void *userdata) {
-    if(!gsr_egl_supports_wayland_capture(egl))
-        return;
-
     for(int i = 0; i < egl->wayland.num_outputs; ++i) {
         if(!egl->wayland.outputs[i].name)
             continue;

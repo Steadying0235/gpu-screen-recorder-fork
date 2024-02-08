@@ -1437,11 +1437,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
             if(strcmp(window_str, "screen") == 0) {
                 FirstOutputCallback first_output;
                 first_output.output_name = NULL;
-                if(gsr_egl_supports_wayland_capture(&egl)) {
-                    for_each_active_monitor_output(&egl, GSR_CONNECTION_WAYLAND, get_first_output, &first_output);
-                } else {
-                    for_each_active_monitor_output(&egl, GSR_CONNECTION_DRM, get_first_output, &first_output);
-                }
+                for_each_active_monitor_output(&egl, GSR_CONNECTION_DRM, get_first_output, &first_output);
 
                 if(first_output.output_name) {
                     window_str = first_output.output_name;
@@ -1450,22 +1446,12 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 }
             }
 
-            if(gsr_egl_supports_wayland_capture(&egl)) {
-                gsr_monitor gmon;
-                if(!get_monitor_by_name(&egl, GSR_CONNECTION_WAYLAND, window_str, &gmon)) {
-                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
-                    fprintf(stderr, "    \"screen\"\n");
-                    for_each_active_monitor_output(&egl, GSR_CONNECTION_WAYLAND, monitor_output_callback_print, NULL);
-                    _exit(1);
-                }
-            } else {
-                gsr_monitor gmon;
-                if(!get_monitor_by_name(&egl, GSR_CONNECTION_DRM, window_str, &gmon)) {
-                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
-                    fprintf(stderr, "    \"screen\"\n");
-                    for_each_active_monitor_output(&egl, GSR_CONNECTION_DRM, monitor_output_callback_print, NULL);
-                    _exit(1);
-                }
+            gsr_monitor gmon;
+            if(!get_monitor_by_name(&egl, GSR_CONNECTION_DRM, window_str, &gmon)) {
+                fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
+                fprintf(stderr, "    \"screen\"\n");
+                for_each_active_monitor_output(&egl, GSR_CONNECTION_DRM, monitor_output_callback_print, NULL);
+                _exit(1);
             }
         } else {
             if(strcmp(window_str, "screen") != 0 && strcmp(window_str, "screen-direct") != 0 && strcmp(window_str, "screen-direct-force") != 0) {

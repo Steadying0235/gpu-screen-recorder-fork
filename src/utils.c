@@ -158,6 +158,8 @@ static int get_connector_type_by_name(const char *name) {
         return 2;
     else if(len >= 12 && strncmp(name, "DisplayPort-", 12) == 0)
         return 3;
+    else if(len >= 4 && strncmp(name, "eDP-", 4) == 0)
+        return 4;
     else
         return -1;
 }

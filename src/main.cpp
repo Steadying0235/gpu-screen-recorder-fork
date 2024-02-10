@@ -2025,7 +2025,7 @@ int main(int argc, char **argv) {
             const AVCodec *h265_codec = find_h265_encoder(gpu_inf.vendor, egl.card_path);
 
             if(h265_codec && fps > 60) {
-                fprintf(stderr, "Warning: recording at higher fps than 60 with hevc might result in recording at a very low fps. If this happens, switch to h264\n");
+                fprintf(stderr, "Warning: recording at higher fps than 60 with hevc might result in recording at a very low fps. If this happens, switch to h264 or av1\n");
             }
 
             // hevc generally allows recording at a higher resolution than h264 on nvidia cards. On a gtx 1080 4k is the max resolution for h264 but for hevc it's 8k.

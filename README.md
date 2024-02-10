@@ -116,8 +116,8 @@ You can use the `scripts/save-replay.sh` script to save a replay and by default 
 If you are using a NVIDIA GPU then it's recommended to set PreserveVideoMemoryAllocations=1 as mentioned in the section below.
 ## Examples
 Look at the [scripts](https://git.dec05eba.com/gpu-screen-recorder/tree/scripts) directory for script examples. For example if you want to automatically save a recording/replay into a folder with the same name as the game you are recording.
-## Issues
-### NVIDIA
+# Issues
+## NVIDIA
 Nvidia drivers have an issue where CUDA breaks if CUDA is running when suspend/hibernation happens, and it remains broken until you reload the nvidia driver. To fix this, either disable suspend or tell the NVIDIA driver to preserve video memory on suspend/hibernate by using the `NVreg_PreserveVideoMemoryAllocations=1` option. You can run `sudo extra/install_preserve_video_memory.sh` to automatically add that option to your system.
 
 # Reporting bugs/contributing patches
@@ -147,6 +147,8 @@ edit the video with a video editor. Hevc allows for better video quality (especi
 ## I get a black bar on the right/bottom in the video
 This is mostly an issue on AMD and it's a hardware issue/ffmpeg issue. If you use HEVC video codec then it's an issue in ffmpeg and if you use AV1 then it's an issue in the video encoding unit on certain AMD gpus, see: https://gitlab.freedesktop.org/mesa/mesa/-/issues/9185.
 If you get black bars then the workaround is to record with h264 video codec instead (using the -k h264 option).
+## The video is glitched, looks like checkerboard pattern
+This is an issue on some intel integrated gpus on wayland caused by power saving option. Right now the only way to fix this is to record on X11 instead.
 
 # Donations
 If you want to donate you can donate via bitcoin or monero.

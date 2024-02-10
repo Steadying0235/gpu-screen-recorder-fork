@@ -122,4 +122,8 @@ Mention known issue, capture on intel wayland compressed data glitch.
 
 Add 10 bit record option, h264_10bit, hevc_10bit and av1_10bit.
 
-Rotate cursor texture properly (around top left origin)
+Rotate cursor texture properly (around top left origin).
+
+Color range doesn't seem to work on nvidia, why?
+
+Setup hardware video context so we can query constraints and capabilities for better default and better error messages.

@@ -119,6 +119,7 @@ typedef struct {
     void *output;
     vec2i pos;
     vec2i size;
+    int32_t transform;
     char *name;
 } gsr_wayland_output;
 
@@ -215,6 +216,7 @@ typedef struct {
     void (*glBlendFunc)(unsigned int sfactor, unsigned int dfactor);
     int (*glGetUniformLocation)(unsigned int program, const char *name);
     void (*glUniform1f)(int location, float v0);
+    void (*glUniform2f)(int location, float v0, float v1);
 } gsr_egl;
 
 bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland);

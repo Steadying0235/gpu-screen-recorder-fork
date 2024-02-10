@@ -33,7 +33,7 @@ static float abs_f(float v) {
 #define RGB_TO_P010_LIMITED "const mat4 RGBtoYUV = mat4(0.225613, -0.119918,  0.429412, 0.000000,\n" \
                             "                           0.582282, -0.309494, -0.394875, 0.000000,\n" \
                             "                           0.050928,  0.429412, -0.034537, 0.000000,\n" \
-                            "                           0.062745,  0.500000,  0.500000, 1.000000)";
+                            "                           0.062745,  0.500000,  0.500000, 1.000000);"
 
 /* ITU-R BT709, full */
 /* https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.709-6-201506-I!!PDF-E.pdf */
@@ -74,19 +74,20 @@ static const char* color_format_range_get_transform_matrix(gsr_destination_color
     return NULL;
 }
 
-static int load_shader_bgr(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform) {
+static int load_shader_bgr(gsr_shader *shader, gsr_egl *egl, gsr_color_uniforms *uniforms) {
     char vertex_shader[2048];
     snprintf(vertex_shader, sizeof(vertex_shader),
         "#version 300 es                                   \n"
         "in vec2 pos;                                      \n"
         "in vec2 texcoords;                                \n"
         "out vec2 texcoords_out;                           \n"
+        "uniform vec2 offset;                              \n"
         "uniform float rotation;                           \n"
         ROTATE_Z
         "void main()                                       \n"
         "{                                                 \n"
-        "  texcoords_out = texcoords;                      \n"
-        "  gl_Position = vec4(pos.x, pos.y, 0.0, 1.0) * rotate_z(rotation);    \n"
+        "  texcoords_out = (vec4(texcoords.x - 0.5, texcoords.y - 0.5, 0.0, 0.0) * rotate_z(rotation)).xy + vec2(0.5, 0.5);  \n"
+        "  gl_Position = vec4(offset.x, offset.y, 0.0, 0.0) + vec4(pos.x, pos.y, 0.0, 1.0);    \n"
         "}                                                 \n");
 
     char fragment_shader[] =
@@ -105,23 +106,25 @@ static int load_shader_bgr(gsr_shader *shader, gsr_egl *egl, int *rotation_unifo
 
     gsr_shader_bind_attribute_location(shader, "pos", 0);
     gsr_shader_bind_attribute_location(shader, "texcoords", 1);
-    *rotation_uniform = egl->glGetUniformLocation(shader->program_id, "rotation");
+    uniforms->offset = egl->glGetUniformLocation(shader->program_id, "offset");
+    uniforms->rotation = egl->glGetUniformLocation(shader->program_id, "rotation");
     return 0;
 }
 
-static int load_shader_bgr_external_texture(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform) {
+static int load_shader_bgr_external_texture(gsr_shader *shader, gsr_egl *egl, gsr_color_uniforms *uniforms) {
     char vertex_shader[2048];
     snprintf(vertex_shader, sizeof(vertex_shader),
         "#version 300 es                                   \n"
         "in vec2 pos;                                      \n"
         "in vec2 texcoords;                                \n"
         "out vec2 texcoords_out;                           \n"
+        "uniform vec2 offset;                              \n"
         "uniform float rotation;                           \n"
         ROTATE_Z
         "void main()                                       \n"
         "{                                                 \n"
-        "  texcoords_out = texcoords;                      \n"
-        "  gl_Position = vec4(pos.x, pos.y, 0.0, 1.0) * rotate_z(rotation);    \n"
+        "  texcoords_out = (vec4(texcoords.x - 0.5, texcoords.y - 0.5, 0.0, 0.0) * rotate_z(rotation)).xy + vec2(0.5, 0.5);  \n"
+        "  gl_Position = vec4(offset.x, offset.y, 0.0, 0.0) + vec4(pos.x, pos.y, 0.0, 1.0);    \n"
         "}                                                 \n");
 
     char fragment_shader[] =
@@ -142,11 +145,12 @@ static int load_shader_bgr_external_texture(gsr_shader *shader, gsr_egl *egl, in
 
     gsr_shader_bind_attribute_location(shader, "pos", 0);
     gsr_shader_bind_attribute_location(shader, "texcoords", 1);
-    *rotation_uniform = egl->glGetUniformLocation(shader->program_id, "rotation");
+    uniforms->offset = egl->glGetUniformLocation(shader->program_id, "offset");
+    uniforms->rotation = egl->glGetUniformLocation(shader->program_id, "rotation");
     return 0;
 }
 
-static int load_shader_y(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform, gsr_destination_color color_format, gsr_color_range color_range) {
+static int load_shader_y(gsr_shader *shader, gsr_egl *egl, gsr_color_uniforms *uniforms, gsr_destination_color color_format, gsr_color_range color_range) {
     const char *color_transform_matrix = color_format_range_get_transform_matrix(color_format, color_range);
 
     char vertex_shader[2048];
@@ -155,12 +159,13 @@ static int load_shader_y(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform
         "in vec2 pos;                                      \n"
         "in vec2 texcoords;                                \n"
         "out vec2 texcoords_out;                           \n"
+        "uniform vec2 offset;                              \n"
         "uniform float rotation;                           \n"
         ROTATE_Z
         "void main()                                       \n"
         "{                                                 \n"
-        "  texcoords_out = texcoords;                      \n"
-        "  gl_Position = vec4(pos.x, pos.y, 0.0, 1.0) * rotate_z(rotation);    \n"
+        "  texcoords_out = (vec4(texcoords.x - 0.5, texcoords.y - 0.5, 0.0, 0.0) * rotate_z(rotation)).xy + vec2(0.5, 0.5);  \n"
+        "  gl_Position = vec4(offset.x, offset.y, 0.0, 0.0) + vec4(pos.x, pos.y, 0.0, 1.0);    \n"
         "}                                                 \n");
 
     char fragment_shader[2048];
@@ -183,11 +188,12 @@ static int load_shader_y(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform
 
     gsr_shader_bind_attribute_location(shader, "pos", 0);
     gsr_shader_bind_attribute_location(shader, "texcoords", 1);
-    *rotation_uniform = egl->glGetUniformLocation(shader->program_id, "rotation");
+    uniforms->offset = egl->glGetUniformLocation(shader->program_id, "offset");
+    uniforms->rotation = egl->glGetUniformLocation(shader->program_id, "rotation");
     return 0;
 }
 
-static unsigned int load_shader_uv(gsr_shader *shader, gsr_egl *egl, int *rotation_uniform, gsr_destination_color color_format, gsr_color_range color_range) {
+static unsigned int load_shader_uv(gsr_shader *shader, gsr_egl *egl, gsr_color_uniforms *uniforms, gsr_destination_color color_format, gsr_color_range color_range) {
     const char *color_transform_matrix = color_format_range_get_transform_matrix(color_format, color_range);
 
     char vertex_shader[2048];
@@ -196,12 +202,13 @@ static unsigned int load_shader_uv(gsr_shader *shader, gsr_egl *egl, int *rotati
         "in vec2 pos;                                    \n"
         "in vec2 texcoords;                              \n"
         "out vec2 texcoords_out;                         \n"
+        "uniform vec2 offset;                              \n"
         "uniform float rotation;                         \n"
         ROTATE_Z
         "void main()                                     \n"
         "{                                               \n"
-        "  texcoords_out = texcoords;                    \n"
-        "  gl_Position = vec4(pos.x, pos.y, 0.0, 1.0) * rotate_z(rotation) * vec4(0.5, 0.5, 1.0, 1.0) - vec4(0.5, 0.5, 0.0, 0.0);   \n"
+        "  texcoords_out = (vec4(texcoords.x - 0.5, texcoords.y - 0.5, 0.0, 0.0) * rotate_z(rotation)).xy + vec2(0.5, 0.5);                      \n"
+        "  gl_Position = vec4(offset.x, offset.y, 0.0, 0.0) + vec4(pos.x, pos.y, 0.0, 1.0) * vec4(0.5, 0.5, 1.0, 1.0) - vec4(0.5, 0.5, 0.0, 0.0);   \n"
         "}                                               \n");
 
     char fragment_shader[2048];
@@ -224,7 +231,8 @@ static unsigned int load_shader_uv(gsr_shader *shader, gsr_egl *egl, int *rotati
 
     gsr_shader_bind_attribute_location(shader, "pos", 0);
     gsr_shader_bind_attribute_location(shader, "texcoords", 1);
-    *rotation_uniform = egl->glGetUniformLocation(shader->program_id, "rotation");
+    uniforms->offset = egl->glGetUniformLocation(shader->program_id, "offset");
+    uniforms->rotation = egl->glGetUniformLocation(shader->program_id, "rotation");
     return 0;
 }
 
@@ -291,12 +299,12 @@ int gsr_color_conversion_init(gsr_color_conversion *self, const gsr_color_conver
                 return -1;
             }
 
-            if(load_shader_bgr(&self->shaders[0], self->params.egl, &self->rotation_uniforms[0]) != 0) {
+            if(load_shader_bgr(&self->shaders[0], self->params.egl, &self->uniforms[0]) != 0) {
                 fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load bgr shader\n");
                 goto err;
             }
 
-            if(load_shader_bgr_external_texture(&self->shaders[1], self->params.egl, &self->rotation_uniforms[1]) != 0) {
+            if(load_shader_bgr_external_texture(&self->shaders[1], self->params.egl, &self->uniforms[1]) != 0) {
                 fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load bgr shader (external texture)\n");
                 goto err;
             }
@@ -309,12 +317,12 @@ int gsr_color_conversion_init(gsr_color_conversion *self, const gsr_color_conver
                 return -1;
             }
 
-            if(load_shader_y(&self->shaders[0], self->params.egl, &self->rotation_uniforms[0], params->destination_color, params->color_range) != 0) {
+            if(load_shader_y(&self->shaders[0], self->params.egl, &self->uniforms[0], params->destination_color, params->color_range) != 0) {
                 fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load Y shader\n");
                 goto err;
             }
 
-            if(load_shader_uv(&self->shaders[1], self->params.egl, &self->rotation_uniforms[1], params->destination_color, params->color_range) != 0) {
+            if(load_shader_uv(&self->shaders[1], self->params.egl, &self->uniforms[1], params->destination_color, params->color_range) != 0) {
                 fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load UV shader\n");
                 goto err;
             }
@@ -363,6 +371,9 @@ void gsr_color_conversion_deinit(gsr_color_conversion *self) {
 
 /* |source_pos| is in pixel coordinates and |source_size|  */
 void gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_id, vec2i source_pos, vec2i source_size, vec2i texture_pos, vec2i texture_size, float rotation, bool external_texture) {
+    // TODO: Remove this crap
+    rotation = M_PI*2.0f - rotation;
+
     /* TODO: Do not call this every frame? */
     vec2i dest_texture_size = {0, 0};
     self->params.egl->glBindTexture(GL_TEXTURE_2D, self->params.destination_textures[0]);
@@ -383,6 +394,7 @@ void gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_
         self->params.egl->glGetTexLevelParameteriv(texture_target, 0, GL_TEXTURE_HEIGHT, &source_texture_size.y);
     }
 
+    // TODO: Remove this crap
     if(abs_f(M_PI * 0.5f - rotation) <= 0.001f || abs_f(M_PI * 1.5f - rotation) <= 0.001f) {
         float tmp = source_texture_size.x;
         source_texture_size.x = source_texture_size.y;
@@ -410,13 +422,13 @@ void gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_
     };
 
     const float vertices[] = {
-        -1.0f + pos_norm.x,               -1.0f + pos_norm.y + size_norm.y, texture_pos_norm.x,                       texture_pos_norm.y + texture_size_norm.y,
-        -1.0f + pos_norm.x,               -1.0f + pos_norm.y,               texture_pos_norm.x,                       texture_pos_norm.y,
-        -1.0f + pos_norm.x + size_norm.x, -1.0f + pos_norm.y,               texture_pos_norm.x + texture_size_norm.x, texture_pos_norm.y,
+        -1.0f + 0.0f,               -1.0f + 0.0f + size_norm.y, texture_pos_norm.x,                       texture_pos_norm.y + texture_size_norm.y,
+        -1.0f + 0.0f,               -1.0f + 0.0f,               texture_pos_norm.x,                       texture_pos_norm.y,
+        -1.0f + 0.0f + size_norm.x, -1.0f + 0.0f,               texture_pos_norm.x + texture_size_norm.x, texture_pos_norm.y,
 
-        -1.0f + pos_norm.x,               -1.0f + pos_norm.y + size_norm.y, texture_pos_norm.x,                       texture_pos_norm.y + texture_size_norm.y,
-        -1.0f + pos_norm.x + size_norm.x, -1.0f + pos_norm.y,               texture_pos_norm.x + texture_size_norm.x, texture_pos_norm.y,
-        -1.0f + pos_norm.x + size_norm.x, -1.0f + pos_norm.y + size_norm.y, texture_pos_norm.x + texture_size_norm.x, texture_pos_norm.y + texture_size_norm.y
+        -1.0f + 0.0f,               -1.0f + 0.0f + size_norm.y, texture_pos_norm.x,                       texture_pos_norm.y + texture_size_norm.y,
+        -1.0f + 0.0f + size_norm.x, -1.0f + 0.0f,               texture_pos_norm.x + texture_size_norm.x, texture_pos_norm.y,
+        -1.0f + 0.0f + size_norm.x, -1.0f + 0.0f + size_norm.y, texture_pos_norm.x + texture_size_norm.x, texture_pos_norm.y + texture_size_norm.y
     };
 
     self->params.egl->glBindVertexArray(self->vertex_array_object_id);
@@ -432,10 +444,12 @@ void gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_
 
         if(external_texture) {
             gsr_shader_use(&self->shaders[1]);
-            self->params.egl->glUniform1f(self->rotation_uniforms[1], rotation);
+            self->params.egl->glUniform1f(self->uniforms[1].rotation, rotation);
+            self->params.egl->glUniform2f(self->uniforms[1].offset, pos_norm.x, pos_norm.y);
         } else {
             gsr_shader_use(&self->shaders[0]);
-            self->params.egl->glUniform1f(self->rotation_uniforms[0], rotation);
+            self->params.egl->glUniform1f(self->uniforms[0].rotation, rotation);
+            self->params.egl->glUniform2f(self->uniforms[0].offset, pos_norm.x, pos_norm.y);
         }
         self->params.egl->glDrawArrays(GL_TRIANGLES, 0, 6);
     }
@@ -445,7 +459,8 @@ void gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_
         //cap_xcomp->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
         gsr_shader_use(&self->shaders[1]);
-        self->params.egl->glUniform1f(self->rotation_uniforms[1], rotation);
+        self->params.egl->glUniform1f(self->uniforms[1].rotation, rotation);
+        self->params.egl->glUniform2f(self->uniforms[1].offset, pos_norm.x, pos_norm.y);
         self->params.egl->glDrawArrays(GL_TRIANGLES, 0, 6);
     }
 

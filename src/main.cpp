@@ -851,6 +851,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -cr   Color range. Should be either 'limited' (aka mpeg) or 'full' (aka jpeg). Defaults to 'limited'.\n");
     fprintf(stderr, "        Limited color range means that colors are in range 16-235 while full color range means that colors are in range 0-255 (when not recording with hdr).\n");
+    fprintf(stderr, "        Note that some buggy video players (such as vlc) are unable to correctly display videos in full color range.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -v    Prints per second, fps updates. Optional, set to 'yes' by default.\n");
     fprintf(stderr, "\n");

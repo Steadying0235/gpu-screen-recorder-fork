@@ -117,3 +117,9 @@ Instead of sending a big list of drm data back to kms client, send the monitor w
 
 Tonemap hdr to sdr when hdr is enabled and when hevc_hdr/av1_hdr is not used.
 Support hdr capture with kms cuda.
+
+Mention known issue, capture on intel wayland compressed data glitch.
+
+Add 10 bit record option, h264_10bit, hevc_10bit and av1_10bit.
+
+Rotate cursor texture properly (around top left origin)

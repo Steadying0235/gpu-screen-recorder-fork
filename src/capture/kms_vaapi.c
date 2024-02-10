@@ -46,6 +46,8 @@ typedef struct {
     AVCodecContext *video_codec_context;
     AVMasteringDisplayMetadata *mastering_display_metadata;
     AVContentLightMetadata *light_metadata;
+
+    gsr_monitor_rotation monitor_rotation;
 } gsr_capture_kms_vaapi;
 
 static int max_int(int a, int b) {
@@ -156,8 +158,16 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         return -1;
     }
 
+    monitor.name = cap_kms->params.display_to_capture;
+    cap_kms->monitor_rotation = drm_monitor_get_display_server_rotation(cap_kms->params.egl, &monitor);
+
     cap_kms->capture_pos = monitor.pos;
-    cap_kms->capture_size = monitor.size;
+    if(cap_kms->monitor_rotation == GSR_MONITOR_ROT_90 || cap_kms->monitor_rotation == GSR_MONITOR_ROT_270) {
+        cap_kms->capture_size.x = monitor.size.y;
+        cap_kms->capture_size.y = monitor.size.x;
+    } else {
+        cap_kms->capture_size = monitor.size;
+    }
 
     /* Disable vsync */
     cap_kms->params.egl->eglSwapInterval(cap_kms->params.egl->egl_display, 0);
@@ -338,6 +348,16 @@ static bool gsr_capture_kms_vaapi_should_stop(gsr_capture *cap, bool *err) {
     return false;
 }
 
+static float monitor_rotation_to_radians(gsr_monitor_rotation rot) {
+    switch(rot) {
+        case GSR_MONITOR_ROT_0:   return 0.0f;
+        case GSR_MONITOR_ROT_90:  return M_PI_2;
+        case GSR_MONITOR_ROT_180: return M_PI;
+        case GSR_MONITOR_ROT_270: return M_PI + M_PI_2;
+    }
+    return 0.0f;
+}
+
 /* Prefer non combined planes */
 static gsr_kms_response_fd* find_drm_by_connector_id(gsr_kms_response *kms_response, uint32_t connector_id) {
     int index_combined = -1;
@@ -424,6 +444,13 @@ static void gsr_capture_kms_vaapi_set_hdr_metadata(gsr_capture_kms_vaapi *cap_km
         cap_kms->light_metadata->MaxCLL = drm_fd->hdr_metadata.hdmi_metadata_type1.max_cll;
         cap_kms->light_metadata->MaxFALL = drm_fd->hdr_metadata.hdmi_metadata_type1.max_fall;
     }
+}
+
+static vec2i swap_vec2i(vec2i value) {
+    int tmp = value.x;
+    value.x = value.y;
+    value.y = tmp;
+    return value;
 }
 
 static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
@@ -518,12 +545,15 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, image);
     cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
-    vec2i capture_pos = cap_kms->capture_pos;
+    // TODO: Test rotation with multiple monitors, different rotation setups
+    // TODO: Make rotation work on wayland
+    // TODO: Apply these changes to kms cuda too, and test that
 
+    vec2i capture_pos = cap_kms->capture_pos;
     if(!capture_is_combined_plane)
         capture_pos = (vec2i){drm_fd->x, drm_fd->y};
 
-    float texture_rotation = 0.0f;
+    const float texture_rotation = monitor_rotation_to_radians(cap_kms->monitor_rotation);
 
     gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
         (vec2i){0, 0}, cap_kms->capture_size,
@@ -531,6 +561,32 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         texture_rotation, false);
 
     if(cursor_drm_fd) {
+        const vec2i cursor_size = {cursor_drm_fd->width, cursor_drm_fd->height};
+        vec2i cursor_pos = {cursor_drm_fd->x, cursor_drm_fd->y};
+        switch(cap_kms->monitor_rotation) {
+            case GSR_MONITOR_ROT_0:
+                break;
+            case GSR_MONITOR_ROT_90:
+                cursor_pos = swap_vec2i(cursor_pos);
+                cursor_pos.x = cap_kms->capture_size.x - cursor_pos.x;
+                // TODO: Remove this horrible hack
+                cursor_pos.x -= cursor_size.x;
+                break;
+            case GSR_MONITOR_ROT_180:
+                cursor_pos.x = cap_kms->capture_size.x - cursor_pos.x;
+                cursor_pos.y = cap_kms->capture_size.y - cursor_pos.y;
+                // TODO: Remove this horrible hack
+                cursor_pos.x -= cursor_size.x;
+                cursor_pos.y -= cursor_size.y;
+                break;
+            case GSR_MONITOR_ROT_270:
+                cursor_pos = swap_vec2i(cursor_pos);
+                cursor_pos.y = cap_kms->capture_size.y - cursor_pos.y;
+                // TODO: Remove this horrible hack
+                cursor_pos.y -= cursor_size.y;
+                break;
+        }
+
         const intptr_t img_attr_cursor[] = {
             EGL_LINUX_DRM_FOURCC_EXT,       cursor_drm_fd->pixel_format,
             EGL_WIDTH,                      cursor_drm_fd->width,
@@ -549,11 +605,10 @@ static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
         cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, cursor_image);
         cap_kms->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
-        vec2i cursor_size = {cursor_drm_fd->width, cursor_drm_fd->height};
         gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->cursor_texture,
-            (vec2i){cursor_drm_fd->x, cursor_drm_fd->y}, cursor_size,
+            cursor_pos, cursor_size,
             (vec2i){0, 0}, cursor_size,
-            0.0f, false);
+            texture_rotation, false);
     }
 
     cap_kms->params.egl->eglSwapBuffers(cap_kms->params.egl->egl_display, cap_kms->params.egl->egl_surface);

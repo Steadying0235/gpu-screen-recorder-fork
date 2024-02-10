@@ -18,13 +18,22 @@ typedef struct {
     int gpu_version; /* 0 if unknown */
 } gsr_gpu_info;
 
+typedef enum {
+    GSR_MONITOR_ROT_0,
+    GSR_MONITOR_ROT_90,
+    GSR_MONITOR_ROT_180,
+    GSR_MONITOR_ROT_270
+} gsr_monitor_rotation;
+
 typedef struct {
     const char *name;
     int name_len;
     vec2i pos;
     vec2i size;
     XRRCrtcInfo *crt_info; /* Only on x11 */
-    uint32_t connector_id; /* Only on drm */
+    uint32_t connector_id; /* Only on x11 and drm */
+    gsr_monitor_rotation rotation; /* Only on x11 and wayland */
+    uint32_t monitor_identifier; /* Only on drm and wayland */
 } gsr_monitor;
 
 typedef enum {
@@ -46,6 +55,7 @@ typedef void (*active_monitor_callback)(const gsr_monitor *monitor, void *userda
 void for_each_active_monitor_output_x11(Display *display, active_monitor_callback callback, void *userdata);
 void for_each_active_monitor_output(const gsr_egl *egl, gsr_connection_type connection_type, active_monitor_callback callback, void *userdata);
 bool get_monitor_by_name(const gsr_egl *egl, gsr_connection_type connection_type, const char *name, gsr_monitor *monitor);
+gsr_monitor_rotation drm_monitor_get_display_server_rotation(const gsr_egl *egl, const gsr_monitor *monitor);
 
 bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info);
 

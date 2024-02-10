@@ -23,10 +23,10 @@ static void output_handle_geometry(void *data, struct wl_output *wl_output,
     (void)subpixel;
     (void)make;
     (void)model;
-    (void)transform;
     gsr_wayland_output *gsr_output = data;
     gsr_output->pos.x = x;
     gsr_output->pos.y = y;
+    gsr_output->transform = transform;
 }
 
 static void output_handle_mode(void *data, struct wl_output *wl_output, uint32_t flags, int32_t width, int32_t height, int32_t refresh) {
@@ -101,6 +101,7 @@ static void registry_add_object(void *data, struct wl_registry *registry, uint32
             .output = wl_registry_bind(registry, name, &wl_output_interface, 4),
             .pos = { .x = 0, .y = 0 },
             .size = { .x = 0, .y = 0 },
+            .transform = 0,
             .name = NULL,
         };
         wl_output_add_listener(gsr_output->output, &output_listener, gsr_output);
@@ -322,6 +323,7 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
         { (void**)&self->glBlendFunc, "glBlendFunc" },
         { (void**)&self->glGetUniformLocation, "glGetUniformLocation" },
         { (void**)&self->glUniform1f, "glUniform1f" },
+        { (void**)&self->glUniform2f, "glUniform2f" },
 
         { NULL, NULL }
     };

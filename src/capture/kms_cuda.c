@@ -50,6 +50,8 @@ typedef struct {
     unsigned int target_texture;
 
     gsr_color_conversion color_conversion;
+
+    gsr_monitor_rotation monitor_rotation;
 } gsr_capture_kms_cuda;
 
 static int max_int(int a, int b) {
@@ -162,8 +164,16 @@ static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_co
         return -1;
     }
 
+    monitor.name = cap_kms->params.display_to_capture;
+    cap_kms->monitor_rotation = drm_monitor_get_display_server_rotation(cap_kms->params.egl, &monitor);
+
     cap_kms->capture_pos = monitor.pos;
-    cap_kms->capture_size = monitor.size;
+    if(cap_kms->monitor_rotation == GSR_MONITOR_ROT_90 || cap_kms->monitor_rotation == GSR_MONITOR_ROT_270) {
+        cap_kms->capture_size.x = monitor.size.y;
+        cap_kms->capture_size.y = monitor.size.x;
+    } else {
+        cap_kms->capture_size = monitor.size;
+    }
 
     video_codec_context->width = max_int(2, cap_kms->capture_size.x & ~1);
     video_codec_context->height = max_int(2, cap_kms->capture_size.y & ~1);
@@ -316,6 +326,16 @@ static bool gsr_capture_kms_cuda_should_stop(gsr_capture *cap, bool *err) {
     return false;
 }
 
+static float monitor_rotation_to_radians(gsr_monitor_rotation rot) {
+    switch(rot) {
+        case GSR_MONITOR_ROT_0:   return 0.0f;
+        case GSR_MONITOR_ROT_90:  return M_PI_2;
+        case GSR_MONITOR_ROT_180: return M_PI;
+        case GSR_MONITOR_ROT_270: return M_PI + M_PI_2;
+    }
+    return 0.0f;
+}
+
 /* Prefer non combined planes */
 static gsr_kms_response_fd* find_drm_by_connector_id(gsr_kms_response *kms_response, uint32_t connector_id) {
     int index_combined = -1;
@@ -379,6 +399,13 @@ static gsr_kms_response_fd* find_cursor_drm(gsr_kms_response *kms_response) {
             return &kms_response->fds[i];
     }
     return NULL;
+}
+
+static vec2i swap_vec2i(vec2i value) {
+    int tmp = value.x;
+    value.x = value.y;
+    value.y = tmp;
+    return value;
 }
 
 static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
@@ -457,12 +484,40 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
     if(!capture_is_combined_plane)
         capture_pos = (vec2i){drm_fd->x, drm_fd->y};
 
+    const float texture_rotation = monitor_rotation_to_radians(cap_kms->monitor_rotation);
+
     gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->input_texture,
         (vec2i){0, 0}, cap_kms->capture_size,
         capture_pos, cap_kms->capture_size,
-        0.0f, false);
+        texture_rotation, false);
 
     if(cursor_drm_fd) {
+        const vec2i cursor_size = {cursor_drm_fd->width, cursor_drm_fd->height};
+        vec2i cursor_pos = {cursor_drm_fd->x, cursor_drm_fd->y};
+        switch(cap_kms->monitor_rotation) {
+            case GSR_MONITOR_ROT_0:
+                break;
+            case GSR_MONITOR_ROT_90:
+                cursor_pos = swap_vec2i(cursor_pos);
+                cursor_pos.x = cap_kms->capture_size.x - cursor_pos.x;
+                // TODO: Remove this horrible hack
+                cursor_pos.x -= cursor_size.x;
+                break;
+            case GSR_MONITOR_ROT_180:
+                cursor_pos.x = cap_kms->capture_size.x - cursor_pos.x;
+                cursor_pos.y = cap_kms->capture_size.y - cursor_pos.y;
+                // TODO: Remove this horrible hack
+                cursor_pos.x -= cursor_size.x;
+                cursor_pos.y -= cursor_size.y;
+                break;
+            case GSR_MONITOR_ROT_270:
+                cursor_pos = swap_vec2i(cursor_pos);
+                cursor_pos.y = cap_kms->capture_size.y - cursor_pos.y;
+                // TODO: Remove this horrible hack
+                cursor_pos.y -= cursor_size.y;
+                break;
+        }
+
         const intptr_t img_attr_cursor[] = {
             EGL_LINUX_DRM_FOURCC_EXT,       cursor_drm_fd->pixel_format,
             EGL_WIDTH,                      cursor_drm_fd->width,
@@ -481,11 +536,10 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
         cap_kms->params.egl->eglDestroyImage(cap_kms->params.egl->egl_display, cursor_image);
         cap_kms->params.egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
 
-        vec2i cursor_size = {cursor_drm_fd->width, cursor_drm_fd->height};
         gsr_color_conversion_draw(&cap_kms->color_conversion, cap_kms->cursor_texture,
-            (vec2i){cursor_drm_fd->x, cursor_drm_fd->y}, cursor_size,
+            cursor_pos, cursor_size,
             (vec2i){0, 0}, cursor_size,
-            0.0f, true);
+            texture_rotation, true);
     }
 
     cap_kms->params.egl->eglSwapBuffers(cap_kms->params.egl->egl_display, cap_kms->params.egl->egl_surface);

@@ -20,6 +20,11 @@ typedef enum {
 } gsr_destination_color;
 
 typedef struct {
+    int offset;
+    int rotation;
+} gsr_color_uniforms;
+
+typedef struct {
     gsr_egl *egl;
 
     gsr_source_color source_color;
@@ -33,7 +38,7 @@ typedef struct {
 
 typedef struct {
     gsr_color_conversion_params params;
-    int rotation_uniforms[2];
+    gsr_color_uniforms uniforms[2];
     gsr_shader shaders[2];
 
     unsigned int framebuffers[2];

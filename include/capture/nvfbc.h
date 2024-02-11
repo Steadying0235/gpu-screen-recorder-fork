@@ -2,7 +2,6 @@
 #define GSR_CAPTURE_NVFBC_H
 
 #include "capture.h"
-#include "../egl.h"
 #include "../vec2.h"
 
 typedef struct _XDisplay Display;

@@ -1380,7 +1380,8 @@ static void list_supported_video_codecs() {
         _exit(2);
 
     gsr_egl_unload(&egl);
-    XCloseDisplay(dpy);
+    if(dpy)
+        XCloseDisplay(dpy);
 
     char card_path[128];
     card_path[0] = '\0';
@@ -1494,16 +1495,15 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                     capture_target = "screen";
                 }
 
-                gsr_egl_unload(&egl);
-
                 gsr_capture_nvfbc_params nvfbc_params;
-                nvfbc_params.egl->x11.dpy = egl.x11.dpy;
+                nvfbc_params.dpy = egl.x11.dpy;
                 nvfbc_params.display_to_capture = capture_target;
                 nvfbc_params.fps = fps;
                 nvfbc_params.pos = { 0, 0 };
                 nvfbc_params.size = { 0, 0 };
                 nvfbc_params.direct_capture = direct_capture;
                 nvfbc_params.overclock = overclock;
+                gsr_egl_unload(&egl);
                 capture = gsr_capture_nvfbc_create(&nvfbc_params);
                 if(!capture)
                     _exit(1);

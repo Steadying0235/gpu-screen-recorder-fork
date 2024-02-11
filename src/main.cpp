@@ -1477,6 +1477,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 kms_params.egl = &egl;
                 kms_params.display_to_capture = window_str;
                 kms_params.gpu_inf = gpu_inf;
+                kms_params.hdr = video_codec_is_hdr(video_codec);
                 capture = gsr_capture_kms_cuda_create(&kms_params);
                 if(!capture)
                     _exit(1);

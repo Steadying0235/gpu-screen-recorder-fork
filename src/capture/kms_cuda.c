@@ -9,6 +9,7 @@
 #include <assert.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_cuda.h>
+#include <libavutil/mastering_display_metadata.h>
 #include <libavutil/frame.h>
 #include <libavcodec/avcodec.h>
 
@@ -50,6 +51,10 @@ typedef struct {
     unsigned int target_texture;
 
     gsr_color_conversion color_conversion;
+
+    AVCodecContext *video_codec_context;
+    AVMasteringDisplayMetadata *mastering_display_metadata;
+    AVContentLightMetadata *light_metadata;
 
     gsr_monitor_rotation monitor_rotation;
 } gsr_capture_kms_cuda;
@@ -141,6 +146,8 @@ static void monitor_callback(const gsr_monitor *monitor, void *userdata) {
 
 static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_kms_cuda *cap_kms = cap->priv;
+
+    cap_kms->video_codec_context = video_codec_context;
 
     gsr_monitor monitor;
     cap_kms->monitor_id.num_connector_ids = 0;
@@ -401,6 +408,44 @@ static gsr_kms_response_fd* find_cursor_drm(gsr_kms_response *kms_response) {
     return NULL;
 }
 
+#define HDMI_STATIC_METADATA_TYPE1 0
+#define HDMI_EOTF_SMPTE_ST2084 2
+
+static bool hdr_metadata_is_supported_format(const struct hdr_output_metadata *hdr_metadata) {
+    return hdr_metadata->metadata_type == HDMI_STATIC_METADATA_TYPE1 &&
+        hdr_metadata->hdmi_metadata_type1.metadata_type == HDMI_STATIC_METADATA_TYPE1 &&
+        hdr_metadata->hdmi_metadata_type1.eotf == HDMI_EOTF_SMPTE_ST2084;
+}
+
+static void gsr_capture_kms_vaapi_set_hdr_metadata(gsr_capture_kms_cuda *cap_kms, AVFrame *frame, gsr_kms_response_fd *drm_fd) {
+    if(!cap_kms->mastering_display_metadata)
+        cap_kms->mastering_display_metadata = av_mastering_display_metadata_create_side_data(frame);
+
+    if(!cap_kms->light_metadata)
+        cap_kms->light_metadata = av_content_light_metadata_create_side_data(frame);
+
+    if(cap_kms->mastering_display_metadata) {
+        for(int i = 0; i < 3; ++i) {
+            cap_kms->mastering_display_metadata->display_primaries[i][0] = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.display_primaries[i].x, 50000);
+            cap_kms->mastering_display_metadata->display_primaries[i][1] = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.display_primaries[i].y, 50000);
+        }
+
+        cap_kms->mastering_display_metadata->white_point[0] = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.white_point.x, 50000);
+        cap_kms->mastering_display_metadata->white_point[1] = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.white_point.y, 50000);
+
+        cap_kms->mastering_display_metadata->min_luminance = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.min_display_mastering_luminance, 10000);
+        cap_kms->mastering_display_metadata->max_luminance = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.max_display_mastering_luminance, 1);
+
+        cap_kms->mastering_display_metadata->has_primaries = cap_kms->mastering_display_metadata->display_primaries[0][0].num > 0;
+        cap_kms->mastering_display_metadata->has_luminance = cap_kms->mastering_display_metadata->max_luminance.num > 0;
+    }
+
+    if(cap_kms->light_metadata) {
+        cap_kms->light_metadata->MaxCLL = drm_fd->hdr_metadata.hdmi_metadata_type1.max_cll;
+        cap_kms->light_metadata->MaxFALL = drm_fd->hdr_metadata.hdmi_metadata_type1.max_fall;
+    }
+}
+
 static vec2i swap_vec2i(vec2i value) {
     int tmp = value.x;
     value.x = value.y;
@@ -460,6 +505,9 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
 
     if(!capture_is_combined_plane && cursor_drm_fd && cursor_drm_fd->connector_id != drm_fd->connector_id)
         cursor_drm_fd = NULL;
+
+    if(drm_fd->has_hdr_metadata && cap_kms->params.hdr && hdr_metadata_is_supported_format(&drm_fd->hdr_metadata))
+        gsr_capture_kms_vaapi_set_hdr_metadata(cap_kms, frame, drm_fd);
 
     const intptr_t img_attr[] = {
         //EGL_IMAGE_PRESERVED_KHR, EGL_TRUE,

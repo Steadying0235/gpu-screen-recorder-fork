@@ -208,7 +208,7 @@ static unsigned int load_shader_uv(gsr_shader *shader, gsr_egl *egl, gsr_color_u
         "void main()                                     \n"
         "{                                               \n"
         "  texcoords_out = (vec4(texcoords.x - 0.5, texcoords.y - 0.5, 0.0, 0.0) * rotate_z(rotation)).xy + vec2(0.5, 0.5);                      \n"
-        "  gl_Position = vec4(offset.x, offset.y, 0.0, 0.0) + vec4(pos.x, pos.y, 0.0, 1.0) * vec4(0.5, 0.5, 1.0, 1.0) - vec4(0.5, 0.5, 0.0, 0.0);   \n"
+        "  gl_Position = (vec4(offset.x, offset.y, 0.0, 0.0) + vec4(pos.x, pos.y, 0.0, 1.0)) * vec4(0.5, 0.5, 1.0, 1.0) - vec4(0.5, 0.5, 0.0, 0.0);   \n"
         "}                                               \n");
 
     char fragment_shader[2048];

@@ -1587,6 +1587,10 @@ int main(int argc, char **argv) {
 
     // Stop nvidia driver from buffering frames
     setenv("__GL_MaxFramesAllowed", "1", true);
+    // Some people set this to nvidia (for nvdec) or vdpau (for nvidia vdpau), which breaks gpu screen recorder since
+    // nvidia doesn't support vaapi and nvidia-vaapi-driver doesn't support encoding yet.
+    // Let vaapi find the match vaapi driver instead of forcing a specific one.
+    setenv("LIBVA_DRIVER_NAME", "", true);
 
     if(argc <= 1)
         usage_full();

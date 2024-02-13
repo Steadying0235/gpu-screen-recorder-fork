@@ -1590,7 +1590,7 @@ int main(int argc, char **argv) {
     // Some people set this to nvidia (for nvdec) or vdpau (for nvidia vdpau), which breaks gpu screen recorder since
     // nvidia doesn't support vaapi and nvidia-vaapi-driver doesn't support encoding yet.
     // Let vaapi find the match vaapi driver instead of forcing a specific one.
-    setenv("LIBVA_DRIVER_NAME", "", true);
+    unsetenv("LIBVA_DRIVER_NAME");
 
     if(argc <= 1)
         usage_full();

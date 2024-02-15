@@ -2122,10 +2122,10 @@ int main(int argc, char **argv) {
             "  then make sure you have installed the GPU specific vaapi packages.\n"
             "  It's also possible that your distro has disabled hardware accelerated video encoding for '%s' video codec.\n"
             "  This may be the case on corporate distros such as Manjaro, Fedora or OpenSUSE.\n"
-            "  You can test this by running 'vainfo | grep VAEntrypointEncSlice' to see if it matches any H264/HEVC profile. Also make sure 'ffmpeg -h encoder=h264_vaapi' doesn't return any error.\n"
-            "  vainfo is part of libva-utils.\n"
+            "  You can test this by running 'vainfo | grep VAEntrypointEncSlice' to see if it matches any H264/HEVC profile.\n"
             "  On such distros, you need to manually install mesa from source to enable H264/HEVC hardware acceleration, or use a more user friendly distro. Alternatively record with AV1 if supported by your GPU.\n"
-            "  You can try using the flatpak version of GPU Screen Recorder as well and make sure you have mesa-extra freedesktop runtime installed, which can be installed with this command:\n"
+            "  You can alternatively use the flatpak version of GPU Screen Recorder which bypasses system issues with patented H264/HEVC codecs.\n"
+            "  Make sure you have mesa-extra freedesktop runtime installed when using the flatpak (this should be the default), which can be installed with this command:\n"
             "  flatpak install --system org.freedesktop.Platform.GL.default//23.08-extra", video_codec_name, video_codec_name, video_codec_name);
         _exit(2);
     }

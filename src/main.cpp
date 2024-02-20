@@ -876,8 +876,9 @@ static void usage_full() {
     fprintf(stderr, "  Send signal SIGUSR2 to gpu-screen-recorder (killall -SIGUSR2 gpu-screen-recorder) to pause/unpause recording. Only applicable and useful when recording (not streaming nor replay).\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "EXAMPLES:\n");
-    fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -o video.mp4\n");
-    fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -a \"$(pactl get-default-sink).monitor|$(pactl get-default-source)\" -o video.mp4\n");
+    fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -o \"$HOME/Videos/video.mp4\"\n");
+    fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -a \"$(pactl get-default-sink).monitor|$(pactl get-default-source)\" -o \"$HOME/Videos/video.mp4\"\n");
+    fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -c mkv -r 60 -o \"$HOME/Videos\"\n");
     //fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -q ultra -pixfmt yuv444 -o video.mp4\n");
     _exit(1);
 }
@@ -2124,7 +2125,7 @@ int main(int argc, char **argv) {
             "  This may be the case on corporate distros such as Manjaro, Fedora or OpenSUSE.\n"
             "  You can test this by running 'vainfo | grep VAEntrypointEncSlice' to see if it matches any H264/HEVC profile.\n"
             "  On such distros, you need to manually install mesa from source to enable H264/HEVC hardware acceleration, or use a more user friendly distro. Alternatively record with AV1 if supported by your GPU.\n"
-            "  You can alternatively use the flatpak version of GPU Screen Recorder which bypasses system issues with patented H264/HEVC codecs.\n"
+            "  You can alternatively use the flatpak version of GPU Screen Recorder (https://flathub.org/apps/com.dec05eba.gpu_screen_recorder) which bypasses system issues with patented H264/HEVC codecs.\n"
             "  Make sure you have mesa-extra freedesktop runtime installed when using the flatpak (this should be the default), which can be installed with this command:\n"
             "  flatpak install --system org.freedesktop.Platform.GL.default//23.08-extra", video_codec_name, video_codec_name, video_codec_name);
         _exit(2);

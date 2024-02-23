@@ -151,7 +151,7 @@ If you get black bars then the workaround is to record with h264 video codec ins
 ## The video is glitched, looks like checkerboard pattern
 This is an issue on some intel integrated gpus on wayland caused by power saving option. Right now the only way to fix this is to record on X11 instead.
 ## The video has a green/yellow overlay
-This is a GNOME Videos issue, use mpv to play the video instead.
+This can happen if your video player is missing the H264/HEVC video codecs. Either install the codecs or use mpv.
 
 # Donations
 If you want to donate you can donate via bitcoin or monero.

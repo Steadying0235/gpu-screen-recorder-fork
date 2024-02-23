@@ -150,7 +150,7 @@ This is mostly an issue on AMD and it's a hardware issue/ffmpeg issue. If you us
 If you get black bars then the workaround is to record with h264 video codec instead (using the -k h264 option).
 ## The video is glitched, looks like checkerboard pattern
 This is an issue on some intel integrated gpus on wayland caused by power saving option. Right now the only way to fix this is to record on X11 instead.
-## The video has a green/yellow overlay
+## The video doesn't display or has a green/yellow overlay
 This can happen if your video player is missing the H264/HEVC video codecs. Either install the codecs or use mpv.
 
 # Donations

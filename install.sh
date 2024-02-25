@@ -16,7 +16,5 @@ if [ -d "/usr/lib/systemd/user" ]; then
 fi
 # Not necessary, but removes the password prompt when trying to record a monitor on amd/intel or nvidia wayland
 setcap cap_sys_admin+ep /usr/bin/gsr-kms-server
-# Not ncessary, but allows use of EGL_CONTEXT_PRIORITY_LEVEL_IMG which might decrease performance impact on the system
-setcap cap_sys_nice+ep /usr/bin/gpu-screen-recorder
 
 echo "Successfully installed gpu-screen-recorder"

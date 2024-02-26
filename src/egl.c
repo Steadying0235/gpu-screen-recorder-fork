@@ -9,6 +9,7 @@
 #include <wayland-client.h>
 #include <wayland-egl.h>
 #include <unistd.h>
+#include <sys/capability.h>
 
 // Move this shit to a separate wayland file, and have a separate file for x11.
 
@@ -118,6 +119,18 @@ static struct wl_registry_listener registry_listener = {
     .global_remove = registry_remove_object,
 };
 
+static void reset_cap_nice(void) {
+    cap_t caps = cap_get_proc();
+    if(!caps)
+        return;
+
+    const cap_value_t cap_to_remove = CAP_SYS_NICE;
+    cap_set_flag(caps, CAP_EFFECTIVE, 1, &cap_to_remove, CAP_CLEAR);
+    cap_set_flag(caps, CAP_PERMITTED, 1, &cap_to_remove, CAP_CLEAR);
+    cap_set_proc(caps);
+    cap_free(caps);
+}
+
 // TODO: Create egl context without surface (in other words, x11/wayland agnostic, doesn't require x11/wayland dependency)
 static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
     EGLConfig  ecfg;
@@ -131,6 +144,7 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
 
     const int32_t ctxattr[] = {
         EGL_CONTEXT_CLIENT_VERSION, 2,
+        EGL_CONTEXT_PRIORITY_LEVEL_IMG, EGL_CONTEXT_PRIORITY_HIGH_IMG, /* requires cap_sys_nice, ignored otherwise */
         EGL_NONE
     };
 
@@ -205,9 +219,11 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
         goto fail;
     }
 
+    reset_cap_nice();
     return true;
 
     fail:
+    reset_cap_nice();
     gsr_egl_unload(self);
     return false;
 }

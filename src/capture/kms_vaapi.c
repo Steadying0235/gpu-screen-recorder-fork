@@ -456,6 +456,7 @@ static vec2i swap_vec2i(vec2i value) {
 static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
+    cap_kms->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     cap_kms->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
     for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {

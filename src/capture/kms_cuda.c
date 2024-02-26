@@ -457,6 +457,7 @@ static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
     (void)frame;
     gsr_capture_kms_cuda *cap_kms = cap->priv;
 
+    cap_kms->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     cap_kms->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
     for(int i = 0; i < cap_kms->kms_response.num_fds; ++i) {

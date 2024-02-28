@@ -34,15 +34,7 @@ NVreg_RegistryDwords.
 Restore nvfbc screen recording on monitor reconfiguration.
 Window capture doesn't work properly in _control_ game after going from pause menu to in-game (and back to pause menu). There might be some x11 event we need to catch. Same for vr-video-player.
 
-Fix constant framerate not working properly on amd/intel because capture framerate gets locked to the same framerate as game framerate, which doesn't work well when you need to encode multiple duplicate frames. We can skip multiple encode if we duplicate frame once and then use that same frame data as the difference between frames will be exactly the same, but hevc complains about that. Is there a way to make hevc shut up?
-
 Properly handle monitor reconfiguration (kms vaapi, nvfbc).
-
-Better configure vaapi. The file size is too large.
-
-Clear vaapi surface (for focused window).
-
-Window capture performance on steam deck isn't good when playing the witcher 3 for example. The capture itself is fine but video encoding puts it to 30fps even if the game runs at 57 fps.
 
 Monitor capture on steam deck is slightly below the game fps, but only when capturing on the steam deck screen. If capturing on another monitor, there is no issue.
     Is this related to the dma buf rotation issue? different modifier being slow? does this always happen?
@@ -69,13 +61,9 @@ On nvidia some games apparently causes the game to appear to stutter (without dr
 Support "screen" (all monitors) capture on wayland. This should be done by getting all drm fds and multiple EGL_DMA_BUF_PLANEX_FD_EXT to create one egl image with all fds combined.
 
 Support pipewire screen capture?
-Support screen rotation.
-When nvidia supports hardware cursor then capture the cursor. Right now the cursor is captured because it's a software cursor so it's composed on the dma buf.
 CPU usage is pretty high on AMD/Intel/(Nvidia(wayland)), why? opening and closing fds, creating egl, cuda association, is slow when done every frame. Test if desktop portal screencast has better performance.
 
 Capture is broken on amd on wlroots. It's disabled at the moment and instead uses kms capture. Find out why we get a black screen in wlroots.
-
-First video and audio frame should be posted immediately instead of waiting 1000/fps milliseconds, to improve latency for remote desktop future functionality.
 
 Support vulkan video encoding. That might workaround forced p2 state nvidia driver "bug". Ffmpeg supports vulkan video encoding if it's encoding with --enable-vulkan
 
@@ -83,8 +71,6 @@ It may be possible to improve color conversion rgb->yuv shader for color edges b
 
 When webcam is supported mention that nvidia_drm.modeset=1 must be set on nvidia x11 (it's required on wayland so it's not needed there. Or does eglstream work without it??). Check if this really is the case.
   Support green screen removal, cropping, shader effects in general (circle mask, rounded corners, etc).
-
-Use vfr on nvidia x11 as well, otherwise network data could slow it down to below target fps and mess it up.
 
 Preset is set to p5 for now but it should ideally be p6 or p7.
     This change is needed because for certain sizes of a window (or monitor?) such as 971x780 causes encoding to freeze
@@ -127,3 +113,5 @@ Rotate cursor texture properly (around top left origin).
 Color range doesn't seem to work on nvidia. This might be because the output color format is set to rgb in which case it handles everything color related itself?
 
 Setup hardware video context so we can query constraints and capabilities for better default and better error messages.
+
+Use CAP_SYS_NICE in flatpak too on the main gpu screen recorder binary. It makes recording smoother, especially with constant framerate.

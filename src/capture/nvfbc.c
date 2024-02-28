@@ -130,16 +130,6 @@ static bool gsr_capture_nvfbc_load_library(gsr_capture *cap) {
     return true;
 }
 
-#if LIBAVUTIL_VERSION_MAJOR < 57
-static AVBufferRef* dummy_hw_frame_init(int size) {
-    return av_buffer_alloc(size);
-}
-#else
-static AVBufferRef* dummy_hw_frame_init(size_t size) {
-    return av_buffer_alloc(size);
-}
-#endif
-
 static bool ffmpeg_create_cuda_contexts(gsr_capture_nvfbc *cap_nvfbc, AVCodecContext *video_codec_context) {
     AVBufferRef *device_ctx = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_CUDA);
     if(!device_ctx) {
@@ -170,9 +160,6 @@ static bool ffmpeg_create_cuda_contexts(gsr_capture_nvfbc *cap_nvfbc, AVCodecCon
     hw_frame_context->format = video_codec_context->pix_fmt;
     hw_frame_context->device_ref = device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
-
-    hw_frame_context->pool = av_buffer_pool_init(1, dummy_hw_frame_init);
-    hw_frame_context->initial_pool_size = 1;
 
     if (av_hwframe_ctx_init(frame_context) < 0) {
         fprintf(stderr, "gsr error: cuda_create_codec_context failed: failed to initialize hardware frame context "

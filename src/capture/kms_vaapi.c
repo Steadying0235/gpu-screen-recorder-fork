@@ -85,7 +85,7 @@ static bool drm_create_codec_context(gsr_capture_kms_vaapi *cap_kms, AVCodecCont
     hw_frame_context->device_ref = device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
 
-    hw_frame_context->initial_pool_size = 1; // TODO: (and in other places)
+    hw_frame_context->initial_pool_size = 20;
 
     AVVAAPIDeviceContext *vactx =((AVHWDeviceContext*)device_ctx->data)->hwctx;
     cap_kms->va_dpy = vactx->display;

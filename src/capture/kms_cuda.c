@@ -103,8 +103,6 @@ static bool cuda_create_codec_context(gsr_capture_kms_cuda *cap_kms, AVCodecCont
     hw_frame_context->device_ref = device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
 
-    hw_frame_context->initial_pool_size = 1;
-
     if (av_hwframe_ctx_init(frame_context) < 0) {
         fprintf(stderr, "Error: Failed to initialize hardware frame context "
                         "(note: ffmpeg version needs to be > 4.0)\n");

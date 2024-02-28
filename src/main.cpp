@@ -746,7 +746,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
                     av_dict_set_int(&options, "qp", 26, 0);
                     break;
                 case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 20, 0);
+                    av_dict_set_int(&options, "qp", 22, 0);
                     break;
             }
         } else {
@@ -761,7 +761,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
                     av_dict_set_int(&options, "qp", 28, 0);
                     break;
                 case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 22, 0);
+                    av_dict_set_int(&options, "qp", 24, 0);
                     break;
             }
         }

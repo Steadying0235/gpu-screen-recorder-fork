@@ -1,4 +1,5 @@
 #include "../include/color_conversion.h"
+#include "../include/egl.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>

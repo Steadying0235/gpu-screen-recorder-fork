@@ -24,7 +24,6 @@ typedef struct {
     bool capture_session_created;
 
     gsr_cuda cuda;
-    bool frame_initialized;
 } gsr_capture_nvfbc;
 
 #if defined(_WIN64) || defined(__LP64__)
@@ -174,7 +173,7 @@ static bool ffmpeg_create_cuda_contexts(gsr_capture_nvfbc *cap_nvfbc, AVCodecCon
     return true;
 }
 
-static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec_context) {
+static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_capture_nvfbc *cap_nvfbc = cap->priv;
     if(!gsr_cuda_load(&cap_nvfbc->cuda, cap_nvfbc->params.dpy, cap_nvfbc->params.overclock))
         return -1;
@@ -321,6 +320,13 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     if(!ffmpeg_create_cuda_contexts(cap_nvfbc, video_codec_context))
         goto error_cleanup;
 
+    // TODO: Remove
+    const int res = av_hwframe_get_buffer(video_codec_context->hw_frames_ctx, frame, 0);
+    if(res < 0) {
+        fprintf(stderr, "gsr error: gsr_capture_nvfbc_start: av_hwframe_get_buffer failed: %d\n", res);
+        goto error_cleanup;
+    }
+
     return 0;
 
     error_cleanup:
@@ -369,21 +375,6 @@ static void gsr_capture_nvfbc_destroy_session(gsr_capture *cap) {
     }
 
     cap_nvfbc->nv_fbc_handle = 0;
-}
-
-static void gsr_capture_nvfbc_tick(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame **frame) {
-    gsr_capture_nvfbc *cap_nvfbc = cap->priv;
-    if(!cap_nvfbc->frame_initialized && video_codec_context->hw_frames_ctx) {
-        cap_nvfbc->frame_initialized = true;
-        (*frame)->hw_frames_ctx = video_codec_context->hw_frames_ctx;
-        (*frame)->buf[0] = av_buffer_pool_get(((AVHWFramesContext*)video_codec_context->hw_frames_ctx->data)->pool);
-        (*frame)->extended_data = (*frame)->data;
-        (*frame)->color_range = video_codec_context->color_range;
-        (*frame)->color_primaries = video_codec_context->color_primaries;
-        (*frame)->color_trc = video_codec_context->color_trc;
-        (*frame)->colorspace = video_codec_context->colorspace;
-        (*frame)->chroma_location = video_codec_context->chroma_sample_location;
-    }
 }
 
 static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame) {
@@ -477,7 +468,7 @@ gsr_capture* gsr_capture_nvfbc_create(const gsr_capture_nvfbc_params *params) {
     
     *cap = (gsr_capture) {
         .start = gsr_capture_nvfbc_start,
-        .tick = gsr_capture_nvfbc_tick,
+        .tick = NULL,
         .should_stop = NULL,
         .capture = gsr_capture_nvfbc_capture,
         .capture_end = NULL,

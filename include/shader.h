@@ -1,7 +1,7 @@
 #ifndef GSR_SHADER_H
 #define GSR_SHADER_H
 
-#include "egl.h"
+typedef struct gsr_egl gsr_egl;
 
 typedef struct {
     gsr_egl *egl;

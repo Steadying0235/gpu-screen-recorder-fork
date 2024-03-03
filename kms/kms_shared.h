@@ -8,6 +8,9 @@
 #define GSR_KMS_PROTOCOL_VERSION 2
 #define GSR_KMS_MAX_PLANES 10
 
+typedef struct gsr_kms_response_fd gsr_kms_response_fd;
+typedef struct gsr_kms_response gsr_kms_response;
+
 typedef enum {
     KMS_REQUEST_TYPE_REPLACE_CONNECTION,
     KMS_REQUEST_TYPE_GET_KMS
@@ -27,7 +30,7 @@ typedef struct {
     int new_connection_fd;
 } gsr_kms_request;
 
-typedef struct {
+struct gsr_kms_response_fd {
     int fd;
     uint32_t width;
     uint32_t height;
@@ -44,14 +47,14 @@ typedef struct {
     int src_w;
     int src_h;
     struct hdr_output_metadata hdr_metadata;
-} gsr_kms_response_fd;
+};
 
-typedef struct {
+struct gsr_kms_response {
     uint32_t version; /* GSR_KMS_PROTOCOL_VERSION */
     int result;       /* gsr_kms_result */
     char err_msg[128];
     gsr_kms_response_fd fds[GSR_KMS_MAX_PLANES];
     int num_fds;
-} gsr_kms_response;
+};
 
 #endif /* #define GSR_KMS_SHARED_H */

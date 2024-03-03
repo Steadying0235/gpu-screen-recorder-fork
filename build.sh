@@ -29,6 +29,7 @@ build_gsr() {
     $CC -c src/capture/xcomposite_vaapi.c $opts $includes
     $CC -c src/capture/kms_vaapi.c $opts $includes
     $CC -c src/capture/kms_cuda.c $opts $includes
+    $CC -c src/capture/kms.c $opts $includes
     $CC -c kms/client/kms_client.c $opts $includes
     $CC -c src/egl.c $opts $includes
     $CC -c src/cuda.c $opts $includes
@@ -42,7 +43,7 @@ build_gsr() {
     $CXX -c src/sound.cpp $opts $includes
     $CXX -c src/main.cpp $opts $includes
     $CXX -o gpu-screen-recorder capture.o nvfbc.o kms_client.o egl.o cuda.o xnvctrl.o overclock.o window_texture.o shader.o \
-        color_conversion.o utils.o library_loader.o xcomposite_cuda.o xcomposite_vaapi.o kms_vaapi.o kms_cuda.o sound.o main.o $libs $opts
+        color_conversion.o utils.o library_loader.o xcomposite_cuda.o xcomposite_vaapi.o kms_vaapi.o kms_cuda.o kms.o sound.o main.o $libs $opts
 }
 
 build_gsr_kms_server

@@ -69,10 +69,16 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define GL_TRUE                                 1
 #define GL_TRIANGLES                            0x0004
 #define GL_TEXTURE_2D                           0x0DE1
-#define GL_TEXTURE_EXTERNAL_OES                 0x8D65 // TODO: Use this where applicable
+#define GL_TEXTURE_EXTERNAL_OES                 0x8D65
+#define GL_RED                                  0x1903
+#define GL_RG                                   0x8227
 #define GL_RGB                                  0x1907
 #define GL_RGBA                                 0x1908
 #define GL_RGBA8                                0x8058
+#define GL_R8                                   0x8229
+#define GL_RG8                                  0x822B
+#define GL_R16                                  0x822A
+#define GL_RG16                                 0x822C
 #define GL_UNSIGNED_BYTE                        0x1401
 #define GL_COLOR_BUFFER_BIT                     0x00004000
 #define GL_TEXTURE_WRAP_S                       0x2802
@@ -133,7 +139,8 @@ typedef struct {
     int num_outputs;
 } gsr_wayland;
 
-typedef struct {
+typedef struct gsr_egl gsr_egl;
+struct gsr_egl {
     void *egl_library;
     void *gl_library;
 
@@ -217,7 +224,7 @@ typedef struct {
     int (*glGetUniformLocation)(unsigned int program, const char *name);
     void (*glUniform1f)(int location, float v0);
     void (*glUniform2f)(int location, float v0, float v1);
-} gsr_egl;
+};
 
 bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland);
 void gsr_egl_unload(gsr_egl *self);

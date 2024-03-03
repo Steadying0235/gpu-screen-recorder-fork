@@ -1,4 +1,5 @@
 #include "../include/shader.h"
+#include "../include/egl.h"
 #include <stdio.h>
 #include <assert.h>
 

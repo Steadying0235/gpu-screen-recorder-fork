@@ -73,7 +73,8 @@ typedef CUDA_MEMCPY2D_v2 CUDA_MEMCPY2D;
 
 typedef struct CUgraphicsResource_st *CUgraphicsResource;
 
-typedef struct {
+typedef struct gsr_cuda gsr_cuda;
+struct gsr_cuda {
     gsr_overclock overclock;
     bool do_overclock;
 
@@ -88,8 +89,9 @@ typedef struct {
     CUresult (*cuCtxPushCurrent_v2)(CUcontext ctx);
     CUresult (*cuCtxPopCurrent_v2)(CUcontext *pctx);
     CUresult (*cuGetErrorString)(CUresult error, const char **pStr);
-    CUresult (*cuMemsetD8_v2)(CUdeviceptr dstDevice, unsigned char uc, size_t N);
     CUresult (*cuMemcpy2D_v2)(const CUDA_MEMCPY2D *pCopy);
+    CUresult (*cuMemcpy2DAsync_v2)(const CUDA_MEMCPY2D *pcopy, CUstream hStream);
+    CUresult (*cuStreamSynchronize)(CUstream hStream);
 
     CUresult (*cuGraphicsGLRegisterImage)(CUgraphicsResource *pCudaResource, unsigned int image, unsigned int target, unsigned int flags);
     CUresult (*cuGraphicsEGLRegisterImage)(CUgraphicsResource *pCudaResource, void *image, unsigned int flags);
@@ -98,7 +100,7 @@ typedef struct {
     CUresult (*cuGraphicsUnmapResources)(unsigned int count, CUgraphicsResource *resources, CUstream hStream);
     CUresult (*cuGraphicsUnregisterResource)(CUgraphicsResource resource);
     CUresult (*cuGraphicsSubResourceGetMappedArray)(CUarray *pArray, CUgraphicsResource resource, unsigned int arrayIndex, unsigned int mipLevel);
-} gsr_cuda;
+};
 
 bool gsr_cuda_load(gsr_cuda *self, Display *display, bool overclock);
 void gsr_cuda_unload(gsr_cuda *self);

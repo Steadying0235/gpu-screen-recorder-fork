@@ -3,6 +3,7 @@
 
 #include "shader.h"
 #include "vec2.h"
+#include <stdbool.h>
 
 typedef enum {
     GSR_COLOR_RANGE_LIMITED,

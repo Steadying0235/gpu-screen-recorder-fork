@@ -14,7 +14,6 @@ typedef struct {
     bool should_stop;
     bool stop_is_error;
     bool window_resized;
-    bool created_hw_frame;
     bool follow_focused_initialized;
     double window_resize_timer;
 
@@ -148,7 +147,7 @@ static unsigned int gl_create_texture(gsr_capture_xcomposite_cuda *cap_xcomp, in
     return texture_id;
 }
 
-static int gsr_capture_xcomposite_cuda_start(gsr_capture *cap, AVCodecContext *video_codec_context) {
+static int gsr_capture_xcomposite_cuda_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_capture_xcomposite_cuda *cap_xcomp = cap->priv;
 
     if(cap_xcomp->params.follow_focused) {
@@ -227,6 +226,12 @@ static int gsr_capture_xcomposite_cuda_start(gsr_capture *cap, AVCodecContext *v
         return -1;
     }
 
+    if(av_hwframe_get_buffer(video_codec_context->hw_frames_ctx, frame, 0) < 0) {
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_start: av_hwframe_get_buffer failed\n");
+        gsr_capture_xcomposite_cuda_stop(cap, video_codec_context);
+        return -1;
+    }
+
     cap_xcomp->window_resize_timer = clock_get_monotonic_seconds();
     return 0;
 }
@@ -267,7 +272,7 @@ static void gsr_capture_xcomposite_cuda_stop(gsr_capture *cap, AVCodecContext *v
     }
 }
 
-static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame **frame) {
+static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_xcomposite_cuda *cap_xcomp = cap->priv;
 
     bool init_new_window = false;
@@ -350,7 +355,7 @@ static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *v
     }
 
     const double window_resize_timeout = 1.0; // 1 second
-    if(!cap_xcomp->created_hw_frame || (cap_xcomp->window_resized && clock_get_monotonic_seconds() - cap_xcomp->window_resize_timer >= window_resize_timeout)) {
+    if(cap_xcomp->window_resized && clock_get_monotonic_seconds() - cap_xcomp->window_resize_timer >= window_resize_timeout) {
         cap_xcomp->window_resized = false;
         if(window_texture_on_resize(&cap_xcomp->window_texture) != 0) {
             fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_tick: window_texture_on_resize failed\n");
@@ -369,33 +374,6 @@ static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *v
 
         cap_xcomp->texture_size.x = min_int(video_codec_context->width, max_int(2, cap_xcomp->texture_size.x & ~1));
         cap_xcomp->texture_size.y = min_int(video_codec_context->height, max_int(2, cap_xcomp->texture_size.y & ~1));
-
-        if(!cap_xcomp->created_hw_frame) {
-            cap_xcomp->created_hw_frame = true;
-            av_frame_free(frame);
-            *frame = av_frame_alloc();
-            if(!frame) {
-                fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_tick: failed to allocate frame\n");
-                cap_xcomp->should_stop = true;
-                cap_xcomp->stop_is_error = true;
-                return;
-            }
-            (*frame)->format = video_codec_context->pix_fmt;
-            (*frame)->width = video_codec_context->width;
-            (*frame)->height = video_codec_context->height;
-            (*frame)->color_range = video_codec_context->color_range;
-            (*frame)->color_primaries = video_codec_context->color_primaries;
-            (*frame)->color_trc = video_codec_context->color_trc;
-            (*frame)->colorspace = video_codec_context->colorspace;
-            (*frame)->chroma_location = video_codec_context->chroma_sample_location;
-
-            if(av_hwframe_get_buffer(video_codec_context->hw_frames_ctx, *frame, 0) < 0) {
-                fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_tick: av_hwframe_get_buffer failed\n");
-                cap_xcomp->should_stop = true;
-                cap_xcomp->stop_is_error = true;
-                return;
-            }
-        }
 
         // Clear texture with black background because the source texture (window_texture_get_opengl_texture_id(&cap_xcomp->window_texture))
         // might be smaller than cap_xcomp->target_texture_id

@@ -34,7 +34,6 @@ extern "C" {
 #include <libswresample/swresample.h>
 #include <libavutil/avutil.h>
 #include <libavutil/time.h>
-#include <libavutil/mastering_display_metadata.h>
 #include <libavfilter/avfilter.h>
 #include <libavfilter/buffersink.h>
 #include <libavfilter/buffersrc.h>
@@ -362,9 +361,9 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
         codec_context->color_trc = AVCOL_TRC_SMPTE2084;
         codec_context->colorspace = AVCOL_SPC_BT2020_NCL;
     } else {
-        //codec_context->color_primaries = AVCOL_PRI_BT709;
-        //codec_context->color_trc = AVCOL_TRC_BT709;
-        //codec_context->colorspace = AVCOL_SPC_BT709;
+        codec_context->color_primaries = AVCOL_PRI_BT709;
+        codec_context->color_trc = AVCOL_TRC_BT709;
+        codec_context->colorspace = AVCOL_SPC_BT709;
     }
     //codec_context->chroma_sample_location = AVCHROMA_LOC_CENTER;
     if(codec->id == AV_CODEC_ID_HEVC)
@@ -727,6 +726,11 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
         } else {
             //av_dict_set(&options, "profile", "main10", 0);
             //av_dict_set(&options, "pix_fmt", "yuv420p16le", 0);
+            if(hdr) {
+                av_dict_set(&options, "profile", "main10", 0);
+            } else {
+                av_dict_set(&options, "profile", "main", 0);
+            }
         }
     } else {
         if(codec_context->codec_id == AV_CODEC_ID_AV1) {
@@ -1476,6 +1480,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 kms_params.display_to_capture = window_str;
                 kms_params.gpu_inf = gpu_inf;
                 kms_params.hdr = video_codec_is_hdr(video_codec);
+                kms_params.color_range = color_range;
                 capture = gsr_capture_kms_cuda_create(&kms_params);
                 if(!capture)
                     _exit(1);
@@ -1512,7 +1517,6 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
             kms_params.egl = &egl;
             kms_params.display_to_capture = window_str;
             kms_params.gpu_inf = gpu_inf;
-            kms_params.wayland = wayland;
             kms_params.hdr = video_codec_is_hdr(video_codec);
             kms_params.color_range = color_range;
             capture = gsr_capture_kms_vaapi_create(&kms_params);
@@ -2159,7 +2163,21 @@ int main(int argc, char **argv) {
     if(replay_buffer_size_secs == -1)
         video_stream = create_stream(av_format_context, video_codec_context);
 
-    int capture_result = gsr_capture_start(capture, video_codec_context);
+    AVFrame *video_frame = av_frame_alloc();
+    if(!video_frame) {
+        fprintf(stderr, "Error: Failed to allocate video frame\n");
+        _exit(1);
+    }
+    video_frame->format = video_codec_context->pix_fmt;
+    video_frame->width = video_codec_context->width;
+    video_frame->height = video_codec_context->height;
+    video_frame->color_range = video_codec_context->color_range;
+    video_frame->color_primaries = video_codec_context->color_primaries;
+    video_frame->color_trc = video_codec_context->color_trc;
+    video_frame->colorspace = video_codec_context->colorspace;
+    video_frame->chroma_location = video_codec_context->chroma_sample_location;
+
+    int capture_result = gsr_capture_start(capture, video_codec_context, video_frame);
     if(capture_result != 0) {
         fprintf(stderr, "gsr error: gsr_capture_start failed\n");
         _exit(capture_result);
@@ -2274,21 +2292,6 @@ int main(int argc, char **argv) {
     bool paused = false;
     double paused_time_offset = 0.0;
     double paused_time_start = 0.0;
-
-    // TODO: Remove?
-    AVFrame *frame = av_frame_alloc();
-    if (!frame) {
-        fprintf(stderr, "Error: Failed to allocate frame\n");
-        _exit(1);
-    }
-    frame->format = video_codec_context->pix_fmt;
-    frame->width = video_codec_context->width;
-    frame->height = video_codec_context->height;
-    frame->color_range = video_codec_context->color_range;
-    frame->color_primaries = video_codec_context->color_primaries;
-    frame->color_trc = video_codec_context->color_trc;
-    frame->colorspace = video_codec_context->colorspace;
-    frame->chroma_location = video_codec_context->chroma_sample_location;
 
     std::mutex write_output_mutex;
     std::mutex audio_filter_mutex;
@@ -2452,7 +2455,7 @@ int main(int argc, char **argv) {
     while(running) {
         double frame_start = clock_get_monotonic_seconds();
 
-        gsr_capture_tick(capture, video_codec_context, &frame);
+        gsr_capture_tick(capture, video_codec_context);
         should_stop_error = false;
         if(gsr_capture_should_stop(capture, &should_stop_error)) {
             running = 0;
@@ -2503,31 +2506,31 @@ int main(int argc, char **argv) {
             const int num_frames = framerate_mode == FramerateMode::CONSTANT ? std::max((int64_t)0LL, expected_frames - video_pts_counter) : 1;
 
             if(num_frames > 0 && !paused) {
-                gsr_capture_capture(capture, frame);
+                gsr_capture_capture(capture, video_frame);
 
                 // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
                 for(int i = 0; i < num_frames; ++i) {
                     if(framerate_mode == FramerateMode::CONSTANT) {
-                        frame->pts = video_pts_counter + i;
+                        video_frame->pts = video_pts_counter + i;
                     } else {
-                        frame->pts = (this_video_frame_time - record_start_time) * (double)AV_TIME_BASE;
-                        const bool same_pts = frame->pts == video_prev_pts;
-                        video_prev_pts = frame->pts;
+                        video_frame->pts = (this_video_frame_time - record_start_time) * (double)AV_TIME_BASE;
+                        const bool same_pts = video_frame->pts == video_prev_pts;
+                        video_prev_pts = video_frame->pts;
                         if(same_pts)
                             continue;
                     }
 
-                    int ret = avcodec_send_frame(video_codec_context, frame);
+                    int ret = avcodec_send_frame(video_codec_context, video_frame);
                     if(ret == 0) {
                         // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                        receive_frames(video_codec_context, VIDEO_STREAM_INDEX, video_stream, frame->pts, av_format_context,
+                        receive_frames(video_codec_context, VIDEO_STREAM_INDEX, video_stream, video_frame->pts, av_format_context,
                             record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
                     } else {
                         fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
                     }
                 }
 
-                gsr_capture_end(capture, frame);
+                gsr_capture_end(capture, video_frame);
                 video_pts_counter += num_frames;
             }
         }
@@ -2606,6 +2609,7 @@ int main(int argc, char **argv) {
         //XCloseDisplay(dpy);
     }
 
+    //av_frame_free(&video_frame);
     free((void*)window_str);
     free(empty_audio);
     // We do an _exit here because cuda uses at_exit to do _something_ that causes the program to freeze,

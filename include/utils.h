@@ -3,27 +3,10 @@
 
 #include "vec2.h"
 #include "../include/egl.h"
+#include "../include/defs.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <X11/extensions/Xrandr.h>
-
-typedef enum {
-    GSR_GPU_VENDOR_AMD,
-    GSR_GPU_VENDOR_INTEL,
-    GSR_GPU_VENDOR_NVIDIA
-} gsr_gpu_vendor;
-
-typedef struct {
-    gsr_gpu_vendor vendor;
-    int gpu_version; /* 0 if unknown */
-} gsr_gpu_info;
-
-typedef enum {
-    GSR_MONITOR_ROT_0,
-    GSR_MONITOR_ROT_90,
-    GSR_MONITOR_ROT_180,
-    GSR_MONITOR_ROT_270
-} gsr_monitor_rotation;
 
 typedef struct {
     const char *name;
@@ -35,12 +18,6 @@ typedef struct {
     gsr_monitor_rotation rotation; /* Only on x11 and wayland */
     uint32_t monitor_identifier; /* Only on drm and wayland */
 } gsr_monitor;
-
-typedef enum {
-    GSR_CONNECTION_X11,
-    GSR_CONNECTION_WAYLAND,
-    GSR_CONNECTION_DRM
-} gsr_connection_type;
 
 typedef struct {
     const char *name;

@@ -28,8 +28,9 @@ bool gsr_cuda_load(gsr_cuda *self, Display *display, bool do_overclock) {
         { (void**)&self->cuCtxPushCurrent_v2, "cuCtxPushCurrent_v2" },
         { (void**)&self->cuCtxPopCurrent_v2, "cuCtxPopCurrent_v2" },
         { (void**)&self->cuGetErrorString, "cuGetErrorString" },
-        { (void**)&self->cuMemsetD8_v2, "cuMemsetD8_v2" },
         { (void**)&self->cuMemcpy2D_v2, "cuMemcpy2D_v2" },
+        { (void**)&self->cuMemcpy2DAsync_v2, "cuMemcpy2DAsync_v2" },
+        { (void**)&self->cuStreamSynchronize, "cuStreamSynchronize" },
 
         { (void**)&self->cuGraphicsGLRegisterImage, "cuGraphicsGLRegisterImage" },
         { (void**)&self->cuGraphicsEGLRegisterImage, "cuGraphicsEGLRegisterImage" },

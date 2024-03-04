@@ -102,7 +102,7 @@ static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_co
         .cuda_graphics_resources = cap_kms->cuda_graphics_resources,
         .mapped_arrays = cap_kms->mapped_arrays
     };
-    if(!gsr_capture_base_setup_cuda_textures(&cap_kms->base, frame, &cuda_context, cap_kms->params.egl, cap_kms->params.color_range, cap_kms->params.hdr)) {
+    if(!gsr_capture_base_setup_cuda_textures(&cap_kms->base, frame, &cuda_context, cap_kms->params.egl, cap_kms->params.color_range, GSR_SOURCE_COLOR_RGB, cap_kms->params.hdr)) {
         gsr_capture_kms_cuda_stop(cap, video_codec_context);
         return -1;
     }

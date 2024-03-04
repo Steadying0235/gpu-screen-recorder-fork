@@ -397,8 +397,8 @@ static bool gsr_capture_xcomposite_cuda_should_stop(gsr_capture *cap, bool *err)
 static int gsr_capture_xcomposite_cuda_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_xcomposite_cuda *cap_xcomp = cap->priv;
 
-    cap_xcomp->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    cap_xcomp->params.egl->glClear(GL_COLOR_BUFFER_BIT);
+    //cap_xcomp->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    cap_xcomp->params.egl->glClear(0);
 
     vec2i source_pos = { 0, 0 };
     vec2i source_size = cap_xcomp->texture_size;

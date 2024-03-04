@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "vec2.h"
+#include "defs.h"
 
 #ifdef _WIN64
 typedef signed   long long int khronos_intptr_t;
@@ -33,6 +34,10 @@ typedef void* EGLImage;
 typedef void* EGLImageKHR;
 typedef void *GLeglImageOES;
 typedef void (*__eglMustCastToProperFunctionPointerType)(void);
+typedef struct __GLXFBConfigRec *GLXFBConfig;
+typedef struct __GLXcontextRec *GLXContext;
+typedef XID GLXDrawable;
+typedef void(*__GLXextFuncPtr)(void);
 
 #define EGL_SUCCESS                             0x3000
 #define EGL_BUFFER_SIZE                         0x3020
@@ -71,6 +76,10 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define GL_TEXTURE_2D                           0x0DE1
 #define GL_TEXTURE_EXTERNAL_OES                 0x8D65
 #define GL_RED                                  0x1903
+#define GL_GREEN				                0x1904
+#define GL_BLUE					                0x1905
+#define GL_ALPHA				                0x1906
+#define GL_TEXTURE_SWIZZLE_RGBA                 0x8E46
 #define GL_RG                                   0x8227
 #define GL_RGB                                  0x1907
 #define GL_RGBA                                 0x1908
@@ -98,6 +107,7 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 #define GL_BLEND                                0x0BE2
 #define GL_SRC_ALPHA                            0x0302
 #define GL_ONE_MINUS_SRC_ALPHA                  0x0303
+#define GL_DEBUG_OUTPUT                         0x92E0
 
 #define GL_VENDOR                               0x1F00
 #define GL_RENDERER                             0x1F01
@@ -112,6 +122,11 @@ typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 typedef unsigned int (*FUNC_eglExportDMABUFImageQueryMESA)(EGLDisplay dpy, EGLImageKHR image, int *fourcc, int *num_planes, uint64_t *modifiers);
 typedef unsigned int (*FUNC_eglExportDMABUFImageMESA)(EGLDisplay dpy, EGLImageKHR image, int *fds, int32_t *strides, int32_t *offsets);
 typedef void (*FUNC_glEGLImageTargetTexture2DOES)(unsigned int target, GLeglImageOES image);
+typedef GLXContext (*FUNC_glXCreateContextAttribsARB)(Display *dpy, GLXFBConfig config, GLXContext share_context, Bool direct, const int *attrib_list);
+typedef void (*FUNC_glXSwapIntervalEXT)(Display * dpy, GLXDrawable drawable, int interval);
+typedef int (*FUNC_glXSwapIntervalMESA)(unsigned int interval);
+typedef int (*FUNC_glXSwapIntervalSGI)(int interval);
+typedef void (*GLDEBUGPROC)(unsigned int source, unsigned int type, unsigned int id, unsigned int severity, int length, const char *message, const void *userParam);
 
 #define GSR_MAX_OUTPUTS 32
 
@@ -139,14 +154,27 @@ typedef struct {
     int num_outputs;
 } gsr_wayland;
 
+typedef enum {
+    GSR_GL_CONTEXT_TYPE_EGL,
+    GSR_GL_CONTEXT_TYPE_GLX
+} gsr_gl_context_type;
+
 typedef struct gsr_egl gsr_egl;
 struct gsr_egl {
     void *egl_library;
+    void *glx_library;
     void *gl_library;
+
+    gsr_gl_context_type context_type;
 
     EGLDisplay egl_display;
     EGLSurface egl_surface;
     EGLContext egl_context;
+
+    void *glx_context;
+    void *glx_fb_config;
+
+    gsr_gpu_info gpu_info;
 
     gsr_x11 x11;
     gsr_wayland wayland;
@@ -173,6 +201,19 @@ struct gsr_egl {
     FUNC_eglExportDMABUFImageMESA eglExportDMABUFImageMESA;
     FUNC_glEGLImageTargetTexture2DOES glEGLImageTargetTexture2DOES;
 
+    __GLXextFuncPtr (*glXGetProcAddress)(const unsigned char *procName);
+    GLXFBConfig* (*glXChooseFBConfig)(Display *dpy, int screen, const int *attribList, int *nitems);
+    Bool (*glXMakeContextCurrent)(Display *dpy, GLXDrawable draw, GLXDrawable read, GLXContext ctx);
+    // TODO: Remove
+    GLXContext (*glXCreateNewContext)(Display *dpy, GLXFBConfig config, int renderType, GLXContext shareList, Bool direct);
+    void (*glXSwapBuffers)(Display *dpy, GLXDrawable drawable);
+    FUNC_glXCreateContextAttribsARB glXCreateContextAttribsARB;
+
+    /* Optional */
+    FUNC_glXSwapIntervalEXT glXSwapIntervalEXT;
+    FUNC_glXSwapIntervalMESA glXSwapIntervalMESA;
+    FUNC_glXSwapIntervalSGI glXSwapIntervalSGI;
+
     unsigned int (*glGetError)(void);
     const unsigned char* (*glGetString)(unsigned int name);
     void (*glFlush)(void);
@@ -183,6 +224,7 @@ struct gsr_egl {
     void (*glDeleteTextures)(int n, const unsigned int *texture);
     void (*glBindTexture)(unsigned int target, unsigned int texture);
     void (*glTexParameteri)(unsigned int target, unsigned int pname, int param);
+    void (*glTexParameteriv)(unsigned int target, unsigned int pname, const int *params);
     void (*glGetTexLevelParameteriv)(unsigned int target, int level, unsigned int pname, int *params);
     void (*glTexImage2D)(unsigned int target, int level, int internalFormat, int width, int height, int border, unsigned int format, unsigned int type, const void *pixels);
     void (*glCopyImageSubData)(unsigned int srcName, unsigned int srcTarget, int srcLevel, int srcX, int srcY, int srcZ, unsigned int dstName, unsigned int dstTarget, int dstLevel, int dstX, int dstY, int dstZ, int srcWidth, int srcHeight, int srcDepth);
@@ -224,9 +266,10 @@ struct gsr_egl {
     int (*glGetUniformLocation)(unsigned int program, const char *name);
     void (*glUniform1f)(int location, float v0);
     void (*glUniform2f)(int location, float v0, float v1);
+    void (*glDebugMessageCallback)(GLDEBUGPROC callback, const void *userParam);
 };
 
-bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland);
+bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland, bool is_monitor_capture);
 void gsr_egl_unload(gsr_egl *self);
 
 void gsr_egl_update(gsr_egl *self);

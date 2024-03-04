@@ -11,11 +11,12 @@ typedef enum {
 } gsr_color_range;
 
 typedef enum {
-    GSR_SOURCE_COLOR_RGB
+    GSR_SOURCE_COLOR_RGB,
+    GSR_SOURCE_COLOR_BGR
 } gsr_source_color;
 
 typedef enum {
-    GSR_DESTINATION_COLOR_BGR,
+    GSR_DESTINATION_COLOR_BGR, // TODO: remove
     GSR_DESTINATION_COLOR_NV12, /* YUV420, BT709, 8-bit */
     GSR_DESTINATION_COLOR_P010  /* YUV420, BT2020, 10-bit */
 } gsr_destination_color;

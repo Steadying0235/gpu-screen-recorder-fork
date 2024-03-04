@@ -808,13 +808,10 @@ static void usage_full() {
     usage_header();
     fprintf(stderr, "\n");
     fprintf(stderr, "OPTIONS:\n");
-    fprintf(stderr, "  -w    Window id to record, a display (monitor name), \"screen\", \"screen-direct\", \"screen-direct-force\" or \"focused\".\n");
-    fprintf(stderr, "        If this is \"screen\", \"screen-direct\" or \"screen-direct-force\" then all displays are recorded.\n");
-    fprintf(stderr, "        If this is \"focused\" then the currently focused window is recorded. When recording the focused window then the -s option has to be used as well.\n");
-    fprintf(stderr, "        \"screen-direct\"/\"screen-direct-force\" skips one texture copy for fullscreen applications so it may lead to better performance and it works with VRR monitors\n");
-    fprintf(stderr, "        when recording fullscreen application but may break some applications, such as mpv in fullscreen mode or might cause games to freeze/crash because of nvidia driver issues.\n");
-    fprintf(stderr, "        Direct mode doesn't capture cursor either.\n");
-    fprintf(stderr, "        \"screen-direct-force\" is not recommended unless you use a VRR monitor and you are aware that using this option can cause games to freeze/crash or other issues.\n");
+    fprintf(stderr, "  -w    Window id to record, a display (monitor name), \"screen\", \"screen-direct-force\" or \"focused\".\n");
+    fprintf(stderr, "        If this is \"screen\" or \"screen-direct-force\" then all monitors are recorded.\n");
+    fprintf(stderr, "        \"screen-direct-force\" is not recommended unless you use a VRR monitor on Nvidia X11 and you are aware that using this option can cause games to freeze/crash or other issues because of Nvidia driver issues.\n");
+    fprintf(stderr, "        \"screen-direct-force\" option is only available on Nvidia X11. VRR works without this option on other systems.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -c    Container format for output file, for example mp4, or flv. Only required if no output file is specified or if recording in replay buffer mode.\n");
     fprintf(stderr, "        If an output file is specified and -c is not used then the container format is determined from the output filename extension.\n");
@@ -1372,14 +1369,10 @@ static void list_supported_video_codecs() {
         wayland = is_xwayland(dpy);
 
     gsr_egl egl;
-    if(!gsr_egl_load(&egl, dpy, wayland)) {
+    if(!gsr_egl_load(&egl, dpy, wayland, false)) {
         fprintf(stderr, "gsr error: failed to load opengl\n");
         _exit(1);
     }
-
-    gsr_gpu_info gpu_inf;
-    if(!gl_get_gpu_info(&egl, &gpu_inf))
-        _exit(2);
 
     gsr_egl_unload(&egl);
     if(dpy)
@@ -1387,7 +1380,7 @@ static void list_supported_video_codecs() {
 
     char card_path[128];
     card_path[0] = '\0';
-    if(wayland || gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA) {
+    if(wayland || egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA) {
         // TODO: Allow specifying another card, and in other places
         if(!gsr_get_valid_card_path(card_path)) {
             fprintf(stderr, "Error: no /dev/dri/cardX device found\n");
@@ -1398,11 +1391,11 @@ static void list_supported_video_codecs() {
     av_log_set_level(AV_LOG_FATAL);
 
     // TODO: Output hdr
-    if(find_h264_encoder(gpu_inf.vendor, card_path))
+    if(find_h264_encoder(egl.gpu_info.vendor, card_path))
         puts("h264");
-    if(find_h265_encoder(gpu_inf.vendor, card_path))
+    if(find_h265_encoder(egl.gpu_info.vendor, card_path))
         puts("hevc");
-    if(find_av1_encoder(gpu_inf.vendor, card_path))
+    if(find_av1_encoder(egl.gpu_info.vendor, card_path))
         puts("av1");
 
     fflush(stdout);
@@ -1437,7 +1430,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
 
         follow_focused = true;
     } else if(contains_non_hex_number(window_str)) {
-        if(wayland || gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA) {
+        if(wayland || egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA) {
             if(strcmp(window_str, "screen") == 0) {
                 FirstOutputCallback first_output;
                 first_output.output_name = NULL;
@@ -1473,7 +1466,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
             }
         }
 
-        if(gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA) {
+        if(egl.gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA) {
             if(wayland) {
                 gsr_capture_kms_cuda_params kms_params;
                 kms_params.egl = &egl;
@@ -1500,14 +1493,15 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 }
 
                 gsr_capture_nvfbc_params nvfbc_params;
-                nvfbc_params.dpy = egl.x11.dpy;
+                nvfbc_params.egl = &egl;
                 nvfbc_params.display_to_capture = capture_target;
                 nvfbc_params.fps = fps;
                 nvfbc_params.pos = { 0, 0 };
                 nvfbc_params.size = { 0, 0 };
                 nvfbc_params.direct_capture = direct_capture;
                 nvfbc_params.overclock = overclock;
-                gsr_egl_unload(&egl);
+                nvfbc_params.hdr = video_codec_is_hdr(video_codec);
+                nvfbc_params.color_range = color_range;
                 capture = gsr_capture_nvfbc_create(&nvfbc_params);
                 if(!capture)
                     _exit(1);
@@ -1538,7 +1532,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
     }
 
     if(!capture) {
-        switch(gpu_inf.vendor) {
+        switch(egl.gpu_info.vendor) {
             case GSR_GPU_VENDOR_AMD:
             case GSR_GPU_VENDOR_INTEL: {
                 gsr_capture_xcomposite_vaapi_params xcomposite_params;
@@ -1836,6 +1830,8 @@ int main(int argc, char **argv) {
         replay_buffer_size_secs += 3; // Add a few seconds to account of lost packets because of non-keyframe packets skipped
     }
 
+    const char *window_str = strdup(args["-w"].value());
+
     bool wayland = false;
     Display *dpy = XOpenDisplay(nullptr);
     if (!dpy) {
@@ -1849,32 +1845,30 @@ int main(int argc, char **argv) {
     if(!wayland)
         wayland = is_xwayland(dpy);
 
+    const bool is_monitor_capture = strcmp(window_str, "focused") != 0 && contains_non_hex_number(window_str);
     gsr_egl egl;
-    if(!gsr_egl_load(&egl, dpy, wayland)) {
+    if(!gsr_egl_load(&egl, dpy, wayland, is_monitor_capture)) {
         fprintf(stderr, "gsr error: failed to load opengl\n");
         _exit(1);
     }
 
-    gsr_gpu_info gpu_inf;
     bool very_old_gpu = false;
-    if(!gl_get_gpu_info(&egl, &gpu_inf))
-        _exit(2);
 
-    if(gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA && gpu_inf.gpu_version != 0 && gpu_inf.gpu_version < 900) {
+    if(egl.gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA && egl.gpu_info.gpu_version != 0 && egl.gpu_info.gpu_version < 900) {
         fprintf(stderr, "Info: your gpu appears to be very old (older than maxwell architecture). Switching to lower preset\n");
         very_old_gpu = true;
     }
 
-    if(gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA && overclock) {
+    if(egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA && overclock) {
         fprintf(stderr, "Info: overclock option has no effect on amd/intel, ignoring option\n");
     }
 
-    if(gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA && overclock && wayland) {
+    if(egl.gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA && overclock && wayland) {
         fprintf(stderr, "Info: overclocking is not possible on nvidia on wayland, ignoring option\n");
     }
 
     egl.card_path[0] = '\0';
-    if(wayland || gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA) {
+    if(wayland || egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA) {
         // TODO: Allow specifying another card, and in other places
         if(!gsr_get_valid_card_path(egl.card_path)) {
             fprintf(stderr, "Error: no /dev/dri/cardX device found\n");
@@ -1914,7 +1908,6 @@ int main(int argc, char **argv) {
     }
 
     const char *screen_region = args["-s"].value();
-    const char *window_str = strdup(args["-w"].value());
 
     if(screen_region && strcmp(window_str, "focused") != 0) {
         fprintf(stderr, "Error: option -s is only available when using -w focused\n");
@@ -1979,7 +1972,7 @@ int main(int argc, char **argv) {
             file_extension = file_extension.substr(0, comma_index);
     }
 
-    if(gpu_inf.vendor != GSR_GPU_VENDOR_NVIDIA && file_extension == "mkv" && strcmp(video_codec_to_use, "h264") == 0) {
+    if(egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA && file_extension == "mkv" && strcmp(video_codec_to_use, "h264") == 0) {
         video_codec_to_use = "hevc";
         video_codec = VideoCodec::HEVC;
         fprintf(stderr, "Warning: video codec was forcefully set to hevc because mkv container is used and mesa (AMD and Intel driver) does not support h264 in mkv files\n");
@@ -2017,8 +2010,8 @@ int main(int argc, char **argv) {
 
     const bool video_codec_auto = strcmp(video_codec_to_use, "auto") == 0;
     if(video_codec_auto) {
-        if(gpu_inf.vendor == GSR_GPU_VENDOR_INTEL) {
-            const AVCodec *h264_codec = find_h264_encoder(gpu_inf.vendor, egl.card_path);
+        if(egl.gpu_info.vendor == GSR_GPU_VENDOR_INTEL) {
+            const AVCodec *h264_codec = find_h264_encoder(egl.gpu_info.vendor, egl.card_path);
             if(!h264_codec) {
                 fprintf(stderr, "Info: using hevc encoder because a codec was not specified and your gpu does not support h264\n");
                 video_codec_to_use = "hevc";
@@ -2029,7 +2022,7 @@ int main(int argc, char **argv) {
                 video_codec = VideoCodec::H264;
             }
         } else {
-            const AVCodec *h265_codec = find_h265_encoder(gpu_inf.vendor, egl.card_path);
+            const AVCodec *h265_codec = find_h265_encoder(egl.gpu_info.vendor, egl.card_path);
 
             if(h265_codec && fps > 60) {
                 fprintf(stderr, "Warning: recording at higher fps than 60 with hevc might result in recording at a very low fps. If this happens, switch to h264 or av1\n");
@@ -2061,15 +2054,15 @@ int main(int argc, char **argv) {
     const AVCodec *video_codec_f = nullptr;
     switch(video_codec) {
         case VideoCodec::H264:
-            video_codec_f = find_h264_encoder(gpu_inf.vendor, egl.card_path);
+            video_codec_f = find_h264_encoder(egl.gpu_info.vendor, egl.card_path);
             break;
         case VideoCodec::HEVC:
         case VideoCodec::HEVC_HDR:
-            video_codec_f = find_h265_encoder(gpu_inf.vendor, egl.card_path);
+            video_codec_f = find_h265_encoder(egl.gpu_info.vendor, egl.card_path);
             break;
         case VideoCodec::AV1:
         case VideoCodec::AV1_HDR:
-            video_codec_f = find_av1_encoder(gpu_inf.vendor, egl.card_path);
+            video_codec_f = find_av1_encoder(egl.gpu_info.vendor, egl.card_path);
             break;
     }
 
@@ -2079,7 +2072,7 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "Warning: selected video codec h264 is not supported, trying hevc instead\n");
                 video_codec_to_use = "hevc";
                 video_codec = VideoCodec::HEVC;
-                video_codec_f = find_h265_encoder(gpu_inf.vendor, egl.card_path);
+                video_codec_f = find_h265_encoder(egl.gpu_info.vendor, egl.card_path);
                 break;
             }
             case VideoCodec::HEVC:
@@ -2087,7 +2080,7 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "Warning: selected video codec hevc is not supported, trying h264 instead\n");
                 video_codec_to_use = "h264";
                 video_codec = VideoCodec::H264;
-                video_codec_f = find_h264_encoder(gpu_inf.vendor, egl.card_path);
+                video_codec_f = find_h264_encoder(egl.gpu_info.vendor, egl.card_path);
                 break;
             }
             case VideoCodec::AV1:
@@ -2095,7 +2088,7 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "Warning: selected video codec av1 is not supported, trying h264 instead\n");
                 video_codec_to_use = "h264";
                 video_codec = VideoCodec::H264;
-                video_codec_f = find_h264_encoder(gpu_inf.vendor, egl.card_path);
+                video_codec_f = find_h264_encoder(egl.gpu_info.vendor, egl.card_path);
                 break;
             }
         }
@@ -2132,7 +2125,7 @@ int main(int argc, char **argv) {
         _exit(2);
     }
 
-    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, gpu_inf, egl, fps, overclock, video_codec, color_range);
+    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, egl.gpu_info, egl, fps, overclock, video_codec, color_range);
 
     const bool is_livestream = is_livestream_path(filename);
     // (Some?) livestreaming services require at least one audio track to work.
@@ -2159,7 +2152,7 @@ int main(int argc, char **argv) {
     std::vector<AudioTrack> audio_tracks;
     const bool hdr = video_codec_is_hdr(video_codec);
 
-    AVCodecContext *video_codec_context = create_video_codec_context(gpu_inf.vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_CUDA : AV_PIX_FMT_VAAPI, quality, fps, video_codec_f, is_livestream, gpu_inf.vendor, framerate_mode, hdr, color_range);
+    AVCodecContext *video_codec_context = create_video_codec_context(egl.gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_CUDA : AV_PIX_FMT_VAAPI, quality, fps, video_codec_f, is_livestream, egl.gpu_info.vendor, framerate_mode, hdr, color_range);
     if(replay_buffer_size_secs == -1)
         video_stream = create_stream(av_format_context, video_codec_context);
 
@@ -2183,7 +2176,7 @@ int main(int argc, char **argv) {
         _exit(capture_result);
     }
 
-    open_video(video_codec_context, quality, very_old_gpu, gpu_inf.vendor, pixel_format, hdr);
+    open_video(video_codec_context, quality, very_old_gpu, egl.gpu_info.vendor, pixel_format, hdr);
     if(video_stream)
         avcodec_parameters_from_context(video_stream->codecpar, video_codec_context);
 

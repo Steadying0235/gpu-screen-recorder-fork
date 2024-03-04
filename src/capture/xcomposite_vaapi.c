@@ -195,8 +195,8 @@ static int gsr_capture_xcomposite_vaapi_start(gsr_capture *cap, AVCodecContext *
 static void gsr_capture_xcomposite_vaapi_tick(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
 
-    cap_xcomp->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    cap_xcomp->params.egl->glClear(GL_COLOR_BUFFER_BIT);
+    //cap_xcomp->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    cap_xcomp->params.egl->glClear(0);
 
     bool init_new_window = false;
     while(XPending(cap_xcomp->params.egl->x11.dpy)) {

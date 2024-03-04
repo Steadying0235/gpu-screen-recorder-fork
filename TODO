@@ -115,3 +115,11 @@ Color range doesn't seem to work on nvidia. This might be because the output col
 Setup hardware video context so we can query constraints and capabilities for better default and better error messages.
 
 Use CAP_SYS_NICE in flatpak too on the main gpu screen recorder binary. It makes recording smoother, especially with constant framerate.
+
+Show error when using compressed kms plane which isn't supported. Also do that in the gui.
+
+Use video_codec_context->width/height instead of frame->width/height in capture.
+
+Modify ffmpeg to accept opengl texture for nvenc encoding. Removes extra buffers and copies.
+
+When vulkan encode is added, mention minimum nvidia driver required. (550.54.14?).

@@ -55,7 +55,7 @@ void gsr_capture_end(gsr_capture *cap, AVFrame *frame);
 void gsr_capture_destroy(gsr_capture *cap, AVCodecContext *video_codec_context);
 
 bool gsr_capture_base_setup_vaapi_textures(gsr_capture_base *self, AVFrame *frame, gsr_egl *egl, VADisplay va_dpy, VADRMPRIMESurfaceDescriptor *prime, gsr_color_range color_range);
-bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *base, AVFrame *frame, gsr_cuda_context *cuda_context, gsr_egl *egl, gsr_color_range color_range, bool hdr);
+bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *base, AVFrame *frame, gsr_cuda_context *cuda_context, gsr_egl *egl, gsr_color_range color_range, gsr_source_color source_color, bool hdr);
 void gsr_capture_base_stop(gsr_capture_base *self, gsr_egl *egl);
 
 #endif /* GSR_CAPTURE_CAPTURE_H */

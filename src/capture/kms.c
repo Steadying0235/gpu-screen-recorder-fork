@@ -188,8 +188,8 @@ static vec2i swap_vec2i(vec2i value) {
 }
 
 bool gsr_capture_kms_capture(gsr_capture_kms *self, gsr_capture_base *base, AVFrame *frame, gsr_egl *egl, bool hdr, bool screen_plane_use_modifiers, bool cursor_texture_is_external) {
-    egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    egl->glClear(GL_COLOR_BUFFER_BIT);
+    //egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    egl->glClear(0);
 
     gsr_capture_kms_cleanup_kms_fds(self);
 

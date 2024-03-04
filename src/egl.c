@@ -1,5 +1,6 @@
 #include "../include/egl.h"
 #include "../include/library_loader.h"
+#include "../include/utils.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,7 +12,9 @@
 #include <unistd.h>
 #include <sys/capability.h>
 
-// Move this shit to a separate wayland file, and have a separate file for x11.
+// TODO: rename gsr_egl to something else since this includes both egl and eglx and in the future maybe vulkan too
+
+// TODO: Move this shit to a separate wayland file, and have a separate file for x11.
 
 static void output_handle_geometry(void *data, struct wl_output *wl_output,
         int32_t x, int32_t y, int32_t phys_width, int32_t phys_height,
@@ -131,6 +134,52 @@ static void reset_cap_nice(void) {
     cap_free(caps);
 }
 
+#define GLX_DRAWABLE_TYPE		0x8010
+#define GLX_RENDER_TYPE			0x8011
+#define GLX_RGBA_BIT			0x00000001
+#define GLX_WINDOW_BIT			0x00000001
+#define GLX_PIXMAP_BIT			0x00000002
+#define GLX_BIND_TO_TEXTURE_RGBA_EXT      0x20D1
+#define GLX_BIND_TO_TEXTURE_TARGETS_EXT   0x20D3
+#define GLX_TEXTURE_2D_BIT_EXT            0x00000002
+#define GLX_DOUBLEBUFFER	5
+#define GLX_RED_SIZE		8
+#define GLX_GREEN_SIZE		9
+#define GLX_BLUE_SIZE		10
+#define GLX_ALPHA_SIZE		11
+#define GLX_DEPTH_SIZE		12
+#define GLX_RGBA_TYPE			0x8014
+
+#define GLX_CONTEXT_PRIORITY_LEVEL_EXT    0x3100
+#define GLX_CONTEXT_PRIORITY_HIGH_EXT     0x3101
+#define GLX_CONTEXT_PRIORITY_MEDIUM_EXT   0x3102
+#define GLX_CONTEXT_PRIORITY_LOW_EXT      0x3103
+
+static GLXFBConfig glx_fb_config_choose(gsr_egl *self) {
+    const int glx_visual_attribs[] = {
+        GLX_RENDER_TYPE, GLX_RGBA_BIT,
+        GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
+        // TODO:
+        //GLX_BIND_TO_TEXTURE_RGBA_EXT, 1,
+        //GLX_BIND_TO_TEXTURE_TARGETS_EXT, GLX_TEXTURE_2D_BIT_EXT,
+        GLX_DOUBLEBUFFER, True,
+        GLX_RED_SIZE, 8,
+        GLX_GREEN_SIZE, 8,
+        GLX_BLUE_SIZE, 8,
+        GLX_ALPHA_SIZE, 0,
+        GLX_DEPTH_SIZE, 0,
+        None, None
+    };
+
+    // TODO: Cleanup
+    int c = 0;
+    GLXFBConfig *fb_configs = self->glXChooseFBConfig(self->x11.dpy, DefaultScreen(self->x11.dpy), glx_visual_attribs, &c);
+    if(c == 0 || !fb_configs)
+        return NULL;
+
+    return fb_configs[0];
+}
+
 // TODO: Create egl context without surface (in other words, x11/wayland agnostic, doesn't require x11/wayland dependency)
 static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
     EGLConfig  ecfg;
@@ -139,13 +188,13 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
     const int32_t attr[] = {
         EGL_BUFFER_SIZE, 24,
         EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
-        EGL_NONE
+        EGL_NONE, EGL_NONE
     };
 
     const int32_t ctxattr[] = {
         EGL_CONTEXT_CLIENT_VERSION, 2,
         EGL_CONTEXT_PRIORITY_LEVEL_IMG, EGL_CONTEXT_PRIORITY_HIGH_IMG, /* requires cap_sys_nice, ignored otherwise */
-        EGL_NONE
+        EGL_NONE, EGL_NONE
     };
 
     if(wayland) {
@@ -215,7 +264,7 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
     }
 
     if(!self->eglMakeCurrent(self->egl_display, self->egl_surface, self->egl_surface, self->egl_context)) {
-        fprintf(stderr, "gsr error: gsr_egl_create_window failed: failed to make context current\n");
+        fprintf(stderr, "gsr error: gsr_egl_create_window failed: failed to make egl context current\n");
         goto fail;
     }
 
@@ -225,6 +274,50 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
     fail:
     reset_cap_nice();
     gsr_egl_unload(self);
+    return false;
+}
+
+static bool gsr_egl_switch_to_glx_context(gsr_egl *self) {
+    // TODO: Cleanup
+
+    if(self->egl_context) {
+        self->eglMakeCurrent(self->egl_display, NULL, NULL, NULL);
+        self->eglDestroyContext(self->egl_display, self->egl_context);
+        self->egl_context = NULL;
+    }
+
+    if(self->egl_surface) {
+        self->eglDestroySurface(self->egl_display, self->egl_surface);
+        self->egl_surface = NULL;
+    }
+
+    if(self->egl_display) {
+        self->eglTerminate(self->egl_display);
+        self->egl_display = NULL;
+    }
+
+    self->glx_fb_config = glx_fb_config_choose(self);
+    if(!self->glx_fb_config) {
+        fprintf(stderr, "gsr error: gsr_egl_create_window failed: failed to find a suitable fb config\n");
+        goto fail;
+    }
+
+    // TODO:
+    //self->glx_context = self->glXCreateContextAttribsARB(self->x11.dpy, self->glx_fb_config, NULL, True, context_attrib_list);
+    self->glx_context = self->glXCreateNewContext(self->x11.dpy, self->glx_fb_config, GLX_RGBA_TYPE, NULL, True);
+    if(!self->glx_context) {
+        fprintf(stderr, "gsr error: gsr_egl_create_window failed: failed to create glx context\n");
+        goto fail;
+    }
+
+    if(!self->glXMakeContextCurrent(self->x11.dpy, self->x11.window, self->x11.window, self->glx_context)) {
+        fprintf(stderr, "gsr error: gsr_egl_create_window failed: failed to make glx context current\n");
+        goto fail;
+    }
+
+    return true;
+
+    fail:
     return false;
 }
 
@@ -271,6 +364,35 @@ static bool gsr_egl_proc_load_egl(gsr_egl *self) {
     return true;
 }
 
+static bool gsr_egl_load_glx(gsr_egl *self, void *library) {
+    dlsym_assign required_dlsym[] = {
+        { (void**)&self->glXGetProcAddress, "glXGetProcAddress" },
+        { (void**)&self->glXChooseFBConfig, "glXChooseFBConfig" },
+        { (void**)&self->glXMakeContextCurrent, "glXMakeContextCurrent" },
+        { (void**)&self->glXCreateNewContext, "glXCreateNewContext" },
+        { (void**)&self->glXSwapBuffers, "glXSwapBuffers" },
+
+        { NULL, NULL }
+    };
+
+    if(!dlsym_load_list(library, required_dlsym)) {
+        fprintf(stderr, "gsr error: gsr_egl_load failed: missing required symbols in libGLX.so.0\n");
+        return false;
+    }
+
+    self->glXCreateContextAttribsARB = (FUNC_glXCreateContextAttribsARB)self->glXGetProcAddress((const unsigned char*)"glXCreateContextAttribsARB");
+    if(!self->glXCreateContextAttribsARB) {
+        fprintf(stderr, "gsr error: gsr_egl_load_glx failed: could not find glXCreateContextAttribsARB\n");
+        return false;
+    }
+
+    self->glXSwapIntervalEXT = (FUNC_glXSwapIntervalEXT)self->glXGetProcAddress((const unsigned char*)"glXSwapIntervalEXT");
+    self->glXSwapIntervalMESA = (FUNC_glXSwapIntervalMESA)self->glXGetProcAddress((const unsigned char*)"glXSwapIntervalMESA");
+    self->glXSwapIntervalSGI = (FUNC_glXSwapIntervalSGI)self->glXGetProcAddress((const unsigned char*)"glXSwapIntervalSGI");
+
+    return true;
+}
+
 static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
     dlsym_assign required_dlsym[] = {
         { (void**)&self->glGetError, "glGetError" },
@@ -283,6 +405,7 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
         { (void**)&self->glDeleteTextures, "glDeleteTextures" },
         { (void**)&self->glBindTexture, "glBindTexture" },
         { (void**)&self->glTexParameteri, "glTexParameteri" },
+        { (void**)&self->glTexParameteriv, "glTexParameteriv" },
         { (void**)&self->glGetTexLevelParameteriv, "glGetTexLevelParameteriv" },
         { (void**)&self->glTexImage2D, "glTexImage2D" },
         { (void**)&self->glCopyImageSubData, "glCopyImageSubData" },
@@ -324,6 +447,7 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
         { (void**)&self->glGetUniformLocation, "glGetUniformLocation" },
         { (void**)&self->glUniform1f, "glUniform1f" },
         { (void**)&self->glUniform2f, "glUniform2f" },
+        { (void**)&self->glDebugMessageCallback, "glDebugMessageCallback" },
 
         { NULL, NULL }
     };
@@ -336,30 +460,56 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
     return true;
 }
 
-bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland) {
+// #define GL_DEBUG_TYPE_ERROR               0x824C
+// static void debug_callback( unsigned int source,
+//                  unsigned int type,
+//                  unsigned int id,
+//                  unsigned int severity,
+//                  int length,
+//                  const char* message,
+//                  const void* userParam )
+// {
+//     (void)source;
+//     (void)id;
+//     (void)length;
+//     (void)userParam;
+//   fprintf( stderr, "GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n",
+//            ( type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : "" ),
+//             type, severity, message );
+// }
+
+bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland, bool is_monitor_capture) {
+    (void)is_monitor_capture;
     memset(self, 0, sizeof(gsr_egl));
     self->x11.dpy = dpy;
-
-    void *egl_lib = NULL;
-    void *gl_lib = NULL;
+    self->context_type = GSR_GL_CONTEXT_TYPE_EGL;
 
     dlerror(); /* clear */
-    egl_lib = dlopen("libEGL.so.1", RTLD_LAZY);
-    if(!egl_lib) {
+    self->egl_library = dlopen("libEGL.so.1", RTLD_LAZY);
+    if(!self->egl_library) {
         fprintf(stderr, "gsr error: gsr_egl_load: failed to load libEGL.so.1, error: %s\n", dlerror());
         goto fail;
     }
 
-    gl_lib = dlopen("libGL.so.1", RTLD_LAZY);
-    if(!egl_lib) {
+    self->glx_library = dlopen("libGLX.so.0", RTLD_LAZY);
+    if(!self->glx_library) {
+        fprintf(stderr, "gsr error: gsr_egl_load: failed to load libGLX.so.0, error: %s\n", dlerror());
+        goto fail;
+    }
+
+    self->gl_library = dlopen("libGL.so.1", RTLD_LAZY);
+    if(!self->egl_library) {
         fprintf(stderr, "gsr error: gsr_egl_load: failed to load libGL.so.1, error: %s\n", dlerror());
         goto fail;
     }
 
-    if(!gsr_egl_load_egl(self, egl_lib))
+    if(!gsr_egl_load_egl(self, self->egl_library))
         goto fail;
 
-    if(!gsr_egl_load_gl(self, gl_lib))
+    if(!gsr_egl_load_glx(self, self->glx_library))
+        goto fail;
+
+    if(!gsr_egl_load_gl(self, self->gl_library))
         goto fail;
 
     if(!gsr_egl_proc_load_egl(self))
@@ -368,24 +518,32 @@ bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland) {
     if(!gsr_egl_create_window(self, wayland))
         goto fail;
 
+    if(!gl_get_gpu_info(self, &self->gpu_info))
+        goto fail;
+
+    /* Nvfbc requires glx */
+    if(!wayland && is_monitor_capture && self->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA) {
+        self->context_type = GSR_GL_CONTEXT_TYPE_GLX;
+        if(!gsr_egl_switch_to_glx_context(self))
+            goto fail;
+    }
+
     self->glEnable(GL_BLEND);
     self->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    self->egl_library = egl_lib;
-    self->gl_library = gl_lib;
+    //self->glEnable(GL_DEBUG_OUTPUT);
+    //self->glDebugMessageCallback(debug_callback, NULL);
+
     return true;
 
     fail:
-    if(egl_lib)
-        dlclose(egl_lib);
-    if(gl_lib)
-        dlclose(gl_lib);
-    memset(self, 0, sizeof(gsr_egl));
+    gsr_egl_unload(self);
     return false;
 }
 
 void gsr_egl_unload(gsr_egl *self) {
     if(self->egl_context) {
+        self->eglMakeCurrent(self->egl_display, NULL, NULL, NULL);
         self->eglDestroyContext(self->egl_display, self->egl_context);
         self->egl_context = NULL;
     }
@@ -446,6 +604,11 @@ void gsr_egl_unload(gsr_egl *self) {
     if(self->egl_library) {
         dlclose(self->egl_library);
         self->egl_library = NULL;
+    }
+
+    if(self->glx_library) {
+        dlclose(self->glx_library);
+        self->glx_library = NULL;
     }
 
     if(self->gl_library) {

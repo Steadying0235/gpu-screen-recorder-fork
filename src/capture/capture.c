@@ -220,7 +220,7 @@ static bool cuda_register_opengl_texture(gsr_cuda *cuda, CUgraphicsResource *cud
     return true;
 }
 
-bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *base, AVFrame *frame, gsr_cuda_context *cuda_context, gsr_egl *egl, gsr_color_range color_range, bool hdr) {
+bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *base, AVFrame *frame, gsr_cuda_context *cuda_context, gsr_egl *egl, gsr_color_range color_range, gsr_source_color source_color, bool hdr) {
     // TODO:
     const int res = av_hwframe_get_buffer(base->video_codec_context->hw_frames_ctx, frame, 0);
     if(res < 0) {
@@ -264,7 +264,7 @@ bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *base, AVFrame *frame
     gsr_color_conversion_params color_conversion_params = {0};
     color_conversion_params.color_range = color_range;
     color_conversion_params.egl = egl;
-    color_conversion_params.source_color = GSR_SOURCE_COLOR_RGB;
+    color_conversion_params.source_color = source_color;
     if(!hdr)
         color_conversion_params.destination_color = GSR_DESTINATION_COLOR_NV12;
     else

@@ -1,6 +1,7 @@
 #include "../../include/capture/nvfbc.h"
 #include "../../external/NvFBC.h"
 #include "../../include/cuda.h"
+#include "../../include/egl.h"
 #include <dlfcn.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +15,7 @@
 #include <libavcodec/avcodec.h>
 
 typedef struct {
+    gsr_capture_base base;
     gsr_capture_nvfbc_params params;
     void *library;
 
@@ -24,6 +26,10 @@ typedef struct {
     bool capture_session_created;
 
     gsr_cuda cuda;
+    CUgraphicsResource cuda_graphics_resources[2];
+    CUarray mapped_arrays[2];
+    CUstream cuda_stream; // TODO: asdasdsa
+    NVFBC_TOGL_SETUP_PARAMS setup_params;
 } gsr_capture_nvfbc;
 
 #if defined(_WIN64) || defined(__LP64__)
@@ -155,7 +161,7 @@ static bool ffmpeg_create_cuda_contexts(gsr_capture_nvfbc *cap_nvfbc, AVCodecCon
     AVHWFramesContext *hw_frame_context = (AVHWFramesContext*)frame_context->data;
     hw_frame_context->width = video_codec_context->width;
     hw_frame_context->height = video_codec_context->height;
-    hw_frame_context->sw_format = AV_PIX_FMT_BGR0;
+    hw_frame_context->sw_format = AV_PIX_FMT_NV12;
     hw_frame_context->format = video_codec_context->pix_fmt;
     hw_frame_context->device_ref = device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
@@ -168,14 +174,37 @@ static bool ffmpeg_create_cuda_contexts(gsr_capture_nvfbc *cap_nvfbc, AVCodecCon
         return false;
     }
 
+    cap_nvfbc->cuda_stream = cuda_device_context->stream;
     video_codec_context->hw_device_ctx = av_buffer_ref(device_ctx);
     video_codec_context->hw_frames_ctx = av_buffer_ref(frame_context);
     return true;
 }
 
+/* TODO: check for glx swap control extension string (GLX_EXT_swap_control, etc) */
+static void set_vertical_sync_enabled(gsr_egl *egl, int enabled) {
+    int result = 0;
+
+    if(egl->glXSwapIntervalEXT) {
+        egl->glXSwapIntervalEXT(egl->x11.dpy, egl->x11.window, enabled ? 1 : 0);
+    } else if(egl->glXSwapIntervalMESA) {
+        result = egl->glXSwapIntervalMESA(enabled ? 1 : 0);
+    } else if(egl->glXSwapIntervalSGI) {
+        result = egl->glXSwapIntervalSGI(enabled ? 1 : 0);
+    } else {
+        static int warned = 0;
+        if (!warned) {
+            warned = 1;
+            fprintf(stderr, "gsr warning: setting vertical sync not supported\n");
+        }
+    }
+
+    if(result != 0)
+        fprintf(stderr, "gsr warning: setting vertical sync failed\n");
+}
+
 static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_capture_nvfbc *cap_nvfbc = cap->priv;
-    if(!gsr_cuda_load(&cap_nvfbc->cuda, cap_nvfbc->params.dpy, cap_nvfbc->params.overclock))
+    if(!gsr_cuda_load(&cap_nvfbc->cuda, cap_nvfbc->params.egl->x11.dpy, cap_nvfbc->params.overclock))
         return -1;
 
     if(!gsr_capture_nvfbc_load_library(cap)) {
@@ -224,6 +253,9 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     NVFBC_CREATE_HANDLE_PARAMS create_params;
     memset(&create_params, 0, sizeof(create_params));
     create_params.dwVersion = NVFBC_CREATE_HANDLE_PARAMS_VER;
+    create_params.bExternallyManagedContext = NVFBC_TRUE;
+    create_params.glxCtx = cap_nvfbc->params.egl->glx_context;
+    create_params.glxFBConfig = cap_nvfbc->params.egl->glx_fb_config;
 
     status = cap_nvfbc->nv_fbc_function_list.nvFBCCreateHandle(&cap_nvfbc->nv_fbc_handle, &create_params);
     if(status != NVFBC_SUCCESS) {
@@ -255,8 +287,8 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
         goto error_cleanup;
     }
 
-    uint32_t tracking_width = XWidthOfScreen(DefaultScreenOfDisplay(cap_nvfbc->params.dpy));
-    uint32_t tracking_height = XHeightOfScreen(DefaultScreenOfDisplay(cap_nvfbc->params.dpy));
+    uint32_t tracking_width = XWidthOfScreen(DefaultScreenOfDisplay(cap_nvfbc->params.egl->x11.dpy));
+    uint32_t tracking_height = XHeightOfScreen(DefaultScreenOfDisplay(cap_nvfbc->params.egl->x11.dpy));
     tracking_type = strcmp(cap_nvfbc->params.display_to_capture, "screen") == 0 ? NVFBC_TRACKING_SCREEN : NVFBC_TRACKING_OUTPUT;
     if(tracking_type == NVFBC_TRACKING_OUTPUT) {
         if(!status_params.bXRandRAvailable) {
@@ -279,7 +311,7 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     NVFBC_CREATE_CAPTURE_SESSION_PARAMS create_capture_params;
     memset(&create_capture_params, 0, sizeof(create_capture_params));
     create_capture_params.dwVersion = NVFBC_CREATE_CAPTURE_SESSION_PARAMS_VER;
-    create_capture_params.eCaptureType = NVFBC_CAPTURE_SHARED_CUDA;
+    create_capture_params.eCaptureType = NVFBC_CAPTURE_TO_GL;
     create_capture_params.bWithCursor = (!direct_capture || supports_direct_cursor) ? NVFBC_TRUE : NVFBC_FALSE;
     if(capture_region)
         create_capture_params.captureBox = (NVFBC_BOX){ x, y, width, height };
@@ -298,17 +330,17 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     }
     cap_nvfbc->capture_session_created = true;
 
-    NVFBC_TOCUDA_SETUP_PARAMS setup_params;
-    memset(&setup_params, 0, sizeof(setup_params));
-    setup_params.dwVersion = NVFBC_TOCUDA_SETUP_PARAMS_VER;
-    setup_params.eBufferFormat = NVFBC_BUFFER_FORMAT_BGRA;
+    memset(&cap_nvfbc->setup_params, 0, sizeof(cap_nvfbc->setup_params));
+    cap_nvfbc->setup_params.dwVersion = NVFBC_TOGL_SETUP_PARAMS_VER;
+    cap_nvfbc->setup_params.eBufferFormat = NVFBC_BUFFER_FORMAT_BGRA;
 
-    status = cap_nvfbc->nv_fbc_function_list.nvFBCToCudaSetUp(cap_nvfbc->nv_fbc_handle, &setup_params);
+    status = cap_nvfbc->nv_fbc_function_list.nvFBCToGLSetUp(cap_nvfbc->nv_fbc_handle, &cap_nvfbc->setup_params);
     if(status != NVFBC_SUCCESS) {
         fprintf(stderr, "gsr error: gsr_capture_nvfbc_start failed: %s\n", cap_nvfbc->nv_fbc_function_list.nvFBCGetLastErrorStr(cap_nvfbc->nv_fbc_handle));
         goto error_cleanup;
     }
 
+    cap_nvfbc->base.video_codec_context = video_codec_context;
     if(capture_region) {
         video_codec_context->width = width & ~1;
         video_codec_context->height = height & ~1;
@@ -320,12 +352,17 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     if(!ffmpeg_create_cuda_contexts(cap_nvfbc, video_codec_context))
         goto error_cleanup;
 
-    // TODO: Remove
-    const int res = av_hwframe_get_buffer(video_codec_context->hw_frames_ctx, frame, 0);
-    if(res < 0) {
-        fprintf(stderr, "gsr error: gsr_capture_nvfbc_start: av_hwframe_get_buffer failed: %d\n", res);
+    gsr_cuda_context cuda_context = {
+        .cuda = &cap_nvfbc->cuda,
+        .cuda_graphics_resources = cap_nvfbc->cuda_graphics_resources,
+        .mapped_arrays = cap_nvfbc->mapped_arrays
+    };
+    // TODO: Remove this, it creates shit we dont need
+    if(!gsr_capture_base_setup_cuda_textures(&cap_nvfbc->base, frame, &cuda_context, cap_nvfbc->params.egl, cap_nvfbc->params.color_range, GSR_SOURCE_COLOR_BGR, cap_nvfbc->params.hdr)) {
         goto error_cleanup;
     }
+    /* Disable vsync */
+    set_vertical_sync_enabled(cap_nvfbc->params.egl, 0);
 
     return 0;
 
@@ -351,6 +388,7 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     if(video_codec_context->hw_frames_ctx)
         av_buffer_unref(&video_codec_context->hw_frames_ctx);
 
+    gsr_capture_base_stop(&cap_nvfbc->base, cap_nvfbc->params.egl);
     gsr_cuda_unload(&cap_nvfbc->cuda);
     return -1;
 }
@@ -380,39 +418,57 @@ static void gsr_capture_nvfbc_destroy_session(gsr_capture *cap) {
 static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_nvfbc *cap_nvfbc = cap->priv;
 
-    CUdeviceptr cu_device_ptr = 0;
-
     NVFBC_FRAME_GRAB_INFO frame_info;
     memset(&frame_info, 0, sizeof(frame_info));
 
-    NVFBC_TOCUDA_GRAB_FRAME_PARAMS grab_params;
+    NVFBC_TOGL_GRAB_FRAME_PARAMS grab_params;
     memset(&grab_params, 0, sizeof(grab_params));
-    grab_params.dwVersion = NVFBC_TOCUDA_GRAB_FRAME_PARAMS_VER;
-    grab_params.dwFlags = NVFBC_TOCUDA_GRAB_FLAGS_NOWAIT | NVFBC_TOCUDA_GRAB_FLAGS_FORCE_REFRESH;/* | NVFBC_TOCUDA_GRAB_FLAGS_FORCE_REFRESH;*/
+    grab_params.dwVersion = NVFBC_TOGL_GRAB_FRAME_PARAMS_VER;
+    grab_params.dwFlags = NVFBC_TOGL_GRAB_FLAGS_NOWAIT | NVFBC_TOGL_GRAB_FLAGS_FORCE_REFRESH; // TODO: Remove NVFBC_TOGL_GRAB_FLAGS_FORCE_REFRESH
     grab_params.pFrameGrabInfo = &frame_info;
-    grab_params.pCUDADeviceBuffer = &cu_device_ptr;
     grab_params.dwTimeoutMs = 0;
 
-    NVFBCSTATUS status = cap_nvfbc->nv_fbc_function_list.nvFBCToCudaGrabFrame(cap_nvfbc->nv_fbc_handle, &grab_params);
+    NVFBCSTATUS status = cap_nvfbc->nv_fbc_function_list.nvFBCToGLGrabFrame(cap_nvfbc->nv_fbc_handle, &grab_params);
     if(status != NVFBC_SUCCESS) {
         fprintf(stderr, "gsr error: gsr_capture_nvfbc_capture failed: %s\n", cap_nvfbc->nv_fbc_function_list.nvFBCGetLastErrorStr(cap_nvfbc->nv_fbc_handle));
         return -1;
     }
 
-    /*
-        *byte_size = frame_info.dwByteSize;
+    //cap_nvfbc->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    cap_nvfbc->params.egl->glClear(0);
 
-        TODO: Check bIsNewFrame
-        TODO: Check dwWidth and dwHeight and update size in video output in ffmpeg. This can happen when xrandr is used to change monitor resolution
-    */
+    gsr_color_conversion_draw(&cap_nvfbc->base.color_conversion, cap_nvfbc->setup_params.dwTextures[grab_params.dwTextureIndex],
+        (vec2i){0, 0}, (vec2i){cap_nvfbc->base.video_codec_context->width, cap_nvfbc->base.video_codec_context->height},
+        (vec2i){0, 0}, (vec2i){cap_nvfbc->base.video_codec_context->width, cap_nvfbc->base.video_codec_context->height},
+        0.0f, false);
 
-    frame->data[0] = (uint8_t*)cu_device_ptr;
-    //frame->data[1] = (uint8_t*)cu_device_ptr;
-    //frame->data[2] = (uint8_t*)cu_device_ptr;
-    frame->linesize[0] = frame->width * 4;
-    // TODO: Use these when outputting yuv444 by changing nvfbc color to YUV444P and sw_format to YUV444P
-    //frame->linesize[1] = frame->width * 1;
-    //frame->linesize[2] = frame->width * 1;
+    cap_nvfbc->params.egl->glXSwapBuffers(cap_nvfbc->params.egl->x11.dpy, cap_nvfbc->params.egl->x11.window);
+
+    // TODO: HDR is broken
+    const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
+    for(int i = 0; i < 2; ++i) {
+        CUDA_MEMCPY2D memcpy_struct;
+        memcpy_struct.srcXInBytes = 0;
+        memcpy_struct.srcY = 0;
+        memcpy_struct.srcMemoryType = CU_MEMORYTYPE_ARRAY;
+
+        memcpy_struct.dstXInBytes = 0;
+        memcpy_struct.dstY = 0;
+        memcpy_struct.dstMemoryType = CU_MEMORYTYPE_DEVICE;
+
+        memcpy_struct.srcArray = cap_nvfbc->mapped_arrays[i];
+        memcpy_struct.srcPitch = cap_nvfbc->base.video_codec_context->width / div[i];
+        memcpy_struct.dstDevice = (CUdeviceptr)frame->data[i];
+        memcpy_struct.dstPitch = frame->linesize[i];
+        memcpy_struct.WidthInBytes = cap_nvfbc->base.video_codec_context->width * (cap_nvfbc->params.hdr ? 2 : 1);
+        memcpy_struct.Height = cap_nvfbc->base.video_codec_context->height / div[i];
+        // TODO: Remove this copy if possible
+        cap_nvfbc->cuda.cuMemcpy2DAsync_v2(&memcpy_struct, cap_nvfbc->cuda_stream);
+    }
+
+    // TODO: needed?
+    cap_nvfbc->cuda.cuStreamSynchronize(cap_nvfbc->cuda_stream);
+
     return 0;
 }
 
@@ -424,6 +480,7 @@ static void gsr_capture_nvfbc_destroy(gsr_capture *cap, AVCodecContext *video_co
     if(video_codec_context->hw_frames_ctx)
         av_buffer_unref(&video_codec_context->hw_frames_ctx);
     if(cap_nvfbc) {
+        gsr_capture_base_stop(&cap_nvfbc->base, cap_nvfbc->params.egl);
         gsr_cuda_unload(&cap_nvfbc->cuda);
         dlclose(cap_nvfbc->library);
         free((void*)cap_nvfbc->params.display_to_capture);

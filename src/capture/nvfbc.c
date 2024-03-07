@@ -349,6 +349,9 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
         video_codec_context->height = tracking_height & ~1;
     }
 
+    frame->width = video_codec_context->width;
+    frame->height = video_codec_context->height;
+
     if(!ffmpeg_create_cuda_contexts(cap_nvfbc, video_codec_context))
         goto error_cleanup;
 

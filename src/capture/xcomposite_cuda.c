@@ -204,6 +204,9 @@ static int gsr_capture_xcomposite_cuda_start(gsr_capture *cap, AVCodecContext *v
         video_codec_context->height = max_int(2, cap_xcomp->params.region_size.y & ~1);
     }
 
+    frame->width = video_codec_context->width;
+    frame->height = video_codec_context->height;
+
     cap_xcomp->target_texture_id = gl_create_texture(cap_xcomp, video_codec_context->width, video_codec_context->height);
     if(cap_xcomp->target_texture_id == 0) {
         fprintf(stderr, "gsr error: gsr_capture_xcomposite_cuda_start: failed to create opengl texture\n");

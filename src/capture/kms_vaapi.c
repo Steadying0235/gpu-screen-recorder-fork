@@ -50,7 +50,7 @@ static bool drm_create_codec_context(gsr_capture_kms_vaapi *cap_kms, AVCodecCont
     hw_frame_context->device_ref = device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
 
-    hw_frame_context->initial_pool_size = 20;
+    //hw_frame_context->initial_pool_size = 20;
 
     AVVAAPIDeviceContext *vactx =((AVHWDeviceContext*)device_ctx->data)->hwctx;
     cap_kms->va_dpy = vactx->display;
@@ -71,7 +71,7 @@ static bool drm_create_codec_context(gsr_capture_kms_vaapi *cap_kms, AVCodecCont
 static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
-    int res = gsr_capture_kms_start(&cap_kms->kms, &cap_kms->base, cap_kms->params.display_to_capture, cap_kms->params.egl, video_codec_context);
+    int res = gsr_capture_kms_start(&cap_kms->kms, &cap_kms->base, cap_kms->params.display_to_capture, cap_kms->params.egl, video_codec_context, frame);
     if(res != 0) {
         gsr_capture_kms_vaapi_stop(cap, video_codec_context);
         return res;

@@ -89,7 +89,7 @@ static bool drm_create_codec_context(gsr_capture_xcomposite_vaapi *cap_xcomp, AV
     hw_frame_context->device_ref = device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
 
-    hw_frame_context->initial_pool_size = 20;
+    //hw_frame_context->initial_pool_size = 20;
 
     AVVAAPIDeviceContext *vactx =((AVHWDeviceContext*)device_ctx->data)->hwctx;
     cap_xcomp->va_dpy = vactx->display;
@@ -177,6 +177,9 @@ static int gsr_capture_xcomposite_vaapi_start(gsr_capture *cap, AVCodecContext *
         video_codec_context->width = max_int(2, even_number_ceil(cap_xcomp->params.region_size.x));
         video_codec_context->height = max_int(2, even_number_ceil(cap_xcomp->params.region_size.y));
     }
+
+    frame->width = video_codec_context->width;
+    frame->height = video_codec_context->height;
 
     if(!drm_create_codec_context(cap_xcomp, video_codec_context)) {
         gsr_capture_xcomposite_vaapi_stop(cap, video_codec_context);

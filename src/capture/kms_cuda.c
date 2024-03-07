@@ -79,7 +79,7 @@ static bool cuda_create_codec_context(gsr_capture_kms_cuda *cap_kms, AVCodecCont
 static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_capture_kms_cuda *cap_kms = cap->priv;
 
-    const int res = gsr_capture_kms_start(&cap_kms->kms, &cap_kms->base, cap_kms->params.display_to_capture, cap_kms->params.egl, video_codec_context);
+    const int res = gsr_capture_kms_start(&cap_kms->kms, &cap_kms->base, cap_kms->params.display_to_capture, cap_kms->params.egl, video_codec_context, frame);
     if(res != 0) {
         gsr_capture_kms_cuda_stop(cap, video_codec_context);
         return res;

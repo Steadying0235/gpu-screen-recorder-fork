@@ -39,7 +39,7 @@ static int max_int(int a, int b) {
     return a > b ? a : b;
 }
 
-int gsr_capture_kms_start(gsr_capture_kms *self, gsr_capture_base *base, const char *display_to_capture, gsr_egl *egl, AVCodecContext *video_codec_context) {
+int gsr_capture_kms_start(gsr_capture_kms *self, gsr_capture_base *base, const char *display_to_capture, gsr_egl *egl, AVCodecContext *video_codec_context, AVFrame *frame) {
     base->video_codec_context = video_codec_context;
 
     gsr_monitor monitor;
@@ -77,6 +77,9 @@ int gsr_capture_kms_start(gsr_capture_kms *self, gsr_capture_base *base, const c
 
     base->video_codec_context->width = max_int(2, even_number_ceil(self->capture_size.x));
     base->video_codec_context->height = max_int(2, even_number_ceil(self->capture_size.y));
+
+    frame->width = base->video_codec_context->width;
+    frame->height = base->video_codec_context->height;
     return 0;
 }
 

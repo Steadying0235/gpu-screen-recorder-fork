@@ -9,6 +9,12 @@ def usage():
     print("  create_matrix.py 0.2126 0.7152 0.0722 limited")
     exit(1)
 
+def a(v):
+    if v >= 0:
+        return " %f" % v
+    else:
+        return "%f" % v
+
 def main(argv):
     if len(argv) != 5:
         usage()
@@ -34,9 +40,9 @@ def main(argv):
     ]
 
     # Transform from row major to column major for glsl
-    print("%f, %f, %f, %f" % (matrix[0][0] * transform_range, matrix[1][0] * transform_range, matrix[2][0] * transform_range, 0.0))
-    print("%f, %f, %f, %f" % (matrix[0][1] * transform_range, matrix[1][1] * transform_range, matrix[2][1] * transform_range, 0.0))
-    print("%f, %f, %f, %f" % (matrix[0][2] * transform_range, matrix[1][2] * transform_range, matrix[2][2] * transform_range, 0.0))
-    print("%f, %f, %f, %f" % (matrix[3][0] + luma_offset,     matrix[3][1],                   matrix[3][2],                   1.0))
+    print("const mat4 RGBtoYUV = mat4(%f, %s, %s, %f,"  % (matrix[0][0] * transform_range, a(matrix[1][0] * transform_range), a(matrix[2][0] * transform_range), 0.0))
+    print("                           %f, %s, %s, %f,"  % (matrix[0][1] * transform_range, a(matrix[1][1] * transform_range), a(matrix[2][1] * transform_range), 0.0))
+    print("                           %f, %s, %s, %f,"  % (matrix[0][2] * transform_range, a(matrix[1][2] * transform_range), a(matrix[2][2] * transform_range), 0.0))
+    print("                           %f, %s, %s, %f);" % (matrix[3][0] + luma_offset,     a(matrix[3][1]),                   a(matrix[3][2]),                   1.0))
 
 main(sys.argv)

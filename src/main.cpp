@@ -483,7 +483,7 @@ static bool vaapi_create_codec_context(AVCodecContext *video_codec_context, cons
     hw_frame_context->device_ref = device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
 
-    hw_frame_context->initial_pool_size = 1;
+    //hw_frame_context->initial_pool_size = 1;
 
     if (av_hwframe_ctx_init(frame_context) < 0) {
         fprintf(stderr, "Error: Failed to initialize hardware frame context "
@@ -834,9 +834,10 @@ static void usage_full() {
     fprintf(stderr, "        and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature.\n");
     fprintf(stderr, "        This option has be between 5 and 1200. Note that the replay buffer size will not always be precise, because of keyframes. Optional, disabled by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'hevc', 'hevc_hdr', 'av1' or 'av1_hdr'. Defaults to 'auto' which defaults to 'hevc' on AMD/Nvidia and 'h264' on intel.\n");
+    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'hevc', 'av1', 'hevc_hdr' or 'av1_hdr'. Defaults to 'auto' which defaults to 'hevc' on AMD/Nvidia and 'h264' on intel.\n");
     fprintf(stderr, "        Forcefully set to 'h264' if the file container type is 'flv'.\n");
     fprintf(stderr, "        Forcefully set to 'hevc' on AMD/intel if video codec is 'h264' and if the file container type is 'mkv'.\n");
+    fprintf(stderr, "        'hevc_hdr' and 'av1_hdr' option is not available on X11.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'.\n");
     fprintf(stderr, "        'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
@@ -1844,6 +1845,11 @@ int main(int argc, char **argv) {
 
     if(!wayland)
         wayland = is_xwayland(dpy);
+
+    if(video_codec_is_hdr(video_codec) && !wayland) {
+        fprintf(stderr, "Error: hdr video codec option %s is not available on X11\n", video_codec_to_use);
+        _exit(1);
+    }
 
     const bool is_monitor_capture = strcmp(window_str, "focused") != 0 && contains_non_hex_number(window_str);
     gsr_egl egl;

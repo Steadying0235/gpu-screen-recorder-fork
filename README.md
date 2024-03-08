@@ -153,6 +153,8 @@ If you get black bars then the workaround is to record with h264 video codec ins
 This is an issue on some intel integrated gpus on wayland caused by power saving option. Right now the only way to fix this is to record on X11 instead.
 ## The video doesn't display or has a green/yellow overlay
 This can happen if your video player is missing the H264/HEVC video codecs. Either install the codecs or use mpv.
+## I get stutter in the video
+Try recording to an SSD and make sure it's not using NTFS file system. Also record in variable framerate format.
 
 # Donations
 If you want to donate you can donate via bitcoin or monero.

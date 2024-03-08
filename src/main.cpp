@@ -620,7 +620,6 @@ static AVFrame* create_audio_frame(AVCodecContext *audio_codec_context) {
 static void open_video(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu, gsr_gpu_vendor vendor, PixelFormat pixel_format, bool hdr) {
     AVDictionary *options = nullptr;
     if(vendor == GSR_GPU_VENDOR_NVIDIA) {
-#if 0
         bool supports_p4 = false;
         bool supports_p5 = false;
 
@@ -633,21 +632,20 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
                     supports_p5 = true;
             }
         }
-#endif
 
         if(codec_context->codec_id == AV_CODEC_ID_AV1) {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 43, 0);
+                    av_dict_set_int(&options, "qp", 37, 0);
                     break;
                 case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 39, 0);
+                    av_dict_set_int(&options, "qp", 32, 0);
                     break;
                 case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 34, 0);
+                    av_dict_set_int(&options, "qp", 28, 0);
                     break;
                 case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 28, 0);
+                    av_dict_set_int(&options, "qp", 24, 0);
                     break;
             }
         } else if(very_old_gpu || codec_context->codec_id == AV_CODEC_ID_H264) {
@@ -668,20 +666,20 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
         } else {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 40, 0);
+                    av_dict_set_int(&options, "qp", 37, 0);
                     break;
                 case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 35, 0);
+                    av_dict_set_int(&options, "qp", 32, 0);
                     break;
                 case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 30, 0);
+                    av_dict_set_int(&options, "qp", 28, 0);
                     break;
                 case VideoQuality::ULTRA:
                     av_dict_set_int(&options, "qp", 24, 0);
                     break;
             }
         }
-#if 0
+
         if(!supports_p4 && !supports_p5)
             fprintf(stderr, "Info: your ffmpeg version is outdated. It's recommended that you use the flatpak version of gpu-screen-recorder version instead, which you can find at https://flathub.org/apps/details/com.dec05eba.gpu_screen_recorder\n");
 
@@ -704,7 +702,6 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
             av_dict_set(&options, "preset", supports_p4 ? "p4" : "medium", 0);
         else
             av_dict_set(&options, "preset", supports_p5 ? "p5" : "slow", 0);
-#endif
 
         av_dict_set(&options, "tune", "hq", 0);
         av_dict_set(&options, "rc", "constqp", 0);
@@ -752,7 +749,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
         } else {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 36, 0);
+                    av_dict_set_int(&options, "qp", 37, 0);
                     break;
                 case VideoQuality::HIGH:
                     av_dict_set_int(&options, "qp", 32, 0);

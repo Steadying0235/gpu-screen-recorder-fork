@@ -410,7 +410,7 @@ static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame) {
     NVFBC_TOCUDA_GRAB_FRAME_PARAMS grab_params;
     memset(&grab_params, 0, sizeof(grab_params));
     grab_params.dwVersion = NVFBC_TOCUDA_GRAB_FRAME_PARAMS_VER;
-    grab_params.dwFlags = NVFBC_TOCUDA_GRAB_FLAGS_NOWAIT;/* | NVFBC_TOCUDA_GRAB_FLAGS_FORCE_REFRESH;*/
+    grab_params.dwFlags = NVFBC_TOCUDA_GRAB_FLAGS_NOWAIT | NVFBC_TOCUDA_GRAB_FLAGS_FORCE_REFRESH;/* | NVFBC_TOCUDA_GRAB_FLAGS_FORCE_REFRESH;*/
     grab_params.pFrameGrabInfo = &frame_info;
     grab_params.pCUDADeviceBuffer = &cu_device_ptr;
     grab_params.dwTimeoutMs = 0;

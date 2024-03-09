@@ -25,12 +25,12 @@ static int gsr_capture_xcomposite_vaapi_start(gsr_capture *cap, AVCodecContext *
         return res;
     }
 
-    if(!drm_create_codec_context(cap_xcomp->xcomposite.params.egl->card_path, video_codec_context, false, &cap_xcomp->va_dpy)) {
+    if(!drm_create_codec_context(cap_xcomp->xcomposite.params.egl->card_path, video_codec_context, video_codec_context->width, video_codec_context->height, false, &cap_xcomp->va_dpy)) {
         gsr_capture_xcomposite_vaapi_stop(cap, video_codec_context);
         return -1;
     }
 
-    if(!gsr_capture_base_setup_vaapi_textures(&cap_xcomp->xcomposite.base, frame, cap_xcomp->xcomposite.params.egl, cap_xcomp->va_dpy, &cap_xcomp->prime, cap_xcomp->xcomposite.params.color_range)) {
+    if(!gsr_capture_base_setup_vaapi_textures(&cap_xcomp->xcomposite.base, frame, cap_xcomp->va_dpy, &cap_xcomp->prime, cap_xcomp->xcomposite.params.color_range)) {
         gsr_capture_xcomposite_vaapi_stop(cap, video_codec_context);
         return -1;
     }
@@ -54,6 +54,7 @@ static int gsr_capture_xcomposite_vaapi_capture(gsr_capture *cap, AVFrame *frame
 }
 
 static void gsr_capture_xcomposite_vaapi_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {
+    (void)video_codec_context;
     gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
 
     for(uint32_t i = 0; i < cap_xcomp->prime.num_objects; ++i) {
@@ -63,13 +64,7 @@ static void gsr_capture_xcomposite_vaapi_stop(gsr_capture *cap, AVCodecContext *
         }
     }
 
-    if(video_codec_context->hw_device_ctx)
-        av_buffer_unref(&video_codec_context->hw_device_ctx);
-    if(video_codec_context->hw_frames_ctx)
-        av_buffer_unref(&video_codec_context->hw_frames_ctx);
-
-    gsr_capture_base_stop(&cap_xcomp->xcomposite.base, cap_xcomp->xcomposite.params.egl);
-    gsr_capture_xcomposite_stop(&cap_xcomp->xcomposite, video_codec_context);
+    gsr_capture_xcomposite_stop(&cap_xcomp->xcomposite);
 }
 
 static void gsr_capture_xcomposite_vaapi_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {

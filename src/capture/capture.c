@@ -75,7 +75,7 @@ static uint32_t fourcc(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
     return (d << 24) | (c << 16) | (b << 8) | a;
 }
 
-bool gsr_capture_base_setup_vaapi_textures(gsr_capture_base *self, AVFrame *frame, gsr_egl *egl, VADisplay va_dpy, VADRMPRIMESurfaceDescriptor *prime, gsr_color_range color_range) {
+bool gsr_capture_base_setup_vaapi_textures(gsr_capture_base *self, AVFrame *frame, VADisplay va_dpy, VADRMPRIMESurfaceDescriptor *prime, gsr_color_range color_range) {
     const int res = av_hwframe_get_buffer(self->video_codec_context->hw_frames_ctx, frame, 0);
     if(res < 0) {
         fprintf(stderr, "gsr error: gsr_capture_kms_setup_vaapi_textures: av_hwframe_get_buffer failed: %d\n", res);
@@ -91,21 +91,21 @@ bool gsr_capture_base_setup_vaapi_textures(gsr_capture_base *self, AVFrame *fram
     }
     vaSyncSurface(va_dpy, target_surface_id);
 
-    egl->glGenTextures(1, &self->input_texture);
-    egl->glBindTexture(GL_TEXTURE_2D, self->input_texture);
-    egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    egl->glBindTexture(GL_TEXTURE_2D, 0);
+    self->egl->glGenTextures(1, &self->input_texture);
+    self->egl->glBindTexture(GL_TEXTURE_2D, self->input_texture);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    self->egl->glBindTexture(GL_TEXTURE_2D, 0);
 
-    egl->glGenTextures(1, &self->cursor_texture);
-    egl->glBindTexture(GL_TEXTURE_2D, self->cursor_texture);
-    egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    egl->glBindTexture(GL_TEXTURE_2D, 0);
+    self->egl->glGenTextures(1, &self->cursor_texture);
+    self->egl->glBindTexture(GL_TEXTURE_2D, self->cursor_texture);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    self->egl->glBindTexture(GL_TEXTURE_2D, 0);
 
     const uint32_t formats_nv12[2] = { fourcc('R', '8', ' ', ' '), fourcc('G', 'R', '8', '8') };
     const uint32_t formats_p010[2] = { fourcc('R', '1', '6', ' '), fourcc('G', 'R', '3', '2') };
@@ -114,7 +114,7 @@ bool gsr_capture_base_setup_vaapi_textures(gsr_capture_base *self, AVFrame *fram
         const uint32_t *formats = prime->fourcc == FOURCC_NV12 ? formats_nv12 : formats_p010;
         const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
 
-        egl->glGenTextures(2, self->target_textures);
+        self->egl->glGenTextures(2, self->target_textures);
         for(int i = 0; i < 2; ++i) {
             const int layer = i;
             const int plane = 0;
@@ -134,37 +134,37 @@ bool gsr_capture_base_setup_vaapi_textures(gsr_capture_base *self, AVFrame *fram
                 EGL_NONE
             };
 
-            while(egl->eglGetError() != EGL_SUCCESS){}
-            EGLImage image = egl->eglCreateImage(egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+            while(self->egl->eglGetError() != EGL_SUCCESS){}
+            EGLImage image = self->egl->eglCreateImage(self->egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
             if(!image) {
-                fprintf(stderr, "gsr error: gsr_capture_kms_setup_vaapi_textures: failed to create egl image from drm fd for output drm fd, error: %d\n", egl->eglGetError());
+                fprintf(stderr, "gsr error: gsr_capture_kms_setup_vaapi_textures: failed to create egl image from drm fd for output drm fd, error: %d\n", self->egl->eglGetError());
                 return false;
             }
 
-            egl->glBindTexture(GL_TEXTURE_2D, self->target_textures[i]);
-            egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            self->egl->glBindTexture(GL_TEXTURE_2D, self->target_textures[i]);
+            self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-            while(egl->glGetError()) {}
-            while(egl->eglGetError() != EGL_SUCCESS){}
-            egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
-            if(egl->glGetError() != 0 || egl->eglGetError() != EGL_SUCCESS) {
+            while(self->egl->glGetError()) {}
+            while(self->egl->eglGetError() != EGL_SUCCESS){}
+            self->egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+            if(self->egl->glGetError() != 0 || self->egl->eglGetError() != EGL_SUCCESS) {
                 // TODO: Get the error properly
-                fprintf(stderr, "gsr error: gsr_capture_kms_setup_vaapi_textures: failed to bind egl image to gl texture, error: %d\n", egl->eglGetError());
-                egl->eglDestroyImage(egl->egl_display, image);
-                egl->glBindTexture(GL_TEXTURE_2D, 0);
+                fprintf(stderr, "gsr error: gsr_capture_kms_setup_vaapi_textures: failed to bind egl image to gl texture, error: %d\n", self->egl->eglGetError());
+                self->egl->eglDestroyImage(self->egl->egl_display, image);
+                self->egl->glBindTexture(GL_TEXTURE_2D, 0);
                 return false;
             }
 
-            egl->eglDestroyImage(egl->egl_display, image);
-            egl->glBindTexture(GL_TEXTURE_2D, 0);
+            self->egl->eglDestroyImage(self->egl->egl_display, image);
+            self->egl->glBindTexture(GL_TEXTURE_2D, 0);
         }
 
         gsr_color_conversion_params color_conversion_params = {0};
         color_conversion_params.color_range = color_range;
-        color_conversion_params.egl = egl;
+        color_conversion_params.egl = self->egl;
         color_conversion_params.source_color = GSR_SOURCE_COLOR_RGB;
         if(prime->fourcc == FOURCC_NV12)
             color_conversion_params.destination_color = GSR_DESTINATION_COLOR_NV12;
@@ -223,29 +223,29 @@ static bool cuda_register_opengl_texture(gsr_cuda *cuda, CUgraphicsResource *cud
     return true;
 }
 
-bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *base, AVFrame *frame, gsr_cuda_context *cuda_context, gsr_egl *egl, gsr_color_range color_range, gsr_source_color source_color, bool hdr) {
+bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *self, AVFrame *frame, gsr_cuda_context *cuda_context, gsr_color_range color_range, gsr_source_color source_color, bool hdr) {
     // TODO:
-    const int res = av_hwframe_get_buffer(base->video_codec_context->hw_frames_ctx, frame, 0);
+    const int res = av_hwframe_get_buffer(self->video_codec_context->hw_frames_ctx, frame, 0);
     if(res < 0) {
         fprintf(stderr, "gsr error: gsr_capture_kms_setup_cuda_textures: av_hwframe_get_buffer failed: %d\n", res);
         return false;
     }
 
-    egl->glGenTextures(1, &base->input_texture);
-    egl->glBindTexture(GL_TEXTURE_2D, base->input_texture);
-    egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    egl->glBindTexture(GL_TEXTURE_2D, 0);
+    self->egl->glGenTextures(1, &self->input_texture);
+    self->egl->glBindTexture(GL_TEXTURE_2D, self->input_texture);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    self->egl->glBindTexture(GL_TEXTURE_2D, 0);
 
-    egl->glGenTextures(1, &base->cursor_texture);
-    egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, base->cursor_texture);
-    egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+    self->egl->glGenTextures(1, &self->cursor_texture);
+    self->egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, self->cursor_texture);
+    self->egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    self->egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    self->egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    self->egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    self->egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
 
     const unsigned int internal_formats_nv12[2] = { GL_R8, GL_RG8 };
     const unsigned int internal_formats_p010[2] = { GL_R16, GL_RG16 };
@@ -253,31 +253,31 @@ bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *base, AVFrame *frame
     const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
 
     for(int i = 0; i < 2; ++i) {
-        base->target_textures[i] = gl_create_texture(egl, base->video_codec_context->width / div[i], base->video_codec_context->height / div[i], !hdr ? internal_formats_nv12[i] : internal_formats_p010[i], formats[i]);
-        if(base->target_textures[i] == 0) {
+        self->target_textures[i] = gl_create_texture(self->egl, self->video_codec_context->width / div[i], self->video_codec_context->height / div[i], !hdr ? internal_formats_nv12[i] : internal_formats_p010[i], formats[i]);
+        if(self->target_textures[i] == 0) {
             fprintf(stderr, "gsr error: gsr_capture_kms_setup_cuda_textures: failed to create opengl texture\n");
             return false;
         }
 
-        if(!cuda_register_opengl_texture(cuda_context->cuda, &cuda_context->cuda_graphics_resources[i], &cuda_context->mapped_arrays[i], base->target_textures[i])) {
+        if(!cuda_register_opengl_texture(cuda_context->cuda, &cuda_context->cuda_graphics_resources[i], &cuda_context->mapped_arrays[i], self->target_textures[i])) {
             return false;
         }
     }
 
     gsr_color_conversion_params color_conversion_params = {0};
     color_conversion_params.color_range = color_range;
-    color_conversion_params.egl = egl;
+    color_conversion_params.egl = self->egl;
     color_conversion_params.source_color = source_color;
     if(!hdr)
         color_conversion_params.destination_color = GSR_DESTINATION_COLOR_NV12;
     else
         color_conversion_params.destination_color = GSR_DESTINATION_COLOR_P010;
 
-    color_conversion_params.destination_textures[0] = base->target_textures[0];
-    color_conversion_params.destination_textures[1] = base->target_textures[1];
+    color_conversion_params.destination_textures[0] = self->target_textures[0];
+    color_conversion_params.destination_textures[1] = self->target_textures[1];
     color_conversion_params.num_destination_textures = 2;
 
-    if(gsr_color_conversion_init(&base->color_conversion, &color_conversion_params) != 0) {
+    if(gsr_color_conversion_init(&self->color_conversion, &color_conversion_params) != 0) {
         fprintf(stderr, "gsr error: gsr_capture_kms_setup_cuda_textures: failed to create color conversion\n");
         return false;
     }
@@ -285,27 +285,32 @@ bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *base, AVFrame *frame
     return true;
 }
 
-void gsr_capture_base_stop(gsr_capture_base *self, gsr_egl *egl) {
+void gsr_capture_base_stop(gsr_capture_base *self) {
     gsr_color_conversion_deinit(&self->color_conversion);
 
-    if(egl->egl_context) {
+    if(self->egl->egl_context) {
         if(self->input_texture) {
-            egl->glDeleteTextures(1, &self->input_texture);
+            self->egl->glDeleteTextures(1, &self->input_texture);
             self->input_texture = 0;
         }
 
         if(self->cursor_texture) {
-            egl->glDeleteTextures(1, &self->cursor_texture);
+            self->egl->glDeleteTextures(1, &self->cursor_texture);
             self->cursor_texture = 0;
         }
 
-        egl->glDeleteTextures(2, self->target_textures);
+        self->egl->glDeleteTextures(2, self->target_textures);
         self->target_textures[0] = 0;
         self->target_textures[1] = 0;
     }
+
+    if(self->video_codec_context->hw_device_ctx)
+        av_buffer_unref(&self->video_codec_context->hw_device_ctx);
+    if(self->video_codec_context->hw_frames_ctx)
+        av_buffer_unref(&self->video_codec_context->hw_frames_ctx);
 }
 
-bool drm_create_codec_context(const char *card_path, AVCodecContext *video_codec_context, bool hdr, VADisplay *va_dpy) {
+bool drm_create_codec_context(const char *card_path, AVCodecContext *video_codec_context, int width, int height, bool hdr, VADisplay *va_dpy) {
     char render_path[128];
     if(!gsr_card_path_get_render_path(card_path, render_path)) {
         fprintf(stderr, "gsr error: failed to get /dev/dri/renderDXXX file from %s\n", card_path);
@@ -327,8 +332,8 @@ bool drm_create_codec_context(const char *card_path, AVCodecContext *video_codec
 
     AVHWFramesContext *hw_frame_context =
         (AVHWFramesContext *)frame_context->data;
-    hw_frame_context->width = video_codec_context->width;
-    hw_frame_context->height = video_codec_context->height;
+    hw_frame_context->width = width;
+    hw_frame_context->height = height;
     hw_frame_context->sw_format = hdr ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12;
     hw_frame_context->format = video_codec_context->pix_fmt;
     hw_frame_context->device_ref = device_ctx;
@@ -352,7 +357,7 @@ bool drm_create_codec_context(const char *card_path, AVCodecContext *video_codec
     return true;
 }
 
-bool cuda_create_codec_context(CUcontext cu_ctx, AVCodecContext *video_codec_context, CUstream *cuda_stream) {
+bool cuda_create_codec_context(CUcontext cu_ctx, AVCodecContext *video_codec_context, int width, int height, CUstream *cuda_stream) {
     AVBufferRef *device_ctx = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_CUDA);
     if(!device_ctx) {
         fprintf(stderr, "gsr error: cuda_create_codec_context failed: failed to create hardware device context\n");
@@ -376,8 +381,8 @@ bool cuda_create_codec_context(CUcontext cu_ctx, AVCodecContext *video_codec_con
     }
 
     AVHWFramesContext *hw_frame_context = (AVHWFramesContext*)frame_context->data;
-    hw_frame_context->width = video_codec_context->width;
-    hw_frame_context->height = video_codec_context->height;
+    hw_frame_context->width = width;
+    hw_frame_context->height = height;
     hw_frame_context->sw_format = AV_PIX_FMT_NV12;
     hw_frame_context->format = video_codec_context->pix_fmt;
     hw_frame_context->device_ref = device_ctx;

@@ -121,3 +121,5 @@ Show error when using compressed kms plane which isn't supported. Also do that i
 Modify ffmpeg to accept opengl texture for nvenc encoding. Removes extra buffers and copies.
 
 When vulkan encode is added, mention minimum nvidia driver required. (550.54.14?).
+
+Dont display cursor in window capture mode if another window than the capture window selected.

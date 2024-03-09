@@ -42,7 +42,7 @@ typedef struct {
 void gsr_capture_xcomposite_init(gsr_capture_xcomposite *self, const gsr_capture_xcomposite_params *params);
 
 int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context, AVFrame *frame);
-void gsr_capture_xcomposite_stop(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context);
+void gsr_capture_xcomposite_stop(gsr_capture_xcomposite *self);
 void gsr_capture_xcomposite_tick(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context);
 bool gsr_capture_xcomposite_should_stop(gsr_capture_xcomposite *self, bool *err);
 int gsr_capture_xcomposite_capture(gsr_capture_xcomposite *self, AVFrame *frame);

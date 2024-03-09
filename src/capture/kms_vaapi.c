@@ -10,7 +10,6 @@
 #include <va/va_drmcommon.h>
 
 typedef struct {
-    gsr_capture_base base;
     gsr_capture_kms kms;
 
     gsr_capture_kms_vaapi_params params;
@@ -24,18 +23,18 @@ static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_c
 static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
-    int res = gsr_capture_kms_start(&cap_kms->kms, &cap_kms->base, cap_kms->params.display_to_capture, cap_kms->params.egl, video_codec_context, frame);
+    int res = gsr_capture_kms_start(&cap_kms->kms, cap_kms->params.display_to_capture, cap_kms->params.egl, video_codec_context, frame);
     if(res != 0) {
         gsr_capture_kms_vaapi_stop(cap, video_codec_context);
         return res;
     }
 
-    if(!drm_create_codec_context(cap_kms->params.egl->card_path, video_codec_context, cap_kms->params.hdr, &cap_kms->va_dpy)) {
+    if(!drm_create_codec_context(cap_kms->params.egl->card_path, video_codec_context, video_codec_context->width, video_codec_context->height, cap_kms->params.hdr, &cap_kms->va_dpy)) {
         gsr_capture_kms_vaapi_stop(cap, video_codec_context);
         return -1;
     }
 
-    if(!gsr_capture_base_setup_vaapi_textures(&cap_kms->base, frame, cap_kms->params.egl, cap_kms->va_dpy, &cap_kms->prime, cap_kms->params.color_range)) {
+    if(!gsr_capture_base_setup_vaapi_textures(&cap_kms->kms.base, frame, cap_kms->va_dpy, &cap_kms->prime, cap_kms->params.color_range)) {
         gsr_capture_kms_vaapi_stop(cap, video_codec_context);
         return -1;
     }
@@ -58,7 +57,7 @@ static bool gsr_capture_kms_vaapi_should_stop(gsr_capture *cap, bool *err) {
 
 static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
-    gsr_capture_kms_capture(&cap_kms->kms, &cap_kms->base, frame, cap_kms->params.egl, cap_kms->params.hdr, false, false);
+    gsr_capture_kms_capture(&cap_kms->kms, frame, cap_kms->params.hdr, false, false);
     return 0;
 }
 
@@ -69,6 +68,7 @@ static void gsr_capture_kms_vaapi_capture_end(gsr_capture *cap, AVFrame *frame) 
 }
 
 static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {
+    (void)video_codec_context;
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
     for(uint32_t i = 0; i < cap_kms->prime.num_objects; ++i) {
@@ -78,13 +78,7 @@ static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_c
         }
     }
 
-    if(video_codec_context->hw_device_ctx)
-        av_buffer_unref(&video_codec_context->hw_device_ctx);
-    if(video_codec_context->hw_frames_ctx)
-        av_buffer_unref(&video_codec_context->hw_frames_ctx);
-
     gsr_capture_kms_stop(&cap_kms->kms);
-    gsr_capture_base_stop(&cap_kms->base, cap_kms->params.egl);
 }
 
 static void gsr_capture_kms_vaapi_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {

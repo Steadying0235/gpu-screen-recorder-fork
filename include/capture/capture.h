@@ -33,6 +33,8 @@ struct gsr_capture {
 typedef struct gsr_capture_base gsr_capture_base;
 
 struct gsr_capture_base {
+    gsr_egl *egl;
+
     unsigned int input_texture;
     unsigned int target_textures[2];
     unsigned int cursor_texture;
@@ -56,11 +58,11 @@ void gsr_capture_end(gsr_capture *cap, AVFrame *frame);
 /* Calls |gsr_capture_stop| as well */
 void gsr_capture_destroy(gsr_capture *cap, AVCodecContext *video_codec_context);
 
-bool gsr_capture_base_setup_vaapi_textures(gsr_capture_base *self, AVFrame *frame, gsr_egl *egl, VADisplay va_dpy, VADRMPRIMESurfaceDescriptor *prime, gsr_color_range color_range);
-bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *base, AVFrame *frame, gsr_cuda_context *cuda_context, gsr_egl *egl, gsr_color_range color_range, gsr_source_color source_color, bool hdr);
-void gsr_capture_base_stop(gsr_capture_base *self, gsr_egl *egl);
+bool gsr_capture_base_setup_vaapi_textures(gsr_capture_base *self, AVFrame *frame, VADisplay va_dpy, VADRMPRIMESurfaceDescriptor *prime, gsr_color_range color_range);
+bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *self, AVFrame *frame, gsr_cuda_context *cuda_context, gsr_color_range color_range, gsr_source_color source_color, bool hdr);
+void gsr_capture_base_stop(gsr_capture_base *self);
 
-bool drm_create_codec_context(const char *card_path, AVCodecContext *video_codec_context, bool hdr, VADisplay *va_dpy);
-bool cuda_create_codec_context(CUcontext cu_ctx, AVCodecContext *video_codec_context, CUstream *cuda_stream);
+bool drm_create_codec_context(const char *card_path, AVCodecContext *video_codec_context, int width, int height, bool hdr, VADisplay *va_dpy);
+bool cuda_create_codec_context(CUcontext cu_ctx, AVCodecContext *video_codec_context, int width, int height, CUstream *cuda_stream);
 
 #endif /* GSR_CAPTURE_CAPTURE_H */

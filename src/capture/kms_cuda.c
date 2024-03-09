@@ -10,7 +10,6 @@
 #include <libavcodec/avcodec.h>
 
 typedef struct {
-    gsr_capture_base base;
     gsr_capture_kms kms;
 
     gsr_capture_kms_cuda_params params;
@@ -26,7 +25,7 @@ static void gsr_capture_kms_cuda_stop(gsr_capture *cap, AVCodecContext *video_co
 static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_capture_kms_cuda *cap_kms = cap->priv;
 
-    const int res = gsr_capture_kms_start(&cap_kms->kms, &cap_kms->base, cap_kms->params.display_to_capture, cap_kms->params.egl, video_codec_context, frame);
+    const int res = gsr_capture_kms_start(&cap_kms->kms, cap_kms->params.display_to_capture, cap_kms->params.egl, video_codec_context, frame);
     if(res != 0) {
         gsr_capture_kms_cuda_stop(cap, video_codec_context);
         return res;
@@ -39,7 +38,7 @@ static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_co
         return -1;
     }
 
-    if(!cuda_create_codec_context(cap_kms->cuda.cu_ctx, video_codec_context, &cap_kms->cuda_stream)) {
+    if(!cuda_create_codec_context(cap_kms->cuda.cu_ctx, video_codec_context, video_codec_context->width, video_codec_context->height, &cap_kms->cuda_stream)) {
         gsr_capture_kms_cuda_stop(cap, video_codec_context);
         return -1;
     }
@@ -50,7 +49,7 @@ static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_co
         .mapped_arrays = cap_kms->mapped_arrays
     };
 
-    if(!gsr_capture_base_setup_cuda_textures(&cap_kms->base, frame, &cuda_context, cap_kms->params.egl, cap_kms->params.color_range, GSR_SOURCE_COLOR_RGB, cap_kms->params.hdr)) {
+    if(!gsr_capture_base_setup_cuda_textures(&cap_kms->kms.base, frame, &cuda_context, cap_kms->params.color_range, GSR_SOURCE_COLOR_RGB, cap_kms->params.hdr)) {
         gsr_capture_kms_cuda_stop(cap, video_codec_context);
         return -1;
     }
@@ -91,7 +90,7 @@ static void gsr_capture_kms_unload_cuda_graphics(gsr_capture_kms_cuda *cap_kms) 
 static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_kms_cuda *cap_kms = cap->priv;
 
-    gsr_capture_kms_capture(&cap_kms->kms, &cap_kms->base, frame, cap_kms->params.egl, cap_kms->params.hdr, true, true);
+    gsr_capture_kms_capture(&cap_kms->kms, frame, cap_kms->params.hdr, true, true);
 
     const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
     for(int i = 0; i < 2; ++i) {
@@ -127,18 +126,11 @@ static void gsr_capture_kms_cuda_capture_end(gsr_capture *cap, AVFrame *frame) {
 }
 
 static void gsr_capture_kms_cuda_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {
+    (void)video_codec_context;
     gsr_capture_kms_cuda *cap_kms = cap->priv;
-
     gsr_capture_kms_unload_cuda_graphics(cap_kms);
-
-    if(video_codec_context->hw_device_ctx)
-        av_buffer_unref(&video_codec_context->hw_device_ctx);
-    if(video_codec_context->hw_frames_ctx)
-        av_buffer_unref(&video_codec_context->hw_frames_ctx);
-
     gsr_cuda_unload(&cap_kms->cuda);
     gsr_capture_kms_stop(&cap_kms->kms);
-    gsr_capture_base_stop(&cap_kms->base, cap_kms->params.egl);
 }
 
 static void gsr_capture_kms_cuda_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {

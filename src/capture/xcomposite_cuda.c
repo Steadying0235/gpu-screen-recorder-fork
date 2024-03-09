@@ -33,7 +33,7 @@ static int gsr_capture_xcomposite_cuda_start(gsr_capture *cap, AVCodecContext *v
         return -1;
     }
 
-    if(!cuda_create_codec_context(cap_xcomp->cuda.cu_ctx, video_codec_context, &cap_xcomp->cuda_stream)) {
+    if(!cuda_create_codec_context(cap_xcomp->cuda.cu_ctx, video_codec_context, video_codec_context->width, video_codec_context->height, &cap_xcomp->cuda_stream)) {
         gsr_capture_xcomposite_cuda_stop(cap, video_codec_context);
         return -1;
     }
@@ -44,7 +44,7 @@ static int gsr_capture_xcomposite_cuda_start(gsr_capture *cap, AVCodecContext *v
         .mapped_arrays = cap_xcomp->mapped_arrays
     };
 
-    if(!gsr_capture_base_setup_cuda_textures(&cap_xcomp->xcomposite.base, frame, &cuda_context, cap_xcomp->xcomposite.params.egl, cap_xcomp->xcomposite.params.color_range, GSR_SOURCE_COLOR_RGB, false)) {
+    if(!gsr_capture_base_setup_cuda_textures(&cap_xcomp->xcomposite.base, frame, &cuda_context, cap_xcomp->xcomposite.params.color_range, GSR_SOURCE_COLOR_RGB, false)) {
         gsr_capture_xcomposite_cuda_stop(cap, video_codec_context);
         return -1;
     }
@@ -70,15 +70,9 @@ static void gsr_capture_xcomposite_unload_cuda_graphics(gsr_capture_xcomposite_c
 }
 
 static void gsr_capture_xcomposite_cuda_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {
+    (void)video_codec_context;
     gsr_capture_xcomposite_cuda *cap_xcomp = cap->priv;
-
-    if(video_codec_context->hw_device_ctx)
-        av_buffer_unref(&video_codec_context->hw_device_ctx);
-    if(video_codec_context->hw_frames_ctx)
-        av_buffer_unref(&video_codec_context->hw_frames_ctx);
-
-    gsr_capture_base_stop(&cap_xcomp->xcomposite.base, cap_xcomp->xcomposite.params.egl);
-    gsr_capture_xcomposite_stop(&cap_xcomp->xcomposite, video_codec_context);
+    gsr_capture_xcomposite_stop(&cap_xcomp->xcomposite);
     gsr_capture_xcomposite_unload_cuda_graphics(cap_xcomp);
     gsr_cuda_unload(&cap_xcomp->cuda);
 }

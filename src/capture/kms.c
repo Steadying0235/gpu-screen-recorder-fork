@@ -39,8 +39,10 @@ static int max_int(int a, int b) {
     return a > b ? a : b;
 }
 
-int gsr_capture_kms_start(gsr_capture_kms *self, gsr_capture_base *base, const char *display_to_capture, gsr_egl *egl, AVCodecContext *video_codec_context, AVFrame *frame) {
-    base->video_codec_context = video_codec_context;
+int gsr_capture_kms_start(gsr_capture_kms *self, const char *display_to_capture, gsr_egl *egl, AVCodecContext *video_codec_context, AVFrame *frame) {
+    memset(self, 0, sizeof(*self));
+    self->base.video_codec_context = video_codec_context;
+    self->base.egl = egl;
 
     gsr_monitor monitor;
     self->monitor_id.num_connector_ids = 0;
@@ -75,17 +77,18 @@ int gsr_capture_kms_start(gsr_capture_kms *self, gsr_capture_base *base, const c
     /* Disable vsync */
     egl->eglSwapInterval(egl->egl_display, 0);
 
-    base->video_codec_context->width = max_int(2, even_number_ceil(self->capture_size.x));
-    base->video_codec_context->height = max_int(2, even_number_ceil(self->capture_size.y));
+    self->base.video_codec_context->width = max_int(2, even_number_ceil(self->capture_size.x));
+    self->base.video_codec_context->height = max_int(2, even_number_ceil(self->capture_size.y));
 
-    frame->width = base->video_codec_context->width;
-    frame->height = base->video_codec_context->height;
+    frame->width = self->base.video_codec_context->width;
+    frame->height = self->base.video_codec_context->height;
     return 0;
 }
 
 void gsr_capture_kms_stop(gsr_capture_kms *self) {
     gsr_capture_kms_cleanup_kms_fds(self);
     gsr_kms_client_deinit(&self->kms_client);
+    gsr_capture_base_stop(&self->base);
 }
 
 static float monitor_rotation_to_radians(gsr_monitor_rotation rot) {
@@ -190,9 +193,9 @@ static vec2i swap_vec2i(vec2i value) {
     return value;
 }
 
-bool gsr_capture_kms_capture(gsr_capture_kms *self, gsr_capture_base *base, AVFrame *frame, gsr_egl *egl, bool hdr, bool screen_plane_use_modifiers, bool cursor_texture_is_external) {
+bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bool screen_plane_use_modifiers, bool cursor_texture_is_external) {
     //egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    egl->glClear(0);
+    self->base.egl->glClear(0);
 
     gsr_capture_kms_cleanup_kms_fds(self);
 
@@ -280,11 +283,11 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, gsr_capture_base *base, AVFr
         img_attr[13] = EGL_NONE;
     }
 
-    EGLImage image = egl->eglCreateImage(egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
-    egl->glBindTexture(GL_TEXTURE_2D, base->input_texture);
-    egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
-    egl->eglDestroyImage(egl->egl_display, image);
-    egl->glBindTexture(GL_TEXTURE_2D, 0);
+    EGLImage image = self->base.egl->eglCreateImage(self->base.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+    self->base.egl->glBindTexture(GL_TEXTURE_2D, self->base.input_texture);
+    self->base.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+    self->base.egl->eglDestroyImage(self->base.egl->egl_display, image);
+    self->base.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
     vec2i capture_pos = self->capture_pos;
     if(!capture_is_combined_plane)
@@ -292,7 +295,7 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, gsr_capture_base *base, AVFr
 
     const float texture_rotation = monitor_rotation_to_radians(self->monitor_rotation);
 
-    gsr_color_conversion_draw(&base->color_conversion, base->input_texture,
+    gsr_color_conversion_draw(&self->base.color_conversion, self->base.input_texture,
         (vec2i){0, 0}, self->capture_size,
         capture_pos, self->capture_size,
         texture_rotation, false);
@@ -336,22 +339,22 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, gsr_capture_base *base, AVFr
             EGL_NONE
         };
 
-        EGLImage cursor_image = egl->eglCreateImage(egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr_cursor);
+        EGLImage cursor_image = self->base.egl->eglCreateImage(self->base.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr_cursor);
         const int target = cursor_texture_is_external ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
-        egl->glBindTexture(target, base->cursor_texture);
-        egl->glEGLImageTargetTexture2DOES(target, cursor_image);
-        egl->eglDestroyImage(egl->egl_display, cursor_image);
-        egl->glBindTexture(target, 0);
+        self->base.egl->glBindTexture(target, self->base.cursor_texture);
+        self->base.egl->glEGLImageTargetTexture2DOES(target, cursor_image);
+        self->base.egl->eglDestroyImage(self->base.egl->egl_display, cursor_image);
+        self->base.egl->glBindTexture(target, 0);
 
-        gsr_color_conversion_draw(&base->color_conversion, base->cursor_texture,
+        gsr_color_conversion_draw(&self->base.color_conversion, self->base.cursor_texture,
             cursor_pos, cursor_size,
             (vec2i){0, 0}, cursor_size,
             texture_rotation, false);
     }
 
-    egl->eglSwapBuffers(egl->egl_display, egl->egl_surface);
-    //egl->glFlush();
-    //egl->glFinish();
+    self->base.egl->eglSwapBuffers(self->base.egl->egl_display, self->base.egl->egl_surface);
+    //self->base.egl->glFlush();
+    //self->base.egl->glFinish();
 
     return true;
 }

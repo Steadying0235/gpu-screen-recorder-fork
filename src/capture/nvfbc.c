@@ -159,6 +159,10 @@ static void set_vertical_sync_enabled(gsr_egl *egl, int enabled) {
 
 static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_capture_nvfbc *cap_nvfbc = cap->priv;
+
+    cap_nvfbc->base.video_codec_context = video_codec_context;
+    cap_nvfbc->base.egl = cap_nvfbc->params.egl;
+
     if(!gsr_cuda_load(&cap_nvfbc->cuda, cap_nvfbc->params.egl->x11.dpy, cap_nvfbc->params.overclock))
         return -1;
 
@@ -295,7 +299,6 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
         goto error_cleanup;
     }
 
-    cap_nvfbc->base.video_codec_context = video_codec_context;
     if(capture_region) {
         video_codec_context->width = width & ~1;
         video_codec_context->height = height & ~1;
@@ -307,7 +310,7 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
 
-    if(!cuda_create_codec_context(cap_nvfbc->cuda.cu_ctx, video_codec_context, &cap_nvfbc->cuda_stream))
+    if(!cuda_create_codec_context(cap_nvfbc->cuda.cu_ctx, video_codec_context, video_codec_context->width, video_codec_context->height, &cap_nvfbc->cuda_stream))
         goto error_cleanup;
 
     gsr_cuda_context cuda_context = {
@@ -317,7 +320,7 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     };
 
     // TODO: Remove this, it creates shit we dont need
-    if(!gsr_capture_base_setup_cuda_textures(&cap_nvfbc->base, frame, &cuda_context, cap_nvfbc->params.egl, cap_nvfbc->params.color_range, GSR_SOURCE_COLOR_BGR, cap_nvfbc->params.hdr)) {
+    if(!gsr_capture_base_setup_cuda_textures(&cap_nvfbc->base, frame, &cuda_context, cap_nvfbc->params.color_range, GSR_SOURCE_COLOR_BGR, cap_nvfbc->params.hdr)) {
         goto error_cleanup;
     }
     /* Disable vsync */
@@ -342,12 +345,7 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
         cap_nvfbc->fbc_handle_created = false;
     }
 
-    if(video_codec_context->hw_device_ctx)
-        av_buffer_unref(&video_codec_context->hw_device_ctx);
-    if(video_codec_context->hw_frames_ctx)
-        av_buffer_unref(&video_codec_context->hw_frames_ctx);
-
-    gsr_capture_base_stop(&cap_nvfbc->base, cap_nvfbc->params.egl);
+    gsr_capture_base_stop(&cap_nvfbc->base);
     gsr_cuda_unload(&cap_nvfbc->cuda);
     return -1;
 }
@@ -432,14 +430,11 @@ static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame) {
 }
 
 static void gsr_capture_nvfbc_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
+    (void)video_codec_context;
     gsr_capture_nvfbc *cap_nvfbc = cap->priv;
     gsr_capture_nvfbc_destroy_session(cap);
-    if(video_codec_context->hw_device_ctx)
-        av_buffer_unref(&video_codec_context->hw_device_ctx);
-    if(video_codec_context->hw_frames_ctx)
-        av_buffer_unref(&video_codec_context->hw_frames_ctx);
     if(cap_nvfbc) {
-        gsr_capture_base_stop(&cap_nvfbc->base, cap_nvfbc->params.egl);
+        gsr_capture_base_stop(&cap_nvfbc->base);
         gsr_cuda_unload(&cap_nvfbc->cuda);
         dlclose(cap_nvfbc->library);
         free((void*)cap_nvfbc->params.display_to_capture);

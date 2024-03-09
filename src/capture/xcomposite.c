@@ -42,6 +42,7 @@ static Window get_focused_window(Display *display, Atom net_active_window_atom) 
 
 int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context, AVFrame *frame) {
     self->base.video_codec_context = video_codec_context;
+    self->base.egl = self->params.egl;
 
     if(self->params.follow_focused) {
         self->net_active_window_atom = XInternAtom(self->params.egl->x11.dpy, "_NET_ACTIVE_WINDOW", False);
@@ -89,7 +90,7 @@ int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *v
     }
 
     if(gsr_cursor_init(&self->cursor, self->params.egl, self->params.egl->x11.dpy) != 0) {
-        gsr_capture_xcomposite_stop(self, video_codec_context);
+        gsr_capture_xcomposite_stop(self);
         return -1;
     }
 
@@ -119,10 +120,10 @@ int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *v
     return 0;
 }
 
-void gsr_capture_xcomposite_stop(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context) {
-    (void)video_codec_context;
+void gsr_capture_xcomposite_stop(gsr_capture_xcomposite *self) {
     window_texture_deinit(&self->window_texture);
     gsr_cursor_deinit(&self->cursor);
+    gsr_capture_base_stop(&self->base);
 }
 
 void gsr_capture_xcomposite_tick(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context) {

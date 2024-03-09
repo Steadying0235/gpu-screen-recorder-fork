@@ -26,8 +26,7 @@ static int gsr_capture_xcomposite_cuda_start(gsr_capture *cap, AVCodecContext *v
         return res;
     }
 
-    // TODO: overclocking is not supported on wayland...
-    if(!gsr_cuda_load(&cap_xcomp->cuda, NULL, false)) {
+    if(!gsr_cuda_load(&cap_xcomp->cuda, cap_xcomp->xcomposite.params.egl->x11.dpy, cap_xcomp->overclock)) {
         fprintf(stderr, "gsr error: gsr_capture_kms_cuda_start: failed to load cuda\n");
         gsr_capture_xcomposite_cuda_stop(cap, video_codec_context);
         return -1;

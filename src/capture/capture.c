@@ -1,11 +1,14 @@
 #include "../../include/capture/capture.h"
 #include "../../include/egl.h"
 #include "../../include/cuda.h"
+#include "../../include/utils.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <va/va.h>
 #include <va/va_drmcommon.h>
 #include <libavutil/frame.h>
+#include <libavutil/hwcontext_vaapi.h>
+#include <libavutil/hwcontext_cuda.h>
 #include <libavcodec/avcodec.h>
 
 #define FOURCC_NV12 842094158
@@ -300,4 +303,96 @@ void gsr_capture_base_stop(gsr_capture_base *self, gsr_egl *egl) {
         self->target_textures[0] = 0;
         self->target_textures[1] = 0;
     }
+}
+
+bool drm_create_codec_context(const char *card_path, AVCodecContext *video_codec_context, bool hdr, VADisplay *va_dpy) {
+    char render_path[128];
+    if(!gsr_card_path_get_render_path(card_path, render_path)) {
+        fprintf(stderr, "gsr error: failed to get /dev/dri/renderDXXX file from %s\n", card_path);
+        return false;
+    }
+
+    AVBufferRef *device_ctx;
+    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, render_path, NULL, 0) < 0) {
+        fprintf(stderr, "Error: Failed to create hardware device context\n");
+        return false;
+    }
+
+    AVBufferRef *frame_context = av_hwframe_ctx_alloc(device_ctx);
+    if(!frame_context) {
+        fprintf(stderr, "Error: Failed to create hwframe context\n");
+        av_buffer_unref(&device_ctx);
+        return false;
+    }
+
+    AVHWFramesContext *hw_frame_context =
+        (AVHWFramesContext *)frame_context->data;
+    hw_frame_context->width = video_codec_context->width;
+    hw_frame_context->height = video_codec_context->height;
+    hw_frame_context->sw_format = hdr ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12;
+    hw_frame_context->format = video_codec_context->pix_fmt;
+    hw_frame_context->device_ref = device_ctx;
+    hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
+
+    //hw_frame_context->initial_pool_size = 20;
+
+    AVVAAPIDeviceContext *vactx =((AVHWDeviceContext*)device_ctx->data)->hwctx;
+    *va_dpy = vactx->display;
+
+    if (av_hwframe_ctx_init(frame_context) < 0) {
+        fprintf(stderr, "Error: Failed to initialize hardware frame context "
+                        "(note: ffmpeg version needs to be > 4.0)\n");
+        av_buffer_unref(&device_ctx);
+        //av_buffer_unref(&frame_context);
+        return false;
+    }
+
+    video_codec_context->hw_device_ctx = av_buffer_ref(device_ctx);
+    video_codec_context->hw_frames_ctx = av_buffer_ref(frame_context);
+    return true;
+}
+
+bool cuda_create_codec_context(CUcontext cu_ctx, AVCodecContext *video_codec_context, CUstream *cuda_stream) {
+    AVBufferRef *device_ctx = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_CUDA);
+    if(!device_ctx) {
+        fprintf(stderr, "gsr error: cuda_create_codec_context failed: failed to create hardware device context\n");
+        return false;
+    }
+
+    AVHWDeviceContext *hw_device_context = (AVHWDeviceContext*)device_ctx->data;
+    AVCUDADeviceContext *cuda_device_context = (AVCUDADeviceContext*)hw_device_context->hwctx;
+    cuda_device_context->cuda_ctx = cu_ctx;
+    if(av_hwdevice_ctx_init(device_ctx) < 0) {
+        fprintf(stderr, "gsr error: cuda_create_codec_context failed: failed to create hardware device context\n");
+        av_buffer_unref(&device_ctx);
+        return false;
+    }
+
+    AVBufferRef *frame_context = av_hwframe_ctx_alloc(device_ctx);
+    if(!frame_context) {
+        fprintf(stderr, "gsr error: cuda_create_codec_context failed: failed to create hwframe context\n");
+        av_buffer_unref(&device_ctx);
+        return false;
+    }
+
+    AVHWFramesContext *hw_frame_context = (AVHWFramesContext*)frame_context->data;
+    hw_frame_context->width = video_codec_context->width;
+    hw_frame_context->height = video_codec_context->height;
+    hw_frame_context->sw_format = AV_PIX_FMT_NV12;
+    hw_frame_context->format = video_codec_context->pix_fmt;
+    hw_frame_context->device_ref = device_ctx;
+    hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
+
+    if (av_hwframe_ctx_init(frame_context) < 0) {
+        fprintf(stderr, "gsr error: cuda_create_codec_context failed: failed to initialize hardware frame context "
+                        "(note: ffmpeg version needs to be > 4.0)\n");
+        av_buffer_unref(&device_ctx);
+        //av_buffer_unref(&frame_context);
+        return false;
+    }
+
+    *cuda_stream = cuda_device_context->stream;
+    video_codec_context->hw_device_ctx = av_buffer_ref(device_ctx);
+    video_codec_context->hw_frames_ctx = av_buffer_ref(frame_context);
+    return true;
 }

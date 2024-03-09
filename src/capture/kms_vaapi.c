@@ -21,53 +21,6 @@ typedef struct {
 
 static void gsr_capture_kms_vaapi_stop(gsr_capture *cap, AVCodecContext *video_codec_context);
 
-static bool drm_create_codec_context(gsr_capture_kms_vaapi *cap_kms, AVCodecContext *video_codec_context) {
-    char render_path[128];
-    if(!gsr_card_path_get_render_path(cap_kms->params.egl->card_path, render_path)) {
-        fprintf(stderr, "gsr error: failed to get /dev/dri/renderDXXX file from %s\n", cap_kms->params.egl->card_path);
-        return false;
-    }
-
-    AVBufferRef *device_ctx;
-    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, render_path, NULL, 0) < 0) {
-        fprintf(stderr, "Error: Failed to create hardware device context\n");
-        return false;
-    }
-
-    AVBufferRef *frame_context = av_hwframe_ctx_alloc(device_ctx);
-    if(!frame_context) {
-        fprintf(stderr, "Error: Failed to create hwframe context\n");
-        av_buffer_unref(&device_ctx);
-        return false;
-    }
-
-    AVHWFramesContext *hw_frame_context =
-        (AVHWFramesContext *)frame_context->data;
-    hw_frame_context->width = video_codec_context->width;
-    hw_frame_context->height = video_codec_context->height;
-    hw_frame_context->sw_format = cap_kms->params.hdr ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12;
-    hw_frame_context->format = video_codec_context->pix_fmt;
-    hw_frame_context->device_ref = device_ctx;
-    hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
-
-    //hw_frame_context->initial_pool_size = 20;
-
-    AVVAAPIDeviceContext *vactx =((AVHWDeviceContext*)device_ctx->data)->hwctx;
-    cap_kms->va_dpy = vactx->display;
-
-    if (av_hwframe_ctx_init(frame_context) < 0) {
-        fprintf(stderr, "Error: Failed to initialize hardware frame context "
-                        "(note: ffmpeg version needs to be > 4.0)\n");
-        av_buffer_unref(&device_ctx);
-        //av_buffer_unref(&frame_context);
-        return false;
-    }
-
-    video_codec_context->hw_device_ctx = av_buffer_ref(device_ctx);
-    video_codec_context->hw_frames_ctx = av_buffer_ref(frame_context);
-    return true;
-}
-
 static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
 
@@ -77,7 +30,7 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         return res;
     }
 
-    if(!drm_create_codec_context(cap_kms, video_codec_context)) {
+    if(!drm_create_codec_context(cap_kms->params.egl->card_path, video_codec_context, cap_kms->params.hdr, &cap_kms->va_dpy)) {
         gsr_capture_kms_vaapi_stop(cap, video_codec_context);
         return -1;
     }

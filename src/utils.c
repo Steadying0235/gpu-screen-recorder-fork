@@ -9,13 +9,6 @@
 #include <stdlib.h>
 #include <X11/Xatom.h>
 
-typedef enum {
-    X11_ROT_0    = 1 << 0,
-    X11_ROT_90   = 1 << 1,
-    X11_ROT_180  = 1 << 2,
-    X11_ROT_270  = 1 << 3
-} X11Rotation;
-
 double clock_get_monotonic_seconds(void) {
     struct timespec ts;
     ts.tv_sec = 0;
@@ -32,12 +25,12 @@ static const XRRModeInfo* get_mode_info(const XRRScreenResources *sr, RRMode id)
     return NULL;
 }
 
-static gsr_monitor_rotation x11_rotation_to_gsr_rotation(X11Rotation rot) {
+static gsr_monitor_rotation x11_rotation_to_gsr_rotation(int rot) {
     switch(rot) {
-        case X11_ROT_0:   return GSR_MONITOR_ROT_0;
-        case X11_ROT_90:  return GSR_MONITOR_ROT_90;
-        case X11_ROT_180: return GSR_MONITOR_ROT_180;
-        case X11_ROT_270: return GSR_MONITOR_ROT_270;
+        case RR_Rotate_0:   return GSR_MONITOR_ROT_0;
+        case RR_Rotate_90:  return GSR_MONITOR_ROT_90;
+        case RR_Rotate_180: return GSR_MONITOR_ROT_180;
+        case RR_Rotate_270: return GSR_MONITOR_ROT_270;
     }
     return GSR_MONITOR_ROT_0;
 }

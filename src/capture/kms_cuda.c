@@ -23,59 +23,6 @@ typedef struct {
 
 static void gsr_capture_kms_cuda_stop(gsr_capture *cap, AVCodecContext *video_codec_context);
 
-static bool cuda_create_codec_context(gsr_capture_kms_cuda *cap_kms, AVCodecContext *video_codec_context) {
-    CUcontext old_ctx;
-    cap_kms->cuda.cuCtxPushCurrent_v2(cap_kms->cuda.cu_ctx);
-
-    AVBufferRef *device_ctx = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_CUDA);
-    if(!device_ctx) {
-        fprintf(stderr, "Error: Failed to create hardware device context\n");
-        cap_kms->cuda.cuCtxPopCurrent_v2(&old_ctx);
-        return false;
-    }
-
-    AVHWDeviceContext *hw_device_context = (AVHWDeviceContext*)device_ctx->data;
-    AVCUDADeviceContext *cuda_device_context = (AVCUDADeviceContext*)hw_device_context->hwctx;
-    cuda_device_context->cuda_ctx = cap_kms->cuda.cu_ctx;
-    if(av_hwdevice_ctx_init(device_ctx) < 0) {
-        fprintf(stderr, "Error: Failed to create hardware device context\n");
-        av_buffer_unref(&device_ctx);
-        cap_kms->cuda.cuCtxPopCurrent_v2(&old_ctx);
-        return false;
-    }
-
-    AVBufferRef *frame_context = av_hwframe_ctx_alloc(device_ctx);
-    if(!frame_context) {
-        fprintf(stderr, "Error: Failed to create hwframe context\n");
-        av_buffer_unref(&device_ctx);
-        cap_kms->cuda.cuCtxPopCurrent_v2(&old_ctx);
-        return false;
-    }
-
-    AVHWFramesContext *hw_frame_context =
-        (AVHWFramesContext *)frame_context->data;
-    hw_frame_context->width = video_codec_context->width;
-    hw_frame_context->height = video_codec_context->height;
-    hw_frame_context->sw_format = cap_kms->params.hdr ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12;
-    hw_frame_context->format = video_codec_context->pix_fmt;
-    hw_frame_context->device_ref = device_ctx;
-    hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
-
-    if (av_hwframe_ctx_init(frame_context) < 0) {
-        fprintf(stderr, "Error: Failed to initialize hardware frame context "
-                        "(note: ffmpeg version needs to be > 4.0)\n");
-        av_buffer_unref(&device_ctx);
-        //av_buffer_unref(&frame_context);
-        cap_kms->cuda.cuCtxPopCurrent_v2(&old_ctx);
-        return false;
-    }
-
-    cap_kms->cuda_stream = cuda_device_context->stream;
-    video_codec_context->hw_device_ctx = av_buffer_ref(device_ctx);
-    video_codec_context->hw_frames_ctx = av_buffer_ref(frame_context);
-    return true;
-}
-
 static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_capture_kms_cuda *cap_kms = cap->priv;
 
@@ -92,7 +39,7 @@ static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_co
         return -1;
     }
 
-    if(!cuda_create_codec_context(cap_kms, video_codec_context)) {
+    if(!cuda_create_codec_context(cap_kms->cuda.cu_ctx, video_codec_context, &cap_kms->cuda_stream)) {
         gsr_capture_kms_cuda_stop(cap, video_codec_context);
         return -1;
     }
@@ -102,6 +49,7 @@ static int gsr_capture_kms_cuda_start(gsr_capture *cap, AVCodecContext *video_co
         .cuda_graphics_resources = cap_kms->cuda_graphics_resources,
         .mapped_arrays = cap_kms->mapped_arrays
     };
+
     if(!gsr_capture_base_setup_cuda_textures(&cap_kms->base, frame, &cuda_context, cap_kms->params.egl, cap_kms->params.color_range, GSR_SOURCE_COLOR_RGB, cap_kms->params.hdr)) {
         gsr_capture_kms_cuda_stop(cap, video_codec_context);
         return -1;

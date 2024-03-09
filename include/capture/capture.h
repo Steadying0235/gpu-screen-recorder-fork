@@ -12,6 +12,8 @@ typedef struct gsr_cuda gsr_cuda;
 typedef struct AVFrame AVFrame;
 typedef struct CUgraphicsResource_st *CUgraphicsResource;
 typedef struct CUarray_st *CUarray;
+typedef struct CUctx_st *CUcontext;
+typedef struct CUstream_st *CUstream;
 
 typedef struct gsr_capture gsr_capture;
 
@@ -57,5 +59,8 @@ void gsr_capture_destroy(gsr_capture *cap, AVCodecContext *video_codec_context);
 bool gsr_capture_base_setup_vaapi_textures(gsr_capture_base *self, AVFrame *frame, gsr_egl *egl, VADisplay va_dpy, VADRMPRIMESurfaceDescriptor *prime, gsr_color_range color_range);
 bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *base, AVFrame *frame, gsr_cuda_context *cuda_context, gsr_egl *egl, gsr_color_range color_range, gsr_source_color source_color, bool hdr);
 void gsr_capture_base_stop(gsr_capture_base *self, gsr_egl *egl);
+
+bool drm_create_codec_context(const char *card_path, AVCodecContext *video_codec_context, bool hdr, VADisplay *va_dpy);
+bool cuda_create_codec_context(CUcontext cu_ctx, AVCodecContext *video_codec_context, CUstream *cuda_stream);
 
 #endif /* GSR_CAPTURE_CAPTURE_H */

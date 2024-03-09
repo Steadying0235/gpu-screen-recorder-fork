@@ -212,7 +212,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
                 //fprintf(stderr, "No permission:(\n");
             }
             cap_free(kms_server_cap);
-        } else {
+        } else if(!inside_flatpak) {
             if(errno == ENODATA)
                 fprintf(stderr, "gsr info: gsr_kms_client_init: gsr-kms-server is missing sys_admin cap and will require root authentication. To bypass this automatically, run: sudo setcap cap_sys_admin+ep '%s'\n", server_filepath);
             else

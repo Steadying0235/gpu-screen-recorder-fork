@@ -135,51 +135,6 @@ static bool gsr_capture_nvfbc_load_library(gsr_capture *cap) {
     return true;
 }
 
-static bool ffmpeg_create_cuda_contexts(gsr_capture_nvfbc *cap_nvfbc, AVCodecContext *video_codec_context) {
-    AVBufferRef *device_ctx = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_CUDA);
-    if(!device_ctx) {
-        fprintf(stderr, "gsr error: cuda_create_codec_context failed: failed to create hardware device context\n");
-        return false;
-    }
-
-    AVHWDeviceContext *hw_device_context = (AVHWDeviceContext*)device_ctx->data;
-    AVCUDADeviceContext *cuda_device_context = (AVCUDADeviceContext*)hw_device_context->hwctx;
-    cuda_device_context->cuda_ctx = cap_nvfbc->cuda.cu_ctx;
-    if(av_hwdevice_ctx_init(device_ctx) < 0) {
-        fprintf(stderr, "gsr error: cuda_create_codec_context failed: failed to create hardware device context\n");
-        av_buffer_unref(&device_ctx);
-        return false;
-    }
-
-    AVBufferRef *frame_context = av_hwframe_ctx_alloc(device_ctx);
-    if(!frame_context) {
-        fprintf(stderr, "gsr error: cuda_create_codec_context failed: failed to create hwframe context\n");
-        av_buffer_unref(&device_ctx);
-        return false;
-    }
-
-    AVHWFramesContext *hw_frame_context = (AVHWFramesContext*)frame_context->data;
-    hw_frame_context->width = video_codec_context->width;
-    hw_frame_context->height = video_codec_context->height;
-    hw_frame_context->sw_format = AV_PIX_FMT_NV12;
-    hw_frame_context->format = video_codec_context->pix_fmt;
-    hw_frame_context->device_ref = device_ctx;
-    hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
-
-    if (av_hwframe_ctx_init(frame_context) < 0) {
-        fprintf(stderr, "gsr error: cuda_create_codec_context failed: failed to initialize hardware frame context "
-                        "(note: ffmpeg version needs to be > 4.0)\n");
-        av_buffer_unref(&device_ctx);
-        //av_buffer_unref(&frame_context);
-        return false;
-    }
-
-    cap_nvfbc->cuda_stream = cuda_device_context->stream;
-    video_codec_context->hw_device_ctx = av_buffer_ref(device_ctx);
-    video_codec_context->hw_frames_ctx = av_buffer_ref(frame_context);
-    return true;
-}
-
 /* TODO: check for glx swap control extension string (GLX_EXT_swap_control, etc) */
 static void set_vertical_sync_enabled(gsr_egl *egl, int enabled) {
     int result = 0;
@@ -352,7 +307,7 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
 
-    if(!ffmpeg_create_cuda_contexts(cap_nvfbc, video_codec_context))
+    if(!cuda_create_codec_context(cap_nvfbc->cuda.cu_ctx, video_codec_context, &cap_nvfbc->cuda_stream))
         goto error_cleanup;
 
     gsr_cuda_context cuda_context = {
@@ -360,6 +315,7 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
         .cuda_graphics_resources = cap_nvfbc->cuda_graphics_resources,
         .mapped_arrays = cap_nvfbc->mapped_arrays
     };
+
     // TODO: Remove this, it creates shit we dont need
     if(!gsr_capture_base_setup_cuda_textures(&cap_nvfbc->base, frame, &cuda_context, cap_nvfbc->params.egl, cap_nvfbc->params.color_range, GSR_SOURCE_COLOR_BGR, cap_nvfbc->params.hdr)) {
         goto error_cleanup;

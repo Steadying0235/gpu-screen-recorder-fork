@@ -838,6 +838,7 @@ static void usage_full() {
     fprintf(stderr, "        Forcefully set to 'h264' if the file container type is 'flv'.\n");
     fprintf(stderr, "        Forcefully set to 'hevc' on AMD/intel if video codec is 'h264' and if the file container type is 'mkv'.\n");
     fprintf(stderr, "        'hevc_hdr' and 'av1_hdr' option is not available on X11.\n");
+    fprintf(stderr, "        Note: hdr metadata is not included in the video when recording with 'hevc_hdr'/'av1_hdr' because of bugs in AMD, Intel and NVIDIA drivers (amazin', they are bugged).\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'.\n");
     fprintf(stderr, "        'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
@@ -1537,11 +1538,11 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
             case GSR_GPU_VENDOR_AMD:
             case GSR_GPU_VENDOR_INTEL: {
                 gsr_capture_xcomposite_vaapi_params xcomposite_params;
-                xcomposite_params.egl = &egl;
-                xcomposite_params.window = src_window_id;
-                xcomposite_params.follow_focused = follow_focused;
-                xcomposite_params.region_size = region_size;
-                xcomposite_params.color_range = color_range;
+                xcomposite_params.base.egl = &egl;
+                xcomposite_params.base.window = src_window_id;
+                xcomposite_params.base.follow_focused = follow_focused;
+                xcomposite_params.base.region_size = region_size;
+                xcomposite_params.base.color_range = color_range;
                 capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
                 if(!capture)
                     _exit(1);
@@ -1549,10 +1550,10 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
             }
             case GSR_GPU_VENDOR_NVIDIA: {
                 gsr_capture_xcomposite_cuda_params xcomposite_params;
-                xcomposite_params.egl = &egl;
-                xcomposite_params.window = src_window_id;
-                xcomposite_params.follow_focused = follow_focused;
-                xcomposite_params.region_size = region_size;
+                xcomposite_params.base.egl = &egl;
+                xcomposite_params.base.window = src_window_id;
+                xcomposite_params.base.follow_focused = follow_focused;
+                xcomposite_params.base.region_size = region_size;
                 xcomposite_params.overclock = overclock;
                 capture = gsr_capture_xcomposite_cuda_create(&xcomposite_params);
                 if(!capture)

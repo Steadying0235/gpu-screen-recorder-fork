@@ -52,7 +52,7 @@ If you install GPU Screen Recorder flatpak, which is the gtk gui version then yo
 libglvnd (which provides libgl and libegl)\
 mesa\
 ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)\
-x11 (libx11, libxcomposite, libxrandr)\
+x11 (libx11, libxcomposite, libxrandr, xfixes)\
 libpulse\
 vaapi (libva, libva-mesa-driver)\
 libdrm\
@@ -62,7 +62,7 @@ wayland-client
 libglvnd (which provides libgl and libegl)\
 mesa\
 ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)\
-x11 (libx11, libxcomposite, libxrandr)\
+x11 (libx11, libxcomposite, libxrandr, xfixes)\
 libpulse\
 vaapi (libva, libva-intel-driver)\
 libdrm\
@@ -71,7 +71,7 @@ wayland-client
 ## NVIDIA
 libglvnd (which provides libgl and libegl)\
 ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)\
-x11 (libx11, libxcomposite, libxrandr)\
+x11 (libx11, libxcomposite, libxrandr, xfixes)\
 libpulse\
 cuda runtime (libcuda.so.1) (libnvidia-compute)\
 nvenc (libnvidia-encode)\
@@ -163,6 +163,5 @@ If you want to donate you can donate via bitcoin or monero.
 
 # TODO
 * Dynamically change bitrate/resolution to match desired fps. This would be helpful when streaming for example, where the encode output speed also depends on upload speed to the streaming service.
-* Show cursor when recording a window. Currently the cursor is only visible when recording a monitor.
 * Implement opengl injection to capture texture. This fixes VRR without having to use NvFBC direct capture.
 * Always use direct capture with NvFBC once the capture issue in mpv fullscreen has been resolved (maybe detect if direct capture fails in nvfbc and switch to non-direct recording. NvFBC says if direct capture fails).

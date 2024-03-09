@@ -20,7 +20,7 @@ build_gsr_kms_server() {
 }
 
 build_gsr() {
-    dependencies="libavcodec libavformat libavutil x11 xcomposite xrandr libpulse libswresample libavfilter libva libcap libdrm wayland-egl wayland-client"
+    dependencies="libavcodec libavformat libavutil x11 xcomposite xrandr xfixes libpulse libswresample libavfilter libva libcap libdrm wayland-egl wayland-client"
     includes="$(pkg-config --cflags $dependencies)"
     libs="$(pkg-config --libs $dependencies) -ldl -pthread -lm"
     $CC -c src/capture/capture.c $opts $includes
@@ -41,10 +41,11 @@ build_gsr() {
     $CC -c src/color_conversion.c $opts $includes
     $CC -c src/utils.c $opts $includes
     $CC -c src/library_loader.c $opts $includes
+    $CC -c src/cursor.c $opts $includes
     $CXX -c src/sound.cpp $opts $includes
     $CXX -c src/main.cpp $opts $includes
     $CXX -o gpu-screen-recorder capture.o nvfbc.o kms_client.o egl.o cuda.o xnvctrl.o overclock.o window_texture.o shader.o \
-        color_conversion.o utils.o library_loader.o xcomposite.o xcomposite_cuda.o xcomposite_vaapi.o kms_vaapi.o kms_cuda.o kms.o sound.o main.o $libs $opts
+        color_conversion.o utils.o library_loader.o cursor.o xcomposite.o xcomposite_cuda.o xcomposite_vaapi.o kms_vaapi.o kms_cuda.o kms.o sound.o main.o $libs $opts
 }
 
 build_gsr_kms_server

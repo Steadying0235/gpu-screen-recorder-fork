@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <libavutil/frame.h>
+#include <libavcodec/avcodec.h>
 
 typedef struct {
     gsr_capture_xcomposite xcomposite;
@@ -70,6 +71,13 @@ static void gsr_capture_xcomposite_unload_cuda_graphics(gsr_capture_xcomposite_c
 
 static void gsr_capture_xcomposite_cuda_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {
     gsr_capture_xcomposite_cuda *cap_xcomp = cap->priv;
+
+    if(video_codec_context->hw_device_ctx)
+        av_buffer_unref(&video_codec_context->hw_device_ctx);
+    if(video_codec_context->hw_frames_ctx)
+        av_buffer_unref(&video_codec_context->hw_frames_ctx);
+
+    gsr_capture_base_stop(&cap_xcomp->xcomposite.base, cap_xcomp->xcomposite.params.egl);
     gsr_capture_xcomposite_stop(&cap_xcomp->xcomposite, video_codec_context);
     gsr_capture_xcomposite_unload_cuda_graphics(cap_xcomp);
     gsr_cuda_unload(&cap_xcomp->cuda);

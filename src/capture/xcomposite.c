@@ -57,8 +57,8 @@ int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *v
     /* TODO: Do these in tick, and allow error if follow_focused */
 
     XWindowAttributes attr;
-    if(!XGetWindowAttributes(self->params.egl->x11.dpy, self->params.window, &attr) && !self->params.follow_focused) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_start failed: invalid window id: %lu\n", self->params.window);
+    if(!XGetWindowAttributes(self->params.egl->x11.dpy, self->window, &attr) && !self->params.follow_focused) {
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_start failed: invalid window id: %lu\n", self->window);
         return -1;
     }
 
@@ -69,7 +69,7 @@ int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *v
         XSelectInput(self->params.egl->x11.dpy, DefaultRootWindow(self->params.egl->x11.dpy), PropertyChangeMask);
 
     // TODO: Get select and add these on top of it and then restore at the end. Also do the same in other xcomposite
-    XSelectInput(self->params.egl->x11.dpy, self->params.window, StructureNotifyMask | ExposureMask);
+    XSelectInput(self->params.egl->x11.dpy, self->window, StructureNotifyMask | ExposureMask);
 
     if(!self->params.egl->eglExportDMABUFImageQueryMESA) {
         fprintf(stderr, "gsr error: gsr_capture_xcomposite_start: could not find eglExportDMABUFImageQueryMESA\n");
@@ -83,8 +83,13 @@ int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *v
 
     /* Disable vsync */
     self->params.egl->eglSwapInterval(self->params.egl->egl_display, 0);
-    if(window_texture_init(&self->window_texture, self->params.egl->x11.dpy, self->params.window, self->params.egl) != 0 && !self->params.follow_focused) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_start: failed to get window texture for window %ld\n", self->params.window);
+    if(window_texture_init(&self->window_texture, self->params.egl->x11.dpy, self->window, self->params.egl) != 0 && !self->params.follow_focused) {
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_start: failed to get window texture for window %ld\n", self->window);
+        return -1;
+    }
+
+    if(gsr_cursor_init(&self->cursor, self->params.egl, self->params.egl->x11.dpy) != 0) {
+        gsr_capture_xcomposite_stop(self, video_codec_context);
         return -1;
     }
 
@@ -115,14 +120,9 @@ int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *v
 }
 
 void gsr_capture_xcomposite_stop(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context) {
+    (void)video_codec_context;
     window_texture_deinit(&self->window_texture);
-
-    if(video_codec_context->hw_device_ctx)
-        av_buffer_unref(&video_codec_context->hw_device_ctx);
-    if(video_codec_context->hw_frames_ctx)
-        av_buffer_unref(&video_codec_context->hw_frames_ctx);
-
-    gsr_capture_base_stop(&self->base, self->params.egl);
+    gsr_cursor_deinit(&self->cursor);
 }
 
 void gsr_capture_xcomposite_tick(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context) {
@@ -168,6 +168,8 @@ void gsr_capture_xcomposite_tick(gsr_capture_xcomposite *self, AVCodecContext *v
                 break;
             }
         }
+
+        gsr_cursor_update(&self->cursor, &self->xev);
     }
 
     if(self->params.follow_focused && !self->follow_focused_initialized) {
@@ -194,17 +196,6 @@ void gsr_capture_xcomposite_tick(gsr_capture_xcomposite *self, AVCodecContext *v
 
             window_texture_deinit(&self->window_texture);
             window_texture_init(&self->window_texture, self->params.egl->x11.dpy, self->window, self->params.egl); // TODO: Do not do the below window_texture_on_resize after this
-            
-            self->texture_size.x = 0;
-            self->texture_size.y = 0;
-
-            self->params.egl->glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&self->window_texture));
-            self->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &self->texture_size.x);
-            self->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &self->texture_size.y);
-            self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
-
-            self->texture_size.x = min_int(video_codec_context->width, max_int(2, even_number_ceil(self->texture_size.x)));
-            self->texture_size.y = min_int(video_codec_context->height, max_int(2, even_number_ceil(self->texture_size.y)));
         }
     }
 
@@ -252,10 +243,50 @@ int gsr_capture_xcomposite_capture(gsr_capture_xcomposite *self, AVFrame *frame)
     const int target_x = max_int(0, frame->width / 2 - self->texture_size.x / 2);
     const int target_y = max_int(0, frame->height / 2 - self->texture_size.y / 2);
 
+    // TODO: Can we do this a better way than to call it every capture?
+    gsr_cursor_tick(&self->cursor, self->window);
+
+    const vec2i cursor_pos = {
+        target_x + self->cursor.position.x - self->cursor.hotspot.x,
+        target_y + self->cursor.position.y - self->cursor.hotspot.y
+    };
+
+    const bool cursor_completely_inside_window =
+        cursor_pos.x >= target_x &&
+        cursor_pos.x <= target_x + self->texture_size.x &&
+        cursor_pos.y >= target_y &&
+        cursor_pos.y <= target_y + self->texture_size.x;
+
+    const bool cursor_inside_window =
+        cursor_pos.x + self->cursor.size.x >= target_x &&
+        cursor_pos.x <= target_x + self->texture_size.x &&
+        cursor_pos.y + self->cursor.size.y >= target_y &&
+        cursor_pos.y <= target_y + self->texture_size.x;
+
+    if(self->clear_next_frame) {
+        self->clear_next_frame = false;
+        gsr_color_conversion_clear(&self->base.color_conversion);
+    }
+
+    /*
+        We dont draw the cursor if it's outside the window but if it's partially inside the window then the cursor area that is outside the window
+        will not get overdrawn the next frame causing a cursor trail to be visible since we dont clear the background.
+        To fix this we detect if the cursor is partially inside the window and clear the background only in that case.
+    */
+    if(!cursor_completely_inside_window && cursor_inside_window)
+        self->clear_next_frame = true;
+
     gsr_color_conversion_draw(&self->base.color_conversion, window_texture_get_opengl_texture_id(&self->window_texture),
         (vec2i){target_x, target_y}, self->texture_size,
         (vec2i){0, 0}, self->texture_size,
         0.0f, false);
+
+    if(cursor_inside_window) {
+        gsr_color_conversion_draw(&self->base.color_conversion, self->cursor.texture_id,
+            cursor_pos, self->cursor.size,
+            (vec2i){0, 0}, self->cursor.size,
+            0.0f, false);
+    }
 
     self->params.egl->eglSwapBuffers(self->params.egl->egl_display, self->params.egl->egl_surface);
     //self->params.egl->glFlush();

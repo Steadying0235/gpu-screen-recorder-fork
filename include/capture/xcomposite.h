@@ -6,6 +6,7 @@
 #include "../vec2.h"
 #include "../color_conversion.h"
 #include "../window_texture.h"
+#include "../cursor.h"
 
 typedef struct {
     gsr_egl *egl;
@@ -33,6 +34,9 @@ typedef struct {
     WindowTexture window_texture;
 
     Atom net_active_window_atom;
+
+    gsr_cursor cursor;
+    bool clear_next_frame;
 } gsr_capture_xcomposite;
 
 void gsr_capture_xcomposite_init(gsr_capture_xcomposite *self, const gsr_capture_xcomposite_params *params);

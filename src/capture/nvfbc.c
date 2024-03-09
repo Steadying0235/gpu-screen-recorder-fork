@@ -397,8 +397,8 @@ static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame) {
     cap_nvfbc->params.egl->glClear(0);
 
     gsr_color_conversion_draw(&cap_nvfbc->base.color_conversion, cap_nvfbc->setup_params.dwTextures[grab_params.dwTextureIndex],
-        (vec2i){0, 0}, (vec2i){cap_nvfbc->base.video_codec_context->width, cap_nvfbc->base.video_codec_context->height},
-        (vec2i){0, 0}, (vec2i){cap_nvfbc->base.video_codec_context->width, cap_nvfbc->base.video_codec_context->height},
+        (vec2i){0, 0}, (vec2i){frame->width, frame->height},
+        (vec2i){0, 0}, (vec2i){frame->width, frame->height},
         0.0f, false);
 
     cap_nvfbc->params.egl->glXSwapBuffers(cap_nvfbc->params.egl->x11.dpy, cap_nvfbc->params.egl->x11.window);
@@ -416,11 +416,11 @@ static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame) {
         memcpy_struct.dstMemoryType = CU_MEMORYTYPE_DEVICE;
 
         memcpy_struct.srcArray = cap_nvfbc->mapped_arrays[i];
-        memcpy_struct.srcPitch = cap_nvfbc->base.video_codec_context->width / div[i];
+        memcpy_struct.srcPitch = frame->width / div[i];
         memcpy_struct.dstDevice = (CUdeviceptr)frame->data[i];
         memcpy_struct.dstPitch = frame->linesize[i];
-        memcpy_struct.WidthInBytes = cap_nvfbc->base.video_codec_context->width * (cap_nvfbc->params.hdr ? 2 : 1);
-        memcpy_struct.Height = cap_nvfbc->base.video_codec_context->height / div[i];
+        memcpy_struct.WidthInBytes = frame->width * (cap_nvfbc->params.hdr ? 2 : 1);
+        memcpy_struct.Height = frame->height / div[i];
         // TODO: Remove this copy if possible
         cap_nvfbc->cuda.cuMemcpy2DAsync_v2(&memcpy_struct, cap_nvfbc->cuda_stream);
     }

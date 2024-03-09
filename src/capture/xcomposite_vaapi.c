@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <va/va.h>
 #include <va/va_drmcommon.h>
+#include <libavcodec/avcodec.h>
 
 typedef struct {
     gsr_capture_xcomposite xcomposite;
@@ -62,6 +63,12 @@ static void gsr_capture_xcomposite_vaapi_stop(gsr_capture *cap, AVCodecContext *
         }
     }
 
+    if(video_codec_context->hw_device_ctx)
+        av_buffer_unref(&video_codec_context->hw_device_ctx);
+    if(video_codec_context->hw_frames_ctx)
+        av_buffer_unref(&video_codec_context->hw_frames_ctx);
+
+    gsr_capture_base_stop(&cap_xcomp->xcomposite.base, cap_xcomp->xcomposite.params.egl);
     gsr_capture_xcomposite_stop(&cap_xcomp->xcomposite, video_codec_context);
 }
 

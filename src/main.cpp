@@ -1381,7 +1381,7 @@ static void list_supported_video_codecs() {
     if(wayland || egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA) {
         // TODO: Allow specifying another card, and in other places
         if(!gsr_get_valid_card_path(&egl, card_path)) {
-            fprintf(stderr, "Error: no /dev/dri/cardX device found. If you are using prime-run then run without it\n");
+            fprintf(stderr, "Error: no /dev/dri/cardX device found. If you are running GPU Screen Recorder with prime-run then try running without it\n");
             _exit(2);
         }
     }
@@ -1878,7 +1878,7 @@ int main(int argc, char **argv) {
     if(wayland || egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA) {
         // TODO: Allow specifying another card, and in other places
         if(!gsr_get_valid_card_path(&egl, egl.card_path)) {
-            fprintf(stderr, "Error: no /dev/dri/cardX device found. If you are using prime-run then run without it\n");
+            fprintf(stderr, "Error: no /dev/dri/cardX device found. If you are running GPU Screen Recorder with prime-run then try running without it\n");
             _exit(2);
         }
     }

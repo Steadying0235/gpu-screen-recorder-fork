@@ -370,47 +370,59 @@ bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info) {
     return supported;
 }
 
-bool gsr_get_valid_card_path(char *output) {
-    for(int i = 0; i < 10; ++i) {
-        drmVersion *ver = NULL;
-        drmModePlaneResPtr planes = NULL;
-        bool found_screen_card = false;
+static bool try_card_has_valid_plane(const char *card_path) {
+    drmVersion *ver = NULL;
+    drmModePlaneResPtr planes = NULL;
+    bool found_screen_card = false;
 
-        sprintf(output, DRM_DEV_NAME, DRM_DIR_NAME, i);
-        int fd = open(output, O_RDONLY);
-        if(fd == -1)
+    int fd = open(card_path, O_RDONLY);
+    if(fd == -1)
+        return false;
+
+    ver = drmGetVersion(fd);
+    if(!ver || strstr(ver->name, "nouveau"))
+        goto next;
+
+    drmSetClientCap(fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1);
+
+    planes = drmModeGetPlaneResources(fd);
+    if(!planes)
+        goto next;
+
+    for(uint32_t j = 0; j < planes->count_planes; ++j) {
+        drmModePlanePtr plane = drmModeGetPlane(fd, planes->planes[j]);
+        if(!plane)
             continue;
 
-        ver = drmGetVersion(fd);
-        if(!ver || strstr(ver->name, "nouveau"))
-            goto next;
+        if(plane->fb_id)
+            found_screen_card = true;
 
-        drmSetClientCap(fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1);
-
-        planes = drmModeGetPlaneResources(fd);
-        if(!planes)
-            goto next;
-
-        for(uint32_t j = 0; j < planes->count_planes; ++j) {
-            drmModePlanePtr plane = drmModeGetPlane(fd, planes->planes[j]);
-            if(!plane)
-                continue;
-
-            if(plane->fb_id)
-                found_screen_card = true;
-
-            drmModeFreePlane(plane);
-            if(found_screen_card)
-                break;
-        }
-
-        next:
-        if(planes)
-            drmModeFreePlaneResources(planes);
-        if(ver)
-            drmFreeVersion(ver);
-        close(fd);
+        drmModeFreePlane(plane);
         if(found_screen_card)
+            break;
+    }
+
+    next:
+    if(planes)
+        drmModeFreePlaneResources(planes);
+    if(ver)
+        drmFreeVersion(ver);
+    close(fd);
+    if(found_screen_card)
+        return true;
+
+    return false;
+}
+
+bool gsr_get_valid_card_path(gsr_egl *egl, char *output) {
+    if(egl->dri_card_path) {
+        strncpy(output, egl->dri_card_path, 128);
+        return try_card_has_valid_plane(output);
+    }
+
+    for(int i = 0; i < 10; ++i) {
+        snprintf(output, 128, DRM_DEV_NAME, DRM_DIR_NAME, i);
+        if(try_card_has_valid_plane(output))
             return true;
     }
     return false;

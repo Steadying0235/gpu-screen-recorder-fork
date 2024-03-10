@@ -155,6 +155,9 @@ This is an issue on some intel integrated gpus on wayland caused by power saving
 This can happen if your video player is missing the H264/HEVC video codecs. Either install the codecs or use mpv.
 ## I get stutter in the video
 Try recording to an SSD and make sure it's not using NTFS file system. Also record in variable framerate format.
+## I get a black screen when recording
+This can happen if you use software such as prime-run to run GPU Screen Recorder. Such software should not be used to run GPU Screen Recorder.
+GPU Screen Recorder needs to run on the same GPU that you use to display your monitors graphics to work.
 
 # Donations
 If you want to donate you can donate via bitcoin or monero.

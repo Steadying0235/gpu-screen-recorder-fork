@@ -441,7 +441,7 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
         //codec_context->compression_level = 2;
     }
 
-    av_opt_set(codec_context->priv_data, "bsf", "hevc_metadata=colour_primaries=9:transfer_characteristics=16:matrix_coefficients=9", 0);
+    //av_opt_set(codec_context->priv_data, "bsf", "hevc_metadata=colour_primaries=9:transfer_characteristics=16:matrix_coefficients=9", 0);
 
     //codec_context->rc_max_rate = codec_context->bit_rate;
     //codec_context->rc_min_rate = codec_context->bit_rate;
@@ -1376,16 +1376,12 @@ static void list_supported_video_codecs() {
         _exit(1);
     }
 
-    gsr_egl_unload(&egl);
-    if(dpy)
-        XCloseDisplay(dpy);
-
     char card_path[128];
     card_path[0] = '\0';
     if(wayland || egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA) {
         // TODO: Allow specifying another card, and in other places
-        if(!gsr_get_valid_card_path(card_path)) {
-            fprintf(stderr, "Error: no /dev/dri/cardX device found\n");
+        if(!gsr_get_valid_card_path(&egl, card_path)) {
+            fprintf(stderr, "Error: no /dev/dri/cardX device found. If you are using prime-run then run without it\n");
             _exit(2);
         }
     }
@@ -1401,6 +1397,10 @@ static void list_supported_video_codecs() {
         puts("av1");
 
     fflush(stdout);
+
+    gsr_egl_unload(&egl);
+    if(dpy)
+        XCloseDisplay(dpy);
 }
 
 static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_gpu_info gpu_inf, gsr_egl &egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range) {
@@ -1877,8 +1877,8 @@ int main(int argc, char **argv) {
     egl.card_path[0] = '\0';
     if(wayland || egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA) {
         // TODO: Allow specifying another card, and in other places
-        if(!gsr_get_valid_card_path(egl.card_path)) {
-            fprintf(stderr, "Error: no /dev/dri/cardX device found\n");
+        if(!gsr_get_valid_card_path(&egl, egl.card_path)) {
+            fprintf(stderr, "Error: no /dev/dri/cardX device found. If you are using prime-run then run without it\n");
             _exit(2);
         }
     }

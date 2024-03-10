@@ -355,6 +355,8 @@ static bool gsr_egl_proc_load_egl(gsr_egl *self) {
     self->eglExportDMABUFImageQueryMESA = (FUNC_eglExportDMABUFImageQueryMESA)self->eglGetProcAddress("eglExportDMABUFImageQueryMESA");
     self->eglExportDMABUFImageMESA = (FUNC_eglExportDMABUFImageMESA)self->eglGetProcAddress("eglExportDMABUFImageMESA");
     self->glEGLImageTargetTexture2DOES = (FUNC_glEGLImageTargetTexture2DOES)self->eglGetProcAddress("glEGLImageTargetTexture2DOES");
+    self->eglQueryDisplayAttribEXT = (FUNC_eglQueryDisplayAttribEXT)self->eglGetProcAddress("eglQueryDisplayAttribEXT");
+    self->eglQueryDeviceStringEXT = (FUNC_eglQueryDeviceStringEXT)self->eglGetProcAddress("eglQueryDeviceStringEXT");
 
     if(!self->glEGLImageTargetTexture2DOES) {
         fprintf(stderr, "gsr error: gsr_egl_load failed: could not find glEGLImageTargetTexture2DOES\n");
@@ -521,9 +523,16 @@ bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland, bool is_monitor_cap
     if(!gl_get_gpu_info(self, &self->gpu_info))
         goto fail;
 
+    if(self->eglQueryDisplayAttribEXT && self->eglQueryDeviceStringEXT) {
+        intptr_t device = 0;
+        if(self->eglQueryDisplayAttribEXT(self->egl_display, EGL_DEVICE_EXT, &device) && device)
+            self->dri_card_path = self->eglQueryDeviceStringEXT((void*)device, EGL_DRM_DEVICE_FILE_EXT);
+    }
+
     /* Nvfbc requires glx */
     if(!wayland && is_monitor_capture && self->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA) {
         self->context_type = GSR_GL_CONTEXT_TYPE_GLX;
+        self->dri_card_path = NULL;
         if(!gsr_egl_switch_to_glx_context(self))
             goto fail;
     }

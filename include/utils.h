@@ -37,7 +37,7 @@ gsr_monitor_rotation drm_monitor_get_display_server_rotation(const gsr_egl *egl,
 bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info);
 
 /* |output| should be at least 128 bytes in size */
-bool gsr_get_valid_card_path(char *output);
+bool gsr_get_valid_card_path(gsr_egl *egl, char *output);
 /* |render_path| should be at least 128 bytes in size */
 bool gsr_card_path_get_render_path(const char *card_path, char *render_path);
 

@@ -68,6 +68,8 @@ typedef void(*__GLXextFuncPtr)(void);
 #define EGL_CONTEXT_PRIORITY_HIGH_IMG           0x3101
 #define EGL_CONTEXT_PRIORITY_MEDIUM_IMG         0x3102
 #define EGL_CONTEXT_PRIORITY_LOW_IMG            0x3103
+#define EGL_DEVICE_EXT                          0x322C
+#define EGL_DRM_DEVICE_FILE_EXT                 0x3233
 
 #define GL_FLOAT                                0x1406
 #define GL_FALSE                                0
@@ -127,6 +129,8 @@ typedef void (*FUNC_glXSwapIntervalEXT)(Display * dpy, GLXDrawable drawable, int
 typedef int (*FUNC_glXSwapIntervalMESA)(unsigned int interval);
 typedef int (*FUNC_glXSwapIntervalSGI)(int interval);
 typedef void (*GLDEBUGPROC)(unsigned int source, unsigned int type, unsigned int id, unsigned int severity, int length, const char *message, const void *userParam);
+typedef int (*FUNC_eglQueryDisplayAttribEXT)(EGLDisplay dpy, int32_t attribute, intptr_t *value);
+typedef const char* (*FUNC_eglQueryDeviceStringEXT)(void *device, int32_t name);
 
 #define GSR_MAX_OUTPUTS 32
 
@@ -170,6 +174,7 @@ struct gsr_egl {
     EGLDisplay egl_display;
     EGLSurface egl_surface;
     EGLContext egl_context;
+    const char *dri_card_path;
 
     void *glx_context;
     void *glx_fb_config;
@@ -200,6 +205,8 @@ struct gsr_egl {
     FUNC_eglExportDMABUFImageQueryMESA eglExportDMABUFImageQueryMESA;
     FUNC_eglExportDMABUFImageMESA eglExportDMABUFImageMESA;
     FUNC_glEGLImageTargetTexture2DOES glEGLImageTargetTexture2DOES;
+    FUNC_eglQueryDisplayAttribEXT eglQueryDisplayAttribEXT;
+    FUNC_eglQueryDeviceStringEXT eglQueryDeviceStringEXT;
 
     __GLXextFuncPtr (*glXGetProcAddress)(const unsigned char *procName);
     GLXFBConfig* (*glXChooseFBConfig)(Display *dpy, int screen, const int *attribList, int *nitems);

@@ -16,7 +16,6 @@ typedef enum {
 } gsr_source_color;
 
 typedef enum {
-    GSR_DESTINATION_COLOR_BGR, // TODO: remove
     GSR_DESTINATION_COLOR_NV12, /* YUV420, BT709, 8-bit */
     GSR_DESTINATION_COLOR_P010  /* YUV420, BT2020, 10-bit */
 } gsr_destination_color;
@@ -36,12 +35,13 @@ typedef struct {
     int num_destination_textures;
 
     gsr_color_range color_range;
+    bool load_external_image_shader;
 } gsr_color_conversion_params;
 
 typedef struct {
     gsr_color_conversion_params params;
-    gsr_color_uniforms uniforms[2];
-    gsr_shader shaders[2];
+    gsr_color_uniforms uniforms[4];
+    gsr_shader shaders[4];
 
     unsigned int framebuffers[2];
 

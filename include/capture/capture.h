@@ -63,6 +63,6 @@ bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *self, AVFrame *frame
 void gsr_capture_base_stop(gsr_capture_base *self);
 
 bool drm_create_codec_context(const char *card_path, AVCodecContext *video_codec_context, int width, int height, bool hdr, VADisplay *va_dpy);
-bool cuda_create_codec_context(CUcontext cu_ctx, AVCodecContext *video_codec_context, int width, int height, CUstream *cuda_stream);
+bool cuda_create_codec_context(CUcontext cu_ctx, AVCodecContext *video_codec_context, int width, int height, bool hdr, CUstream *cuda_stream);
 
 #endif /* GSR_CAPTURE_CAPTURE_H */

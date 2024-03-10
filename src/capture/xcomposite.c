@@ -117,6 +117,7 @@ int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *v
     frame->height = video_codec_context->height;
 
     self->window_resize_timer = clock_get_monotonic_seconds();
+    self->clear_next_frame = true;
     return 0;
 }
 

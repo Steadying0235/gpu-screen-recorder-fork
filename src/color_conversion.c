@@ -7,7 +7,7 @@
 
 /* TODO: highp instead of mediump? */
 
-#define MAX_SHADERS 2
+#define MAX_SHADERS 4
 #define MAX_FRAMEBUFFERS 2
 
 static float abs_f(float v) {
@@ -75,83 +75,7 @@ static const char* color_format_range_get_transform_matrix(gsr_destination_color
     return NULL;
 }
 
-static int load_shader_bgr(gsr_shader *shader, gsr_egl *egl, gsr_color_uniforms *uniforms) {
-    char vertex_shader[2048];
-    snprintf(vertex_shader, sizeof(vertex_shader),
-        "#version 300 es                                   \n"
-        "in vec2 pos;                                      \n"
-        "in vec2 texcoords;                                \n"
-        "out vec2 texcoords_out;                           \n"
-        "uniform vec2 offset;                              \n"
-        "uniform float rotation;                           \n"
-        ROTATE_Z
-        "void main()                                       \n"
-        "{                                                 \n"
-        "  texcoords_out = (vec4(texcoords.x - 0.5, texcoords.y - 0.5, 0.0, 0.0) * rotate_z(rotation)).xy + vec2(0.5, 0.5);  \n"
-        "  gl_Position = vec4(offset.x, offset.y, 0.0, 0.0) + vec4(pos.x, pos.y, 0.0, 1.0);    \n"
-        "}                                                 \n");
-
-    char fragment_shader[] =
-        "#version 300 es                                                                 \n"
-        "precision mediump float;                                                        \n"
-        "in vec2 texcoords_out;                                                          \n"
-        "uniform sampler2D tex1;                                                         \n"
-        "out vec4 FragColor;                                                             \n"
-        "void main()                                                                     \n"
-        "{                                                                               \n"
-        "  FragColor = texture(tex1, texcoords_out).bgra;                                 \n"
-        "}                                                                               \n";
-
-    if(gsr_shader_init(shader, egl, vertex_shader, fragment_shader) != 0)
-        return -1;
-
-    gsr_shader_bind_attribute_location(shader, "pos", 0);
-    gsr_shader_bind_attribute_location(shader, "texcoords", 1);
-    uniforms->offset = egl->glGetUniformLocation(shader->program_id, "offset");
-    uniforms->rotation = egl->glGetUniformLocation(shader->program_id, "rotation");
-    return 0;
-}
-
-static int load_shader_bgr_external_texture(gsr_shader *shader, gsr_egl *egl, gsr_color_uniforms *uniforms) {
-    char vertex_shader[2048];
-    snprintf(vertex_shader, sizeof(vertex_shader),
-        "#version 300 es                                   \n"
-        "in vec2 pos;                                      \n"
-        "in vec2 texcoords;                                \n"
-        "out vec2 texcoords_out;                           \n"
-        "uniform vec2 offset;                              \n"
-        "uniform float rotation;                           \n"
-        ROTATE_Z
-        "void main()                                       \n"
-        "{                                                 \n"
-        "  texcoords_out = (vec4(texcoords.x - 0.5, texcoords.y - 0.5, 0.0, 0.0) * rotate_z(rotation)).xy + vec2(0.5, 0.5);  \n"
-        "  gl_Position = vec4(offset.x, offset.y, 0.0, 0.0) + vec4(pos.x, pos.y, 0.0, 1.0);    \n"
-        "}                                                 \n");
-
-    char fragment_shader[] =
-        "#version 300 es                                                                 \n"
-        "#extension GL_OES_EGL_image_external : enable                                   \n"
-        "#extension GL_OES_EGL_image_external_essl3 : require                            \n"
-        "precision mediump float;                                                        \n"
-        "in vec2 texcoords_out;                                                          \n"
-        "uniform samplerExternalOES tex1;                                                \n"
-        "out vec4 FragColor;                                                             \n"
-        "void main()                                                                     \n"
-        "{                                                                               \n"
-        "  FragColor = texture(tex1, texcoords_out).bgra;                                \n"
-        "}                                                                               \n";
-
-    if(gsr_shader_init(shader, egl, vertex_shader, fragment_shader) != 0)
-        return -1;
-
-    gsr_shader_bind_attribute_location(shader, "pos", 0);
-    gsr_shader_bind_attribute_location(shader, "texcoords", 1);
-    uniforms->offset = egl->glGetUniformLocation(shader->program_id, "offset");
-    uniforms->rotation = egl->glGetUniformLocation(shader->program_id, "rotation");
-    return 0;
-}
-
-static int load_shader_y(gsr_shader *shader, gsr_egl *egl, gsr_color_uniforms *uniforms, gsr_destination_color color_format, gsr_color_range color_range) {
+static int load_shader_y(gsr_shader *shader, gsr_egl *egl, gsr_color_uniforms *uniforms, gsr_destination_color color_format, gsr_color_range color_range, bool external_texture) {
     const char *color_transform_matrix = color_format_range_get_transform_matrix(color_format, color_range);
 
     char vertex_shader[2048];
@@ -170,19 +94,37 @@ static int load_shader_y(gsr_shader *shader, gsr_egl *egl, gsr_color_uniforms *u
         "}                                                 \n");
 
     char fragment_shader[2048];
-    snprintf(fragment_shader, sizeof(fragment_shader),
-        "#version 300 es                                                                 \n"
-        "precision mediump float;                                                        \n"
-        "in vec2 texcoords_out;                                                          \n"
-        "uniform sampler2D tex1;                                                         \n"
-        "out vec4 FragColor;                                                             \n"
-        "%s"
-        "void main()                                                                     \n"
-        "{                                                                               \n"
-        "  vec4 pixel = texture(tex1, texcoords_out);                                    \n"
-        "  FragColor.x = (RGBtoYUV * vec4(pixel.rgb, 1.0)).x;                            \n"
-        "  FragColor.w = pixel.a;                                                        \n"
-        "}                                                                               \n", color_transform_matrix);
+    if(external_texture) {
+        snprintf(fragment_shader, sizeof(fragment_shader),
+            "#version 300 es                                                                 \n"
+            "#extension GL_OES_EGL_image_external : enable                                   \n"
+            "#extension GL_OES_EGL_image_external_essl3 : require                            \n"
+            "precision mediump float;                                                        \n"
+            "in vec2 texcoords_out;                                                          \n"
+            "uniform samplerExternalOES tex1;                                                \n"
+            "out vec4 FragColor;                                                             \n"
+            "%s"
+            "void main()                                                                     \n"
+            "{                                                                               \n"
+            "  vec4 pixel = texture(tex1, texcoords_out);                                    \n"
+            "  FragColor.x = (RGBtoYUV * vec4(pixel.rgb, 1.0)).x;                            \n"
+            "  FragColor.w = pixel.a;                                                        \n"
+            "}                                                                               \n", color_transform_matrix);
+    } else {
+        snprintf(fragment_shader, sizeof(fragment_shader),
+            "#version 300 es                                                                 \n"
+            "precision mediump float;                                                        \n"
+            "in vec2 texcoords_out;                                                          \n"
+            "uniform sampler2D tex1;                                                         \n"
+            "out vec4 FragColor;                                                             \n"
+            "%s"
+            "void main()                                                                     \n"
+            "{                                                                               \n"
+            "  vec4 pixel = texture(tex1, texcoords_out);                                    \n"
+            "  FragColor.x = (RGBtoYUV * vec4(pixel.rgb, 1.0)).x;                            \n"
+            "  FragColor.w = pixel.a;                                                        \n"
+            "}                                                                               \n", color_transform_matrix);
+    }
 
     if(gsr_shader_init(shader, egl, vertex_shader, fragment_shader) != 0)
         return -1;
@@ -194,7 +136,7 @@ static int load_shader_y(gsr_shader *shader, gsr_egl *egl, gsr_color_uniforms *u
     return 0;
 }
 
-static unsigned int load_shader_uv(gsr_shader *shader, gsr_egl *egl, gsr_color_uniforms *uniforms, gsr_destination_color color_format, gsr_color_range color_range) {
+static unsigned int load_shader_uv(gsr_shader *shader, gsr_egl *egl, gsr_color_uniforms *uniforms, gsr_destination_color color_format, gsr_color_range color_range, bool external_texture) {
     const char *color_transform_matrix = color_format_range_get_transform_matrix(color_format, color_range);
 
     char vertex_shader[2048];
@@ -213,19 +155,37 @@ static unsigned int load_shader_uv(gsr_shader *shader, gsr_egl *egl, gsr_color_u
         "}                                               \n");
 
     char fragment_shader[2048];
-    snprintf(fragment_shader, sizeof(fragment_shader),
-        "#version 300 es                                                                       \n"
-        "precision mediump float;                                                              \n"
-        "in vec2 texcoords_out;                                                                \n"
-        "uniform sampler2D tex1;                                                               \n"
-        "out vec4 FragColor;                                                                   \n"
-        "%s"
-        "void main()                                                                           \n"
-        "{                                                                                     \n"
-        "  vec4 pixel = texture(tex1, texcoords_out);                                          \n"
-        "  FragColor.xy = (RGBtoYUV * vec4(pixel.rgb, 1.0)).yz;                                \n"
-        "  FragColor.w = pixel.a;                                                              \n"
-        "}                                                                                     \n", color_transform_matrix);
+    if(external_texture) {
+        snprintf(fragment_shader, sizeof(fragment_shader),
+            "#version 300 es                                                                       \n"
+            "#extension GL_OES_EGL_image_external : enable                                         \n"
+            "#extension GL_OES_EGL_image_external_essl3 : require                                  \n"
+            "precision mediump float;                                                              \n"
+            "in vec2 texcoords_out;                                                                \n"
+            "uniform samplerExternalOES tex1;                                                      \n"
+            "out vec4 FragColor;                                                                   \n"
+            "%s"
+            "void main()                                                                           \n"
+            "{                                                                                     \n"
+            "  vec4 pixel = texture(tex1, texcoords_out);                                          \n"
+            "  FragColor.xy = (RGBtoYUV * vec4(pixel.rgb, 1.0)).yz;                                \n"
+            "  FragColor.w = pixel.a;                                                              \n"
+            "}                                                                                     \n", color_transform_matrix);
+    } else {
+        snprintf(fragment_shader, sizeof(fragment_shader),
+            "#version 300 es                                                                       \n"
+            "precision mediump float;                                                              \n"
+            "in vec2 texcoords_out;                                                                \n"
+            "uniform sampler2D tex1;                                                               \n"
+            "out vec4 FragColor;                                                                   \n"
+            "%s"
+            "void main()                                                                           \n"
+            "{                                                                                     \n"
+            "  vec4 pixel = texture(tex1, texcoords_out);                                          \n"
+            "  FragColor.xy = (RGBtoYUV * vec4(pixel.rgb, 1.0)).yz;                                \n"
+            "  FragColor.w = pixel.a;                                                              \n"
+            "}                                                                                     \n", color_transform_matrix);
+    }
 
     if(gsr_shader_init(shader, egl, vertex_shader, fragment_shader) != 0)
         return -1;
@@ -294,23 +254,6 @@ int gsr_color_conversion_init(gsr_color_conversion *self, const gsr_color_conver
     self->params = *params;
 
     switch(params->destination_color) {
-        case GSR_DESTINATION_COLOR_BGR: {
-            if(self->params.num_destination_textures != 1) {
-                fprintf(stderr, "gsr error: gsr_color_conversion_init: expected 1 destination texture for destination color BGR, got %d destination texture(s)\n", self->params.num_destination_textures);
-                return -1;
-            }
-
-            if(load_shader_bgr(&self->shaders[0], self->params.egl, &self->uniforms[0]) != 0) {
-                fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load bgr shader\n");
-                goto err;
-            }
-
-            if(load_shader_bgr_external_texture(&self->shaders[1], self->params.egl, &self->uniforms[1]) != 0) {
-                fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load bgr shader (external texture)\n");
-                goto err;
-            }
-            break;
-        }
         case GSR_DESTINATION_COLOR_NV12:
         case GSR_DESTINATION_COLOR_P010: {
             if(self->params.num_destination_textures != 2) {
@@ -318,14 +261,26 @@ int gsr_color_conversion_init(gsr_color_conversion *self, const gsr_color_conver
                 return -1;
             }
 
-            if(load_shader_y(&self->shaders[0], self->params.egl, &self->uniforms[0], params->destination_color, params->color_range) != 0) {
+            if(load_shader_y(&self->shaders[0], self->params.egl, &self->uniforms[0], params->destination_color, params->color_range, false) != 0) {
                 fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load Y shader\n");
                 goto err;
             }
 
-            if(load_shader_uv(&self->shaders[1], self->params.egl, &self->uniforms[1], params->destination_color, params->color_range) != 0) {
+            if(load_shader_uv(&self->shaders[1], self->params.egl, &self->uniforms[1], params->destination_color, params->color_range, false) != 0) {
                 fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load UV shader\n");
                 goto err;
+            }
+
+            if(self->params.load_external_image_shader) {
+                if(load_shader_y(&self->shaders[2], self->params.egl, &self->uniforms[2], params->destination_color, params->color_range, true) != 0) {
+                    fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load Y shader\n");
+                    goto err;
+                }
+
+                if(load_shader_uv(&self->shaders[3], self->params.egl, &self->uniforms[3], params->destination_color, params->color_range, true) != 0) {
+                    fprintf(stderr, "gsr error: gsr_color_conversion_init: failed to load UV shader\n");
+                    goto err;
+                }
             }
             break;
         }
@@ -459,15 +414,10 @@ void gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_
         self->params.egl->glBindFramebuffer(GL_FRAMEBUFFER, self->framebuffers[0]);
         //cap_xcomp->params.egl->glClear(GL_COLOR_BUFFER_BIT); // TODO: Do this in a separate clear_ function. We want to do that when using multiple drm to create the final image (multiple monitors for example)
 
-        if(external_texture) {
-            gsr_shader_use(&self->shaders[1]);
-            self->params.egl->glUniform1f(self->uniforms[1].rotation, rotation);
-            self->params.egl->glUniform2f(self->uniforms[1].offset, pos_norm.x, pos_norm.y);
-        } else {
-            gsr_shader_use(&self->shaders[0]);
-            self->params.egl->glUniform1f(self->uniforms[0].rotation, rotation);
-            self->params.egl->glUniform2f(self->uniforms[0].offset, pos_norm.x, pos_norm.y);
-        }
+        const int shader_index = external_texture ? 2 : 0;
+        gsr_shader_use(&self->shaders[shader_index]);
+        self->params.egl->glUniform1f(self->uniforms[shader_index].rotation, rotation);
+        self->params.egl->glUniform2f(self->uniforms[shader_index].offset, pos_norm.x, pos_norm.y);
         self->params.egl->glDrawArrays(GL_TRIANGLES, 0, 6);
     }
 
@@ -475,9 +425,10 @@ void gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_
         self->params.egl->glBindFramebuffer(GL_FRAMEBUFFER, self->framebuffers[1]);
         //cap_xcomp->params.egl->glClear(GL_COLOR_BUFFER_BIT);
 
-        gsr_shader_use(&self->shaders[1]);
-        self->params.egl->glUniform1f(self->uniforms[1].rotation, rotation);
-        self->params.egl->glUniform2f(self->uniforms[1].offset, pos_norm.x, pos_norm.y);
+        const int shader_index = external_texture ? 3 : 1;
+        gsr_shader_use(&self->shaders[shader_index]);
+        self->params.egl->glUniform1f(self->uniforms[shader_index].rotation, rotation);
+        self->params.egl->glUniform2f(self->uniforms[shader_index].offset, pos_norm.x, pos_norm.y);
         self->params.egl->glDrawArrays(GL_TRIANGLES, 0, 6);
     }
 
@@ -494,9 +445,6 @@ void gsr_color_conversion_clear(gsr_color_conversion *self) {
     float color2[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 
     switch(self->params.destination_color) {
-        case GSR_DESTINATION_COLOR_BGR: {
-            break;
-        }
         case GSR_DESTINATION_COLOR_NV12:
         case GSR_DESTINATION_COLOR_P010: {
             color2[0] = 0.5f;

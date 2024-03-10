@@ -310,7 +310,7 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
 
-    if(!cuda_create_codec_context(cap_nvfbc->cuda.cu_ctx, video_codec_context, video_codec_context->width, video_codec_context->height, &cap_nvfbc->cuda_stream))
+    if(!cuda_create_codec_context(cap_nvfbc->cuda.cu_ctx, video_codec_context, video_codec_context->width, video_codec_context->height, false, &cap_nvfbc->cuda_stream))
         goto error_cleanup;
 
     gsr_cuda_context cuda_context = {

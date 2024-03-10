@@ -276,6 +276,7 @@ bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *self, AVFrame *frame
     color_conversion_params.destination_textures[0] = self->target_textures[0];
     color_conversion_params.destination_textures[1] = self->target_textures[1];
     color_conversion_params.num_destination_textures = 2;
+    color_conversion_params.load_external_image_shader = true;
 
     if(gsr_color_conversion_init(&self->color_conversion, &color_conversion_params) != 0) {
         fprintf(stderr, "gsr error: gsr_capture_kms_setup_cuda_textures: failed to create color conversion\n");
@@ -357,7 +358,7 @@ bool drm_create_codec_context(const char *card_path, AVCodecContext *video_codec
     return true;
 }
 
-bool cuda_create_codec_context(CUcontext cu_ctx, AVCodecContext *video_codec_context, int width, int height, CUstream *cuda_stream) {
+bool cuda_create_codec_context(CUcontext cu_ctx, AVCodecContext *video_codec_context, int width, int height, bool hdr, CUstream *cuda_stream) {
     AVBufferRef *device_ctx = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_CUDA);
     if(!device_ctx) {
         fprintf(stderr, "gsr error: cuda_create_codec_context failed: failed to create hardware device context\n");
@@ -383,7 +384,7 @@ bool cuda_create_codec_context(CUcontext cu_ctx, AVCodecContext *video_codec_con
     AVHWFramesContext *hw_frame_context = (AVHWFramesContext*)frame_context->data;
     hw_frame_context->width = width;
     hw_frame_context->height = height;
-    hw_frame_context->sw_format = AV_PIX_FMT_NV12;
+    hw_frame_context->sw_format = hdr ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12;
     hw_frame_context->format = video_codec_context->pix_fmt;
     hw_frame_context->device_ref = device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;

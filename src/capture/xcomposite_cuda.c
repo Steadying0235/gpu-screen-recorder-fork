@@ -32,7 +32,7 @@ static int gsr_capture_xcomposite_cuda_start(gsr_capture *cap, AVCodecContext *v
         return -1;
     }
 
-    if(!cuda_create_codec_context(cap_xcomp->cuda.cu_ctx, video_codec_context, video_codec_context->width, video_codec_context->height, &cap_xcomp->cuda_stream)) {
+    if(!cuda_create_codec_context(cap_xcomp->cuda.cu_ctx, video_codec_context, video_codec_context->width, video_codec_context->height, false, &cap_xcomp->cuda_stream)) {
         gsr_capture_xcomposite_cuda_stop(cap, video_codec_context);
         return -1;
     }

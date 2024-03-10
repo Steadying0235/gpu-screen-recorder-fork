@@ -119,18 +119,18 @@ static bool connector_get_property_by_name(int drmfd, drmModeConnectorPtr props,
 }
 
 typedef enum {
-    PLANE_PROPERTY_X         = 1 << 0,
-    PLANE_PROPERTY_Y         = 1 << 1,
-    PLANE_PROPERTY_SRC_X     = 1 << 2,
-    PLANE_PROPERTY_SRC_Y     = 1 << 3,
-    PLANE_PROPERTY_SRC_W     = 1 << 4,
-    PLANE_PROPERTY_SRC_H     = 1 << 5,
-    PLANE_PROPERTY_IS_CURSOR = 1 << 6,
+    PLANE_PROPERTY_X          = 1 << 0,
+    PLANE_PROPERTY_Y          = 1 << 1,
+    PLANE_PROPERTY_SRC_X      = 1 << 2,
+    PLANE_PROPERTY_SRC_Y      = 1 << 3,
+    PLANE_PROPERTY_SRC_W      = 1 << 4,
+    PLANE_PROPERTY_SRC_H      = 1 << 5,
+    PLANE_PROPERTY_IS_CURSOR  = 1 << 6,
+    PLANE_PROPERTY_IS_PRIMARY = 1 << 7,
 } plane_property_mask;
 
 /* Returns plane_property_mask */
-static uint32_t plane_get_properties(int drmfd, uint32_t plane_id, bool *is_cursor, int *x, int *y, int *src_x, int *src_y, int *src_w, int *src_h) {
-    *is_cursor = false;
+static uint32_t plane_get_properties(int drmfd, uint32_t plane_id, int *x, int *y, int *src_x, int *src_y, int *src_w, int *src_h) {
     *x = 0;
     *y = 0;
     *src_x = 0;
@@ -142,7 +142,7 @@ static uint32_t plane_get_properties(int drmfd, uint32_t plane_id, bool *is_curs
 
     drmModeObjectPropertiesPtr props = drmModeObjectGetProperties(drmfd, plane_id, DRM_MODE_OBJECT_PLANE);
     if(!props)
-        return false;
+        return property_mask;
 
     // TODO: Dont do this every frame
     for(uint32_t i = 0; i < props->count_props; ++i) {
@@ -173,8 +173,10 @@ static uint32_t plane_get_properties(int drmfd, uint32_t plane_id, bool *is_curs
         } else if((type & DRM_MODE_PROP_ENUM) && strcmp(prop->name, "type") == 0) {
             const uint64_t current_enum_value = props->prop_values[i];
             for(int j = 0; j < prop->count_enums; ++j) {
-                if(prop->enums[j].value == current_enum_value && strcmp(prop->enums[j].name, "Cursor") == 0) {
-                    *is_cursor = true;
+                if(prop->enums[j].value == current_enum_value && strcmp(prop->enums[j].name, "Primary") == 0) {
+                    property_mask |= PLANE_PROPERTY_IS_PRIMARY;
+                    break;
+                } else if(prop->enums[j].value == current_enum_value && strcmp(prop->enums[j].name, "Cursor") == 0) {
                     property_mask |= PLANE_PROPERTY_IS_CURSOR;
                     break;
                 }
@@ -308,39 +310,41 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
 
         const int fd_index = response->num_fds;
 
-        bool is_cursor = false;
         int x = 0, y = 0, src_x = 0, src_y = 0, src_w = 0, src_h = 0;
-        plane_get_properties(drm->drmfd, plane->plane_id, &is_cursor, &x, &y, &src_x, &src_y, &src_w, &src_h);
+        plane_property_mask property_mask = plane_get_properties(drm->drmfd, plane->plane_id, &x, &y, &src_x, &src_y, &src_w, &src_h);
+        if((property_mask & PLANE_PROPERTY_IS_PRIMARY) || (property_mask & PLANE_PROPERTY_IS_CURSOR)) {
+            const connector_crtc_pair *crtc_pair = get_connector_pair_by_crtc_id(c2crtc_map, plane->crtc_id);
+            if(crtc_pair && crtc_pair->hdr_metadata_blob_id) {
+                response->fds[fd_index].has_hdr_metadata = get_hdr_metadata(drm->drmfd, crtc_pair->hdr_metadata_blob_id, &response->fds[fd_index].hdr_metadata);
+            } else {
+                response->fds[fd_index].has_hdr_metadata = false;
+            }
 
-        const connector_crtc_pair *crtc_pair = get_connector_pair_by_crtc_id(c2crtc_map, plane->crtc_id);
-        if(crtc_pair && crtc_pair->hdr_metadata_blob_id) {
-            response->fds[fd_index].has_hdr_metadata = get_hdr_metadata(drm->drmfd, crtc_pair->hdr_metadata_blob_id, &response->fds[fd_index].hdr_metadata);
+            response->fds[fd_index].fd = fb_fd;
+            response->fds[fd_index].width = drmfb->width;
+            response->fds[fd_index].height = drmfb->height;
+            response->fds[fd_index].pitch = drmfb->pitches[0];
+            response->fds[fd_index].offset = drmfb->offsets[0];
+            response->fds[fd_index].pixel_format = drmfb->pixel_format;
+            response->fds[fd_index].modifier = drmfb->modifier;
+            response->fds[fd_index].connector_id = crtc_pair ? crtc_pair->connector_id : 0;
+            response->fds[fd_index].is_cursor = property_mask & PLANE_PROPERTY_IS_CURSOR;
+            response->fds[fd_index].is_combined_plane = false;
+            if(property_mask & PLANE_PROPERTY_IS_CURSOR) {
+                response->fds[fd_index].x = x;
+                response->fds[fd_index].y = y;
+                response->fds[fd_index].src_w = 0;
+                response->fds[fd_index].src_h = 0;
+            } else {
+                response->fds[fd_index].x = src_x;
+                response->fds[fd_index].y = src_y;
+                response->fds[fd_index].src_w = src_w;
+                response->fds[fd_index].src_h = src_h;
+            }
+            ++response->num_fds;
         } else {
-            response->fds[fd_index].has_hdr_metadata = false;
+            close(fb_fd);
         }
-
-        response->fds[fd_index].fd = fb_fd;
-        response->fds[fd_index].width = drmfb->width;
-        response->fds[fd_index].height = drmfb->height;
-        response->fds[fd_index].pitch = drmfb->pitches[0];
-        response->fds[fd_index].offset = drmfb->offsets[0];
-        response->fds[fd_index].pixel_format = drmfb->pixel_format;
-        response->fds[fd_index].modifier = drmfb->modifier;
-        response->fds[fd_index].connector_id = crtc_pair ? crtc_pair->connector_id : 0;
-        response->fds[fd_index].is_cursor = is_cursor;
-        response->fds[fd_index].is_combined_plane = false;
-        if(is_cursor) {
-            response->fds[fd_index].x = x;
-            response->fds[fd_index].y = y;
-            response->fds[fd_index].src_w = 0;
-            response->fds[fd_index].src_h = 0;
-        } else {
-            response->fds[fd_index].x = src_x;
-            response->fds[fd_index].y = src_y;
-            response->fds[fd_index].src_w = src_w;
-            response->fds[fd_index].src_h = src_h;
-        }
-        ++response->num_fds;
 
         cleanup_handles:
         drm_mode_cleanup_handles(drm->drmfd, drmfb);

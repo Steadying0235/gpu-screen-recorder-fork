@@ -1921,28 +1921,37 @@ int main(int argc, char **argv) {
         usage();
     }
 
+    bool is_livestream = false;
     const char *filename = args["-o"].value();
     if(filename) {
-        if(replay_buffer_size_secs == -1) {
-            char directory_buf[PATH_MAX];
-            strcpy(directory_buf, filename);
-            char *directory = dirname(directory_buf);
-            if(strcmp(directory, ".") != 0 && strcmp(directory, "/") != 0) {
-                if(create_directory_recursive(directory) != 0) {
-                    fprintf(stderr, "Error: failed to create directory for output file: %s\n", filename);
-                    _exit(1);
-                }
+        is_livestream = is_livestream_path(filename);
+        if(is_livestream) {
+            if(replay_buffer_size_secs != -1) {
+                fprintf(stderr, "Error: replay mode is not applicable to live streaming\n");
+                _exit(1);
             }
         } else {
-            if(!container_format) {
-                fprintf(stderr, "Error: option -c is required when using option -r\n");
-                usage();
-            }
+            if(replay_buffer_size_secs == -1) {
+                char directory_buf[PATH_MAX];
+                strcpy(directory_buf, filename);
+                char *directory = dirname(directory_buf);
+                if(strcmp(directory, ".") != 0 && strcmp(directory, "/") != 0) {
+                    if(create_directory_recursive(directory) != 0) {
+                        fprintf(stderr, "Error: failed to create directory for output file: %s\n", filename);
+                        _exit(1);
+                    }
+                }
+            } else {
+                if(!container_format) {
+                    fprintf(stderr, "Error: option -c is required when using option -r\n");
+                    usage();
+                }
 
-            struct stat buf;
-            if(stat(filename, &buf) != -1 && !S_ISDIR(buf.st_mode)) {
-                fprintf(stderr, "Error: File \"%s\" exists but it's not a directory\n", filename);
-                usage();
+                struct stat buf;
+                if(stat(filename, &buf) != -1 && !S_ISDIR(buf.st_mode)) {
+                    fprintf(stderr, "Error: File \"%s\" exists but it's not a directory\n", filename);
+                    usage();
+                }
             }
         }
     } else {
@@ -2134,7 +2143,6 @@ int main(int argc, char **argv) {
 
     gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, egl.gpu_info, egl, fps, overclock, video_codec, color_range);
 
-    const bool is_livestream = is_livestream_path(filename);
     // (Some?) livestreaming services require at least one audio track to work.
     // If not audio is provided then create one silent audio track.
     if(is_livestream && requested_audio_inputs.empty()) {

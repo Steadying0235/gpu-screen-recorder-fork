@@ -246,7 +246,8 @@ int gsr_capture_xcomposite_capture(gsr_capture_xcomposite *self, AVFrame *frame)
     const int target_y = max_int(0, frame->height / 2 - self->texture_size.y / 2);
 
     // TODO: Can we do this a better way than to call it every capture?
-    gsr_cursor_tick(&self->cursor, self->window);
+    if(self->params.record_cursor)
+        gsr_cursor_tick(&self->cursor, self->window);
 
     const vec2i cursor_pos = {
         target_x + self->cursor.position.x - self->cursor.hotspot.x,

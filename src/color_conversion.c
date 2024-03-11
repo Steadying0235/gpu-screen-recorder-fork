@@ -36,17 +36,17 @@ static float abs_f(float v) {
                             "                           0.050928,  0.429412, -0.034537, 0.000000,\n" \
                             "                           0.062745,  0.500000,  0.500000, 1.000000);"
 
-/* ITU-R BT709, full */
+/* ITU-R BT709, full, custom values: 0.2102 0.7152 0.0722 */
 /* https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.709-6-201506-I!!PDF-E.pdf */
-#define RGB_TO_NV12_FULL "const mat4 RGBtoYUV = mat4(0.212600, -0.114572,  0.500000, 0.000000,\n" \
-                         "                           0.715200, -0.385428, -0.454153, 0.000000,\n" \
-                         "                           0.072200,  0.500000, -0.045847, 0.000000,\n" \
+#define RGB_TO_NV12_FULL "const mat4 RGBtoYUV = mat4(0.210000, -0.113171,  0.500000, 0.000000,\n" \
+                         "                           0.715200, -0.385428, -0.452658, 0.000000,\n" \
+                         "                           0.072200,  0.500000, -0.045696, 0.000000,\n" \
                          "                           0.000000,  0.500000,  0.500000, 1.000000);"
 
-/* ITU-R BT709, limited (full multiplied by (235-16)/255, adding 16/255 to luma) */
-#define RGB_TO_NV12_LIMITED "const mat4 RGBtoYUV = mat4(0.182586, -0.098397,  0.429412, 0.000000,\n" \
-                            "                           0.614231, -0.331015, -0.390037, 0.000000,\n" \
-                            "                           0.062007,  0.429412, -0.039375, 0.000000,\n" \
+/* ITU-R BT709, limited, custom values: 0.2102 0.7152 0.0722 (full multiplied by (235-16)/255, adding 16/255 to luma) */
+#define RGB_TO_NV12_LIMITED "const mat4 RGBtoYUV = mat4(0.180353, -0.097194,  0.429412, 0.000000,\n" \
+                            "                           0.614231, -0.331015, -0.388754, 0.000000,\n" \
+                            "                           0.062007,  0.429412, -0.039245, 0.000000,\n" \
                             "                           0.062745,  0.500000,  0.500000, 1.000000);"
 
 static const char* color_format_range_get_transform_matrix(gsr_destination_color color_format, gsr_color_range color_range) {

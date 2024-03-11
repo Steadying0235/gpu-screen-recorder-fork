@@ -275,7 +275,7 @@ int gsr_capture_xcomposite_capture(gsr_capture_xcomposite *self, AVFrame *frame)
         will not get overdrawn the next frame causing a cursor trail to be visible since we dont clear the background.
         To fix this we detect if the cursor is partially inside the window and clear the background only in that case.
     */
-    if(!cursor_completely_inside_window && cursor_inside_window)
+    if(!cursor_completely_inside_window && cursor_inside_window && self->params.record_cursor)
         self->clear_next_frame = true;
 
     gsr_color_conversion_draw(&self->base.color_conversion, window_texture_get_opengl_texture_id(&self->window_texture),
@@ -283,7 +283,7 @@ int gsr_capture_xcomposite_capture(gsr_capture_xcomposite *self, AVFrame *frame)
         (vec2i){0, 0}, self->texture_size,
         0.0f, false);
 
-    if(cursor_inside_window) {
+    if(cursor_inside_window && self->params.record_cursor) {
         gsr_color_conversion_draw(&self->base.color_conversion, self->cursor.texture_id,
             cursor_pos, self->cursor.size,
             (vec2i){0, 0}, self->cursor.size,

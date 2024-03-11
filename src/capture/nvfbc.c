@@ -272,6 +272,8 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     create_capture_params.dwVersion = NVFBC_CREATE_CAPTURE_SESSION_PARAMS_VER;
     create_capture_params.eCaptureType = NVFBC_CAPTURE_TO_GL;
     create_capture_params.bWithCursor = (!direct_capture || supports_direct_cursor) ? NVFBC_TRUE : NVFBC_FALSE;
+    if(!cap_nvfbc->params.record_cursor)
+        create_capture_params.bWithCursor = false;
     if(capture_region)
         create_capture_params.captureBox = (NVFBC_BOX){ x, y, width, height };
     create_capture_params.eTrackingType = tracking_type;

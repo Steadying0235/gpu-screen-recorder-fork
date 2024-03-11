@@ -801,7 +801,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 }
 
 static void usage_header() {
-    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-oc yes|no] [-fm cfr|vfr] [-cr limited|full] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no] [-sc <script_path>]\n");
+    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-oc yes|no] [-fm cfr|vfr] [-cr limited|full] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no] [-sc <script_path>] [-cursor yes|no]\n");
 }
 
 static void usage_full() {
@@ -860,7 +860,11 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -mf   Organise replays in folders based on the current date.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -sc   Run a script on the saved video file (non-blocking). The first argument to the script is the filepath to the saved video file and the second argument is the recording type (either \"regular\" or \"replay\"). Not applicable for live streams.\n");
+    fprintf(stderr, "  -sc   Run a script on the saved video file (non-blocking). The first argument to the script is the filepath to the saved video file and the second argument is the recording type (either \"regular\" or \"replay\").\n");
+    fprintf(stderr, "        Not applicable for live streams.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  -cursor\n");
+    fprintf(stderr, "        Record cursor. Defaults to 'yes'.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  --list-supported-video-codecs\n");
     fprintf(stderr, "        List supported video codecs and exits. Prints h264, hevc, hevc_hdr, av1 and av1_hdr (if supported).\n");
@@ -1403,7 +1407,7 @@ static void list_supported_video_codecs() {
         XCloseDisplay(dpy);
 }
 
-static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_gpu_info gpu_inf, gsr_egl &egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range) {
+static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_gpu_info gpu_inf, gsr_egl &egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range, bool record_cursor) {
     vec2i region_size = { 0, 0 };
     Window src_window_id = None;
     bool follow_focused = false;
@@ -1476,6 +1480,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 kms_params.gpu_inf = gpu_inf;
                 kms_params.hdr = video_codec_is_hdr(video_codec);
                 kms_params.color_range = color_range;
+                kms_params.record_cursor = record_cursor;
                 capture = gsr_capture_kms_cuda_create(&kms_params);
                 if(!capture)
                     _exit(1);
@@ -1504,6 +1509,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 nvfbc_params.overclock = overclock;
                 nvfbc_params.hdr = video_codec_is_hdr(video_codec);
                 nvfbc_params.color_range = color_range;
+                nvfbc_params.record_cursor = record_cursor;
                 capture = gsr_capture_nvfbc_create(&nvfbc_params);
                 if(!capture)
                     _exit(1);
@@ -1515,6 +1521,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
             kms_params.gpu_inf = gpu_inf;
             kms_params.hdr = video_codec_is_hdr(video_codec);
             kms_params.color_range = color_range;
+            kms_params.record_cursor = record_cursor;
             capture = gsr_capture_kms_vaapi_create(&kms_params);
             if(!capture)
                 _exit(1);
@@ -1543,6 +1550,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 xcomposite_params.base.follow_focused = follow_focused;
                 xcomposite_params.base.region_size = region_size;
                 xcomposite_params.base.color_range = color_range;
+                xcomposite_params.base.record_cursor = record_cursor;
                 capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
                 if(!capture)
                     _exit(1);
@@ -1555,6 +1563,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 xcomposite_params.base.follow_focused = follow_focused;
                 xcomposite_params.base.region_size = region_size;
                 xcomposite_params.overclock = overclock;
+                xcomposite_params.base.record_cursor = record_cursor;
                 capture = gsr_capture_xcomposite_cuda_create(&xcomposite_params);
                 if(!capture)
                     _exit(1);
@@ -1621,6 +1630,7 @@ int main(int argc, char **argv) {
         { "-mf", Arg { {}, true, false } },
         { "-sc", Arg { {}, true, false } },
         { "-cr", Arg { {}, true, false } },
+        { "-cursor", Arg { {}, true, false } },
     };
 
     for(int i = 1; i < argc; i += 2) {
@@ -1711,6 +1721,20 @@ int main(int argc, char **argv) {
         verbose = false;
     } else {
         fprintf(stderr, "Error: -v should either be either 'yes' or 'no', got: '%s'\n", verbose_str);
+        usage();
+    }
+
+    bool record_cursor = true;
+    const char *record_cursor_str = args["-cursor"].value();
+    if(!record_cursor_str)
+        record_cursor_str = "yes";
+
+    if(strcmp(record_cursor_str, "yes") == 0) {
+        record_cursor = true;
+    } else if(strcmp(record_cursor_str, "no") == 0) {
+        record_cursor = false;
+    } else {
+        fprintf(stderr, "Error: -cursor should either be either 'yes' or 'no', got: '%s'\n", record_cursor_str);
         usage();
     }
 
@@ -2141,7 +2165,7 @@ int main(int argc, char **argv) {
         _exit(2);
     }
 
-    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, egl.gpu_info, egl, fps, overclock, video_codec, color_range);
+    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, egl.gpu_info, egl, fps, overclock, video_codec, color_range, record_cursor);
 
     // (Some?) livestreaming services require at least one audio track to work.
     // If not audio is provided then create one silent audio track.

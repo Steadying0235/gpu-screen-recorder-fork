@@ -193,7 +193,7 @@ static vec2i swap_vec2i(vec2i value) {
     return value;
 }
 
-bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bool screen_plane_use_modifiers, bool cursor_texture_is_external) {
+bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bool screen_plane_use_modifiers, bool cursor_texture_is_external, bool record_cursor) {
     //egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     self->base.egl->glClear(0);
 
@@ -300,7 +300,7 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bo
         capture_pos, self->capture_size,
         texture_rotation, false);
 
-    if(cursor_drm_fd) {
+    if(record_cursor && cursor_drm_fd) {
         const vec2i cursor_size = {cursor_drm_fd->width, cursor_drm_fd->height};
         vec2i cursor_pos = {cursor_drm_fd->x, cursor_drm_fd->y};
         switch(self->monitor_rotation) {

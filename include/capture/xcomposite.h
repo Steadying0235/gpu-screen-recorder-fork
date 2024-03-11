@@ -14,6 +14,7 @@ typedef struct {
     bool follow_focused; /* If this is set then |window| is ignored */
     vec2i region_size; /* This is currently only used with |follow_focused| */
     gsr_color_range color_range;
+    bool record_cursor;
 } gsr_capture_xcomposite_params;
 
 typedef struct {

@@ -57,7 +57,7 @@ static bool gsr_capture_kms_vaapi_should_stop(gsr_capture *cap, bool *err) {
 
 static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
-    gsr_capture_kms_capture(&cap_kms->kms, frame, cap_kms->params.hdr, false, false);
+    gsr_capture_kms_capture(&cap_kms->kms, frame, cap_kms->params.hdr, false, false, cap_kms->params.record_cursor);
     return 0;
 }
 

@@ -2,6 +2,7 @@
 #include <X11/Xlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 // HACK!!!: When a program uses cuda (including nvenc) then the nvidia driver drops to performance level 2 (memory transfer rate is dropped and possibly graphics clock).
 // Nvidia does this because in some very extreme cases of cuda there can be memory corruption when running at max memory transfer rate.
@@ -76,13 +77,13 @@ static unsigned int attribute_type_to_attribute_param_all_levels(NvCTRLAttribute
 }
 
 // Returns 0 on error
-static int xnvctrl_get_attribute_max_value(gsr_xnvctrl *xnvctrl, const NVCTRLPerformanceLevelQuery *query, NvCTRLAttributeType attribute_type) {
+static int xnvctrl_get_attribute_max_value(gsr_xnvctrl *xnvctrl, int num_performance_levels, NvCTRLAttributeType attribute_type) {
     NVCTRLAttributeValidValuesRec valid;
     if(xnvctrl->XNVCTRLQueryValidTargetAttributeValues(xnvctrl->display, NV_CTRL_TARGET_TYPE_GPU, 0, 0, attribute_type_to_attribute_param_all_levels(attribute_type), &valid)) {
         return valid.u.range.max;
     }
 
-    if(query->num_performance_levels > 0 && xnvctrl->XNVCTRLQueryValidTargetAttributeValues(xnvctrl->display, NV_CTRL_TARGET_TYPE_GPU, 0, query->num_performance_levels - 1, attribute_type_to_attribute_param(attribute_type), &valid)) {
+    if(num_performance_levels > 0 && xnvctrl->XNVCTRLQueryValidTargetAttributeValues(xnvctrl->display, NV_CTRL_TARGET_TYPE_GPU, 0, num_performance_levels - 1, attribute_type_to_attribute_param(attribute_type), &valid)) {
         return valid.u.range.max;
     }
     
@@ -208,6 +209,12 @@ static bool xnvctrl_get_performance_levels(gsr_xnvctrl *xnvctrl, NVCTRLPerforman
     return success;
 }
 
+static int compare_mem_transfer_rate_max_asc(const void *a, const void *b) {
+    const NVCTRLPerformanceLevel *perf_a = a;
+    const NVCTRLPerformanceLevel *perf_b = b;
+    return perf_a->mem_transfer_rate_max - perf_b->mem_transfer_rate_max;
+}
+
 bool gsr_overclock_load(gsr_overclock *self, Display *display) {
     memset(self, 0, sizeof(gsr_overclock));
     self->num_performance_levels = 0;
@@ -234,31 +241,32 @@ bool gsr_overclock_start(gsr_overclock *self) {
     }
     self->num_performance_levels = query.num_performance_levels;
 
-    int target_transfer_rate_offset = xnvctrl_get_attribute_max_value(&self->xnvctrl, &query, NVCTRL_ATTRIB_GPU_MEM_TRANSFER_RATE) / 2; // Divide by 2 just to be safe that we dont set it too high
-    if(query.num_performance_levels > 2) {
-        const int transfer_rate_max_diff = query.performance_level[query.num_performance_levels - 1].mem_transfer_rate_max - query.performance_level[2].mem_transfer_rate_max;
+    qsort(query.performance_level, query.num_performance_levels, sizeof(NVCTRLPerformanceLevel), compare_mem_transfer_rate_max_asc);
+
+    int target_transfer_rate_offset = xnvctrl_get_attribute_max_value(&self->xnvctrl, query.num_performance_levels, NVCTRL_ATTRIB_GPU_MEM_TRANSFER_RATE);
+    if(query.num_performance_levels > 1) {
+        const int transfer_rate_max_diff = query.performance_level[query.num_performance_levels - 1].mem_transfer_rate_max - query.performance_level[query.num_performance_levels - 2].mem_transfer_rate_max;
         target_transfer_rate_offset = min_int(target_transfer_rate_offset, transfer_rate_max_diff);
+        if(target_transfer_rate_offset >= 0 && xnvctrl_set_attribute_offset(&self->xnvctrl, self->num_performance_levels, target_transfer_rate_offset, NVCTRL_ATTRIB_GPU_MEM_TRANSFER_RATE)) {
+            fprintf(stderr, "gsr info: gsr_overclock_start: sucessfully set memory transfer rate offset to %d\n", target_transfer_rate_offset);
+        } else {
+            fprintf(stderr, "gsr info: gsr_overclock_start: failed to overclock memory transfer rate offset to %d\n", target_transfer_rate_offset);
+        }
     }
 
-    if(xnvctrl_set_attribute_offset(&self->xnvctrl, self->num_performance_levels, target_transfer_rate_offset, NVCTRL_ATTRIB_GPU_MEM_TRANSFER_RATE)) {
-        fprintf(stderr, "gsr info: gsr_overclock_start: sucessfully set memory transfer rate offset to %d\n", target_transfer_rate_offset);
-    } else {
-        fprintf(stderr, "gsr info: gsr_overclock_start: failed to overclock memory transfer rate offset to %d\n", target_transfer_rate_offset);
-    }
-
+    // TODO: Sort by nv_clock_max
 
     // TODO: Enable. Crashes on my system (gtx 1080) so it's disabled for now. Seems to crash even if graphics clock is increasd by 1, let alone 1200
     /*
-    int target_nv_clock_offset = xnvctrl_get_attribute_max_value(&self->xnvctrl, &query, NVCTRL_GPU_NVCLOCK) / 2; // Divide by 2 just to be safe that we dont set it too high
-    if(query.num_performance_levels > 2) {
-        const int nv_clock_max_diff = query.performance_level[query.num_performance_levels - 1].nv_clock_max - query.performance_level[2].nv_clock_max;
+    int target_nv_clock_offset = xnvctrl_get_attribute_max_value(&self->xnvctrl, query.num_performance_levels, NVCTRL_GPU_NVCLOCK);
+    if(query.num_performance_levels > 1) {
+        const int nv_clock_max_diff = query.performance_level[query.num_performance_levels - 1].nv_clock_max - query.performance_level[query.num_performance_levels - 2].nv_clock_max;
         target_nv_clock_offset = min_int(target_nv_clock_offset, nv_clock_max_diff);
-    }
-
-    if(xnvctrl_set_attribute_offset(&self->xnvctrl, self->num_performance_levels, target_nv_clock_offset, NVCTRL_GPU_NVCLOCK)) {
-        fprintf(stderr, "gsr info: gsr_overclock_start: sucessfully set nv clock offset to %d\n", target_nv_clock_offset);
-    } else {
-        fprintf(stderr, "gsr info: gsr_overclock_start: failed to overclock nv clock offset to %d\n", target_nv_clock_offset);
+        if(target_nv_clock_offset >= 0 && xnvctrl_set_attribute_offset(&self->xnvctrl, self->num_performance_levels, target_nv_clock_offset, NVCTRL_GPU_NVCLOCK)) {
+            fprintf(stderr, "gsr info: gsr_overclock_start: sucessfully set nv clock offset to %d\n", target_nv_clock_offset);
+        } else {
+            fprintf(stderr, "gsr info: gsr_overclock_start: failed to overclock nv clock offset to %d\n", target_nv_clock_offset);
+        }
     }
     */
 

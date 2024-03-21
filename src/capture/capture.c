@@ -204,14 +204,11 @@ static unsigned int gl_create_texture(gsr_egl *egl, int width, int height, int i
 
 static bool cuda_register_opengl_texture(gsr_cuda *cuda, CUgraphicsResource *cuda_graphics_resource, CUarray *mapped_array, unsigned int texture_id) {
     CUresult res;
-    CUcontext old_ctx;
-    res = cuda->cuCtxPushCurrent_v2(cuda->cu_ctx);
     res = cuda->cuGraphicsGLRegisterImage(cuda_graphics_resource, texture_id, GL_TEXTURE_2D, CU_GRAPHICS_REGISTER_FLAGS_NONE);
     if (res != CUDA_SUCCESS) {
         const char *err_str = "unknown";
         cuda->cuGetErrorString(res, &err_str);
         fprintf(stderr, "gsr error: cuda_register_opengl_texture: cuGraphicsGLRegisterImage failed, error: %s, texture " "id: %u\n", err_str, texture_id);
-        res = cuda->cuCtxPopCurrent_v2(&old_ctx);
         return false;
     }
 
@@ -219,7 +216,6 @@ static bool cuda_register_opengl_texture(gsr_cuda *cuda, CUgraphicsResource *cud
     res = cuda->cuGraphicsMapResources(1, cuda_graphics_resource, 0);
 
     res = cuda->cuGraphicsSubResourceGetMappedArray(mapped_array, *cuda_graphics_resource, 0, 0);
-    res = cuda->cuCtxPopCurrent_v2(&old_ctx);
     return true;
 }
 

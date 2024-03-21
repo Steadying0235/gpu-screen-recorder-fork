@@ -72,9 +72,6 @@ static bool gsr_capture_kms_cuda_should_stop(gsr_capture *cap, bool *err) {
 
 static void gsr_capture_kms_unload_cuda_graphics(gsr_capture_kms_cuda *cap_kms) {
     if(cap_kms->cuda.cu_ctx) {
-        CUcontext old_ctx;
-        cap_kms->cuda.cuCtxPushCurrent_v2(cap_kms->cuda.cu_ctx);
-
         for(int i = 0; i < 2; ++i) {
             if(cap_kms->cuda_graphics_resources[i]) {
                 cap_kms->cuda.cuGraphicsUnmapResources(1, &cap_kms->cuda_graphics_resources[i], 0);
@@ -82,8 +79,6 @@ static void gsr_capture_kms_unload_cuda_graphics(gsr_capture_kms_cuda *cap_kms) 
                 cap_kms->cuda_graphics_resources[i] = 0;
             }
         }
-
-        cap_kms->cuda.cuCtxPopCurrent_v2(&old_ctx);
     }
 }
 

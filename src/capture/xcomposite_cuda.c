@@ -53,9 +53,6 @@ static int gsr_capture_xcomposite_cuda_start(gsr_capture *cap, AVCodecContext *v
 
 static void gsr_capture_xcomposite_unload_cuda_graphics(gsr_capture_xcomposite_cuda *cap_xcomp) {
     if(cap_xcomp->cuda.cu_ctx) {
-        CUcontext old_ctx;
-        cap_xcomp->cuda.cuCtxPushCurrent_v2(cap_xcomp->cuda.cu_ctx);
-
         for(int i = 0; i < 2; ++i) {
             if(cap_xcomp->cuda_graphics_resources[i]) {
                 cap_xcomp->cuda.cuGraphicsUnmapResources(1, &cap_xcomp->cuda_graphics_resources[i], 0);
@@ -63,8 +60,6 @@ static void gsr_capture_xcomposite_unload_cuda_graphics(gsr_capture_xcomposite_c
                 cap_xcomp->cuda_graphics_resources[i] = 0;
             }
         }
-
-        cap_xcomp->cuda.cuCtxPopCurrent_v2(&old_ctx);
     }
 }
 

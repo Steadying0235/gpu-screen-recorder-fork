@@ -1562,8 +1562,9 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 xcomposite_params.base.window = src_window_id;
                 xcomposite_params.base.follow_focused = follow_focused;
                 xcomposite_params.base.region_size = region_size;
-                xcomposite_params.overclock = overclock;
+                xcomposite_params.base.color_range = color_range;
                 xcomposite_params.base.record_cursor = record_cursor;
+                xcomposite_params.overclock = overclock;
                 capture = gsr_capture_xcomposite_cuda_create(&xcomposite_params);
                 if(!capture)
                     _exit(1);

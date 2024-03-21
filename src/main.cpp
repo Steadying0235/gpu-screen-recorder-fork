@@ -561,6 +561,12 @@ static const AVCodec* find_h265_encoder(gsr_gpu_vendor vendor, const char *card_
 }
 
 static const AVCodec* find_av1_encoder(gsr_gpu_vendor vendor, const char *card_path) {
+    // Workaround bug with av1 nvidia in older ffmpeg versions that causes the whole application to crash
+    // when avcodec_open2 is opened with av1_nvenc
+    if(vendor == GSR_GPU_VENDOR_NVIDIA && LIBAVCODEC_BUILD < AV_VERSION_INT(60, 30, 100)) {
+        return nullptr;
+    }
+
     const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "av1_nvenc" : "av1_vaapi");
     if(!codec)
         codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "nvenc_av1" : "vaapi_av1");

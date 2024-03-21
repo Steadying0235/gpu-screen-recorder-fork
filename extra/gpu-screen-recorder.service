@@ -10,7 +10,7 @@ Environment=CODEC=auto
 Environment=AUDIO_CODEC=opus
 Environment=AUDIO_DEVICE=
 Environment=FRAMERATE=60
-Environment=REPLAYDURATION=60
+Environment=REPLAYDURATION=30
 Environment=OUTPUTDIR=%h/Videos
 Environment=MAKEFOLDERS=no
 Environment=COLOR_RANGE=limited

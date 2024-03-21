@@ -256,15 +256,15 @@ int gsr_capture_xcomposite_capture(gsr_capture_xcomposite *self, AVFrame *frame)
 
     const bool cursor_completely_inside_window =
         cursor_pos.x >= target_x &&
-        cursor_pos.x <= target_x + self->texture_size.x &&
+        cursor_pos.x + self->cursor.size.x <= target_x + self->texture_size.x &&
         cursor_pos.y >= target_y &&
-        cursor_pos.y <= target_y + self->texture_size.x;
+        cursor_pos.y + self->cursor.size.y <= target_y + self->texture_size.y;
 
     const bool cursor_inside_window =
         cursor_pos.x + self->cursor.size.x >= target_x &&
         cursor_pos.x <= target_x + self->texture_size.x &&
         cursor_pos.y + self->cursor.size.y >= target_y &&
-        cursor_pos.y <= target_y + self->texture_size.x;
+        cursor_pos.y <= target_y + self->texture_size.y;
 
     if(self->clear_next_frame) {
         self->clear_next_frame = false;

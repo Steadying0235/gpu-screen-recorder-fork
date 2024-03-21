@@ -318,6 +318,12 @@ static bool gsr_egl_switch_to_glx_context(gsr_egl *self) {
     return true;
 
     fail:
+    if(self->glx_context) {
+        self->glXMakeContextCurrent(self->x11.dpy, None, None, NULL);
+        self->glXDestroyContext(self->x11.dpy, self->glx_context);
+        self->glx_context = NULL;
+        self->glx_fb_config = NULL;
+    }
     return false;
 }
 
@@ -372,6 +378,7 @@ static bool gsr_egl_load_glx(gsr_egl *self, void *library) {
         { (void**)&self->glXChooseFBConfig, "glXChooseFBConfig" },
         { (void**)&self->glXMakeContextCurrent, "glXMakeContextCurrent" },
         { (void**)&self->glXCreateNewContext, "glXCreateNewContext" },
+        { (void**)&self->glXDestroyContext, "glXDestroyContext" },
         { (void**)&self->glXSwapBuffers, "glXSwapBuffers" },
 
         { NULL, NULL }
@@ -565,6 +572,13 @@ void gsr_egl_unload(gsr_egl *self) {
     if(self->egl_display) {
         self->eglTerminate(self->egl_display);
         self->egl_display = NULL;
+    }
+
+    if(self->glx_context) {
+        self->glXMakeContextCurrent(self->x11.dpy, None, None, NULL);
+        self->glXDestroyContext(self->x11.dpy, self->glx_context);
+        self->glx_context = NULL;
+        self->glx_fb_config = NULL;
     }
 
     if(self->x11.window) {

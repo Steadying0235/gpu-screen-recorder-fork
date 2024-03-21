@@ -213,6 +213,7 @@ struct gsr_egl {
     Bool (*glXMakeContextCurrent)(Display *dpy, GLXDrawable draw, GLXDrawable read, GLXContext ctx);
     // TODO: Remove
     GLXContext (*glXCreateNewContext)(Display *dpy, GLXFBConfig config, int renderType, GLXContext shareList, Bool direct);
+    void (*glXDestroyContext)(Display *dpy, GLXContext ctx);
     void (*glXSwapBuffers)(Display *dpy, GLXDrawable drawable);
     FUNC_glXCreateContextAttribsARB glXCreateContextAttribsARB;
 

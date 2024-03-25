@@ -978,18 +978,25 @@ static AVStream* create_stream(AVFormatContext *av_format_context, AVCodecContex
 }
 
 static void run_recording_saved_script_async(const char *script_file, const char *video_file, const char *type) {
+    char script_file_full[PATH_MAX];
+    script_file_full[0] = '\0';
+    if(!realpath(script_file, script_file_full)) {
+        fprintf(stderr, "Error: script file not found: %s\n", script_file);
+        return;
+    }
+
     const char *args[6];
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
 
     if(inside_flatpak) {
         args[0] = "flatpak-spawn";
         args[1] = "--host";
-        args[2] = script_file;
+        args[2] = script_file_full;
         args[3] = video_file;
         args[4] = type;
         args[5] = NULL;
     } else {
-        args[0] = script_file;
+        args[0] = script_file_full;
         args[1] = video_file;
         args[2] = type;
         args[3] = NULL;
@@ -997,7 +1004,7 @@ static void run_recording_saved_script_async(const char *script_file, const char
 
     pid_t pid = fork();
     if(pid == -1) {
-        perror(script_file);
+        perror(script_file_full);
         return;
     } else if(pid == 0) { // child
         setsid();
@@ -1006,7 +1013,7 @@ static void run_recording_saved_script_async(const char *script_file, const char
         pid_t second_child = fork();
         if(second_child == 0) { // child
             execvp(args[0], (char* const*)args);
-            perror(script_file);
+            perror(script_file_full);
             _exit(127);
         } else if(second_child != -1) { // parent
             _exit(0);
@@ -1767,6 +1774,11 @@ int main(int argc, char **argv) {
         struct stat buf;
         if(stat(recording_saved_script, &buf) == -1 || !S_ISREG(buf.st_mode)) {
             fprintf(stderr, "Error: Script \"%s\" either doesn't exist or it's not a file\n", recording_saved_script);
+            usage();
+        }
+
+        if(!(buf.st_mode & S_IXUSR)) {
+            fprintf(stderr, "Error: Script \"%s\" is not executable\n", recording_saved_script);
             usage();
         }
     }

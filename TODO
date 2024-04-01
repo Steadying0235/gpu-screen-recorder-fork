@@ -102,15 +102,10 @@ Support low power option (does it even work with vaapi in ffmpeg??). Would be ve
 Instead of sending a big list of drm data back to kms client, send the monitor we want to record to kms server and the server should respond with only the matching monitor, and cursor.
 
 Tonemap hdr to sdr when hdr is enabled and when hevc_hdr/av1_hdr is not used.
-Support hdr capture with kms cuda.
-
-Mention known issue, capture on intel wayland compressed data glitch.
 
 Add 10 bit record option, h264_10bit, hevc_10bit and av1_10bit.
 
 Rotate cursor texture properly (around top left origin).
-
-Color range doesn't seem to work on nvidia. This might be because the output color format is set to rgb in which case it handles everything color related itself?
 
 Setup hardware video context so we can query constraints and capabilities for better default and better error messages.
 
@@ -121,3 +116,5 @@ Show error when using compressed kms plane which isn't supported. Also do that i
 Modify ffmpeg to accept opengl texture for nvenc encoding. Removes extra buffers and copies.
 
 When vulkan encode is added, mention minimum nvidia driver required. (550.54.14?).
+
+Support drm plane rotation. Neither X11 nor any Wayland compositor currently rotates drm planes so this might not be needed.

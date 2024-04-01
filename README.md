@@ -123,7 +123,7 @@ Look at the [scripts](https://git.dec05eba.com/gpu-screen-recorder/tree/scripts)
 Nvidia drivers have an issue where CUDA breaks if CUDA is running when suspend/hibernation happens, and it remains broken until you reload the nvidia driver. To fix this, either disable suspend or tell the NVIDIA driver to preserve video memory on suspend/hibernate by using the `NVreg_PreserveVideoMemoryAllocations=1` option. You can run `sudo extra/install_preserve_video_memory.sh` to automatically add that option to your system.
 
 # Reporting bugs
-Issues are reporting on this Github page: [https://github.com/dec05eba/gpu-screen-recorder-issues](https://github.com/dec05eba/gpu-screen-recorder-issues)
+Issues are reporting on this Github page: [https://github.com/dec05eba/gpu-screen-recorder-issues/issues](https://github.com/dec05eba/gpu-screen-recorder-issues/issues)
 # Contributing patches
 See [https://git.dec05eba.com/?p=about](https://git.dec05eba.com/?p=about)
 

@@ -779,7 +779,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 
         if(codec_context->codec_id == AV_CODEC_ID_H264) {
             av_dict_set(&options, "profile", "high", 0);
-            av_dict_set_int(&options, "quality", 5, 0); // quality preset
+            //av_dict_set_int(&options, "quality", 5, 0); // quality preset
         } else if(codec_context->codec_id == AV_CODEC_ID_AV1) {
             av_dict_set(&options, "profile", "main", 0); // TODO: use professional instead?
             av_dict_set(&options, "tier", "main", 0);

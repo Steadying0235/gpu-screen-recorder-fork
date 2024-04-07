@@ -2,6 +2,7 @@
 #include "../../external/NvFBC.h"
 #include "../../include/cuda.h"
 #include "../../include/egl.h"
+#include "../../include/utils.h"
 #include <dlfcn.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +31,16 @@ typedef struct {
     CUarray mapped_arrays[2];
     CUstream cuda_stream; // TODO: asdasdsa
     NVFBC_TOGL_SETUP_PARAMS setup_params;
+
+    bool direct_capture;
+    bool supports_direct_cursor;
+    bool capture_region;
+    uint32_t x, y, width, height;
+    NVFBC_TRACKING_TYPE tracking_type;
+    uint32_t output_id;
+    uint32_t tracking_width, tracking_height;
+    bool nvfbc_needs_recreate;
+    double nvfbc_dead_start;
 } gsr_capture_nvfbc;
 
 #if defined(_WIN64) || defined(__LP64__)
@@ -157,57 +168,34 @@ static void set_vertical_sync_enabled(gsr_egl *egl, int enabled) {
         fprintf(stderr, "gsr warning: setting vertical sync failed\n");
 }
 
-static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
-    gsr_capture_nvfbc *cap_nvfbc = cap->priv;
-
-    cap_nvfbc->base.video_codec_context = video_codec_context;
-    cap_nvfbc->base.egl = cap_nvfbc->params.egl;
-
-    if(!gsr_cuda_load(&cap_nvfbc->cuda, cap_nvfbc->params.egl->x11.dpy, cap_nvfbc->params.overclock))
-        return -1;
-
-    if(!gsr_capture_nvfbc_load_library(cap)) {
-        gsr_cuda_unload(&cap_nvfbc->cuda);
-        return -1;
+static void gsr_capture_nvfbc_destroy_session(gsr_capture_nvfbc *cap_nvfbc) {
+    if(cap_nvfbc->fbc_handle_created && cap_nvfbc->capture_session_created) {
+        NVFBC_DESTROY_CAPTURE_SESSION_PARAMS destroy_capture_params;
+        memset(&destroy_capture_params, 0, sizeof(destroy_capture_params));
+        destroy_capture_params.dwVersion = NVFBC_DESTROY_CAPTURE_SESSION_PARAMS_VER;
+        cap_nvfbc->nv_fbc_function_list.nvFBCDestroyCaptureSession(cap_nvfbc->nv_fbc_handle, &destroy_capture_params);
+        cap_nvfbc->capture_session_created = false;
     }
+}
 
-    const uint32_t x = max_int(cap_nvfbc->params.pos.x, 0);
-    const uint32_t y = max_int(cap_nvfbc->params.pos.y, 0);
-    const uint32_t width = max_int(cap_nvfbc->params.size.x, 0);
-    const uint32_t height = max_int(cap_nvfbc->params.size.y, 0);
-
-    const bool capture_region = (x > 0 || y > 0 || width > 0 || height > 0);
-
-    bool supports_direct_cursor = false;
-    bool direct_capture = cap_nvfbc->params.direct_capture;
-    int driver_major_version = 0;
-    int driver_minor_version = 0;
-    if(direct_capture && get_driver_version(&driver_major_version, &driver_minor_version)) {
-        fprintf(stderr, "Info: detected nvidia version: %d.%d\n", driver_major_version, driver_minor_version);
-
-        // TODO:
-        if(version_at_least(driver_major_version, driver_minor_version, 515, 57) && version_less_than(driver_major_version, driver_minor_version, 520, 56)) {
-            direct_capture = false;
-            fprintf(stderr, "Warning: \"screen-direct\" has temporary been disabled as it causes stuttering with driver versions >= 515.57 and < 520.56. Please update your driver if possible. Capturing \"screen\" instead.\n");
-        }
-
-        // TODO:
-        // Cursor capture disabled because moving the cursor doesn't update capture rate to monitor hz and instead captures at 10-30 hz
-        /*
-        if(direct_capture) {
-            if(version_at_least(driver_major_version, driver_minor_version, 515, 57))
-                supports_direct_cursor = true;
-            else
-                fprintf(stderr, "Info: capturing \"screen-direct\" but driver version appears to be less than 515.57. Disabling capture of cursor. Please update your driver if you want to capture your cursor or record \"screen\" instead.\n");
-        }
-        */
+static void gsr_capture_nvfbc_destroy_handle(gsr_capture_nvfbc *cap_nvfbc) {
+    if(cap_nvfbc->fbc_handle_created) {
+        NVFBC_DESTROY_HANDLE_PARAMS destroy_params;
+        memset(&destroy_params, 0, sizeof(destroy_params));
+        destroy_params.dwVersion = NVFBC_DESTROY_HANDLE_PARAMS_VER;
+        cap_nvfbc->nv_fbc_function_list.nvFBCDestroyHandle(cap_nvfbc->nv_fbc_handle, &destroy_params);
+        cap_nvfbc->fbc_handle_created = false;
+        cap_nvfbc->nv_fbc_handle = 0;
     }
+}
 
+static void gsr_capture_nvfbc_destroy_session_and_handle(gsr_capture_nvfbc *cap_nvfbc) {
+    gsr_capture_nvfbc_destroy_session(cap_nvfbc);
+    gsr_capture_nvfbc_destroy_handle(cap_nvfbc);
+}
+
+static int gsr_capture_nvfbc_setup_handle(gsr_capture_nvfbc *cap_nvfbc) {
     NVFBCSTATUS status;
-    NVFBC_TRACKING_TYPE tracking_type;
-    uint32_t output_id = 0;
-    cap_nvfbc->fbc_handle_created = false;
-    cap_nvfbc->capture_session_created = false;
 
     NVFBC_CREATE_HANDLE_PARAMS create_params;
     memset(&create_params, 0, sizeof(create_params));
@@ -246,10 +234,10 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
         goto error_cleanup;
     }
 
-    uint32_t tracking_width = XWidthOfScreen(DefaultScreenOfDisplay(cap_nvfbc->params.egl->x11.dpy));
-    uint32_t tracking_height = XHeightOfScreen(DefaultScreenOfDisplay(cap_nvfbc->params.egl->x11.dpy));
-    tracking_type = strcmp(cap_nvfbc->params.display_to_capture, "screen") == 0 ? NVFBC_TRACKING_SCREEN : NVFBC_TRACKING_OUTPUT;
-    if(tracking_type == NVFBC_TRACKING_OUTPUT) {
+    cap_nvfbc->tracking_width = XWidthOfScreen(DefaultScreenOfDisplay(cap_nvfbc->params.egl->x11.dpy));
+    cap_nvfbc->tracking_height = XHeightOfScreen(DefaultScreenOfDisplay(cap_nvfbc->params.egl->x11.dpy));
+    cap_nvfbc->tracking_type = strcmp(cap_nvfbc->params.display_to_capture, "screen") == 0 ? NVFBC_TRACKING_SCREEN : NVFBC_TRACKING_OUTPUT;
+    if(cap_nvfbc->tracking_type == NVFBC_TRACKING_OUTPUT) {
         if(!status_params.bXRandRAvailable) {
             fprintf(stderr, "gsr error: gsr_capture_nvfbc_start failed: the xrandr extension is not available\n");
             goto error_cleanup;
@@ -260,34 +248,42 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
             goto error_cleanup;
         }
 
-        output_id = get_output_id_from_display_name(status_params.outputs, status_params.dwOutputNum, cap_nvfbc->params.display_to_capture, &tracking_width, &tracking_height);
-        if(output_id == 0) {
+        cap_nvfbc->output_id = get_output_id_from_display_name(status_params.outputs, status_params.dwOutputNum, cap_nvfbc->params.display_to_capture, &cap_nvfbc->tracking_width, &cap_nvfbc->tracking_height);
+        if(cap_nvfbc->output_id == 0) {
             fprintf(stderr, "gsr error: gsr_capture_nvfbc_start failed: display '%s' not found\n", cap_nvfbc->params.display_to_capture);
             goto error_cleanup;
         }
     }
 
+    return 0;
+
+    error_cleanup:
+    gsr_capture_nvfbc_destroy_session_and_handle(cap_nvfbc);
+    return -1;
+}
+
+static int gsr_capture_nvfbc_setup_session(gsr_capture_nvfbc *cap_nvfbc) {
     NVFBC_CREATE_CAPTURE_SESSION_PARAMS create_capture_params;
     memset(&create_capture_params, 0, sizeof(create_capture_params));
     create_capture_params.dwVersion = NVFBC_CREATE_CAPTURE_SESSION_PARAMS_VER;
     create_capture_params.eCaptureType = NVFBC_CAPTURE_TO_GL;
-    create_capture_params.bWithCursor = (!direct_capture || supports_direct_cursor) ? NVFBC_TRUE : NVFBC_FALSE;
+    create_capture_params.bWithCursor = (!cap_nvfbc->direct_capture || cap_nvfbc->supports_direct_cursor) ? NVFBC_TRUE : NVFBC_FALSE;
     if(!cap_nvfbc->params.record_cursor)
         create_capture_params.bWithCursor = false;
-    if(capture_region)
-        create_capture_params.captureBox = (NVFBC_BOX){ x, y, width, height };
-    create_capture_params.eTrackingType = tracking_type;
+    if(cap_nvfbc->capture_region)
+        create_capture_params.captureBox = (NVFBC_BOX){ cap_nvfbc->x, cap_nvfbc->y, cap_nvfbc->width, cap_nvfbc->height };
+    create_capture_params.eTrackingType = cap_nvfbc->tracking_type;
     create_capture_params.dwSamplingRateMs = (uint32_t)ceilf(1000.0f / (float)cap_nvfbc->params.fps);
-    create_capture_params.bAllowDirectCapture = direct_capture ? NVFBC_TRUE : NVFBC_FALSE;
-    create_capture_params.bPushModel = direct_capture ? NVFBC_TRUE : NVFBC_FALSE;
-    //create_capture_params.bDisableAutoModesetRecovery = true; // TODO:
-    if(tracking_type == NVFBC_TRACKING_OUTPUT)
-        create_capture_params.dwOutputId = output_id;
+    create_capture_params.bAllowDirectCapture = cap_nvfbc->direct_capture ? NVFBC_TRUE : NVFBC_FALSE;
+    create_capture_params.bPushModel = cap_nvfbc->direct_capture ? NVFBC_TRUE : NVFBC_FALSE;
+    create_capture_params.bDisableAutoModesetRecovery = true;
+    if(cap_nvfbc->tracking_type == NVFBC_TRACKING_OUTPUT)
+        create_capture_params.dwOutputId = cap_nvfbc->output_id;
 
-    status = cap_nvfbc->nv_fbc_function_list.nvFBCCreateCaptureSession(cap_nvfbc->nv_fbc_handle, &create_capture_params);
+    NVFBCSTATUS status = cap_nvfbc->nv_fbc_function_list.nvFBCCreateCaptureSession(cap_nvfbc->nv_fbc_handle, &create_capture_params);
     if(status != NVFBC_SUCCESS) {
         fprintf(stderr, "gsr error: gsr_capture_nvfbc_start failed: %s\n", cap_nvfbc->nv_fbc_function_list.nvFBCGetLastErrorStr(cap_nvfbc->nv_fbc_handle));
-        goto error_cleanup;
+        return -1;
     }
     cap_nvfbc->capture_session_created = true;
 
@@ -298,15 +294,73 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     status = cap_nvfbc->nv_fbc_function_list.nvFBCToGLSetUp(cap_nvfbc->nv_fbc_handle, &cap_nvfbc->setup_params);
     if(status != NVFBC_SUCCESS) {
         fprintf(stderr, "gsr error: gsr_capture_nvfbc_start failed: %s\n", cap_nvfbc->nv_fbc_function_list.nvFBCGetLastErrorStr(cap_nvfbc->nv_fbc_handle));
+        gsr_capture_nvfbc_destroy_session(cap_nvfbc);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
+    gsr_capture_nvfbc *cap_nvfbc = cap->priv;
+
+    cap_nvfbc->base.video_codec_context = video_codec_context;
+    cap_nvfbc->base.egl = cap_nvfbc->params.egl;
+
+    if(!gsr_cuda_load(&cap_nvfbc->cuda, cap_nvfbc->params.egl->x11.dpy, cap_nvfbc->params.overclock))
+        return -1;
+
+    if(!gsr_capture_nvfbc_load_library(cap)) {
+        gsr_cuda_unload(&cap_nvfbc->cuda);
+        return -1;
+    }
+
+    cap_nvfbc->x = max_int(cap_nvfbc->params.pos.x, 0);
+    cap_nvfbc->y = max_int(cap_nvfbc->params.pos.y, 0);
+    cap_nvfbc->width = max_int(cap_nvfbc->params.size.x, 0);
+    cap_nvfbc->height = max_int(cap_nvfbc->params.size.y, 0);
+
+    cap_nvfbc->capture_region = (cap_nvfbc->x > 0 || cap_nvfbc->y > 0 || cap_nvfbc->width > 0 || cap_nvfbc->height > 0);
+
+    cap_nvfbc->supports_direct_cursor = false;
+    bool direct_capture = cap_nvfbc->params.direct_capture;
+    int driver_major_version = 0;
+    int driver_minor_version = 0;
+    if(direct_capture && get_driver_version(&driver_major_version, &driver_minor_version)) {
+        fprintf(stderr, "Info: detected nvidia version: %d.%d\n", driver_major_version, driver_minor_version);
+
+        // TODO:
+        if(version_at_least(driver_major_version, driver_minor_version, 515, 57) && version_less_than(driver_major_version, driver_minor_version, 520, 56)) {
+            direct_capture = false;
+            fprintf(stderr, "Warning: \"screen-direct\" has temporary been disabled as it causes stuttering with driver versions >= 515.57 and < 520.56. Please update your driver if possible. Capturing \"screen\" instead.\n");
+        }
+
+        // TODO:
+        // Cursor capture disabled because moving the cursor doesn't update capture rate to monitor hz and instead captures at 10-30 hz
+        /*
+        if(direct_capture) {
+            if(version_at_least(driver_major_version, driver_minor_version, 515, 57))
+                supports_direct_cursor = true;
+            else
+                fprintf(stderr, "Info: capturing \"screen-direct\" but driver version appears to be less than 515.57. Disabling capture of cursor. Please update your driver if you want to capture your cursor or record \"screen\" instead.\n");
+        }
+        */
+    }
+
+    if(gsr_capture_nvfbc_setup_handle(cap_nvfbc) != 0) {
         goto error_cleanup;
     }
 
-    if(capture_region) {
-        video_codec_context->width = width & ~1;
-        video_codec_context->height = height & ~1;
+    if(gsr_capture_nvfbc_setup_session(cap_nvfbc) != 0) {
+        goto error_cleanup;
+    }
+
+    if(cap_nvfbc->capture_region) {
+        video_codec_context->width = cap_nvfbc->width & ~1;
+        video_codec_context->height = cap_nvfbc->height & ~1;
     } else {
-        video_codec_context->width = tracking_width & ~1;
-        video_codec_context->height = tracking_height & ~1;
+        video_codec_context->width = cap_nvfbc->tracking_width & ~1;
+        video_codec_context->height = cap_nvfbc->tracking_height & ~1;
     }
 
     frame->width = video_codec_context->width;
@@ -331,51 +385,37 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     return 0;
 
     error_cleanup:
-    if(cap_nvfbc->fbc_handle_created) {
-        if(cap_nvfbc->capture_session_created) {
-            NVFBC_DESTROY_CAPTURE_SESSION_PARAMS destroy_capture_params;
-            memset(&destroy_capture_params, 0, sizeof(destroy_capture_params));
-            destroy_capture_params.dwVersion = NVFBC_DESTROY_CAPTURE_SESSION_PARAMS_VER;
-            cap_nvfbc->nv_fbc_function_list.nvFBCDestroyCaptureSession(cap_nvfbc->nv_fbc_handle, &destroy_capture_params);
-            cap_nvfbc->capture_session_created = false;
-        }
-
-        NVFBC_DESTROY_HANDLE_PARAMS destroy_params;
-        memset(&destroy_params, 0, sizeof(destroy_params));
-        destroy_params.dwVersion = NVFBC_DESTROY_HANDLE_PARAMS_VER;
-        cap_nvfbc->nv_fbc_function_list.nvFBCDestroyHandle(cap_nvfbc->nv_fbc_handle, &destroy_params);
-        cap_nvfbc->fbc_handle_created = false;
-    }
-
+    gsr_capture_nvfbc_destroy_session_and_handle(cap_nvfbc);
     gsr_capture_base_stop(&cap_nvfbc->base);
     gsr_cuda_unload(&cap_nvfbc->cuda);
     return -1;
 }
 
-static void gsr_capture_nvfbc_destroy_session(gsr_capture *cap) {
-    gsr_capture_nvfbc *cap_nvfbc = cap->priv;
-
-    if(cap_nvfbc->fbc_handle_created) {
-        if(cap_nvfbc->capture_session_created) {
-            NVFBC_DESTROY_CAPTURE_SESSION_PARAMS destroy_capture_params;
-            memset(&destroy_capture_params, 0, sizeof(destroy_capture_params));
-            destroy_capture_params.dwVersion = NVFBC_DESTROY_CAPTURE_SESSION_PARAMS_VER;
-            cap_nvfbc->nv_fbc_function_list.nvFBCDestroyCaptureSession(cap_nvfbc->nv_fbc_handle, &destroy_capture_params);
-            cap_nvfbc->capture_session_created = false;
-        }
-
-        NVFBC_DESTROY_HANDLE_PARAMS destroy_params;
-        memset(&destroy_params, 0, sizeof(destroy_params));
-        destroy_params.dwVersion = NVFBC_DESTROY_HANDLE_PARAMS_VER;
-        cap_nvfbc->nv_fbc_function_list.nvFBCDestroyHandle(cap_nvfbc->nv_fbc_handle, &destroy_params);
-        cap_nvfbc->fbc_handle_created = false;
-    }
-
-    cap_nvfbc->nv_fbc_handle = 0;
-}
-
 static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_nvfbc *cap_nvfbc = cap->priv;
+
+    const double nvfbc_recreate_retry_time_seconds = 1.0;
+    if(cap_nvfbc->nvfbc_needs_recreate) {
+        const double now = clock_get_monotonic_seconds();
+        if(now - cap_nvfbc->nvfbc_dead_start >= nvfbc_recreate_retry_time_seconds) {
+            cap_nvfbc->nvfbc_dead_start = now;
+            gsr_capture_nvfbc_destroy_session_and_handle(cap_nvfbc);
+
+            if(gsr_capture_nvfbc_setup_handle(cap_nvfbc) != 0) {
+                fprintf(stderr, "gsr error: gsr_capture_nvfbc_capture failed to recreate nvfbc handle, trying again in %f second(s)\n", nvfbc_recreate_retry_time_seconds);
+                return -1;
+            }
+            
+            if(gsr_capture_nvfbc_setup_session(cap_nvfbc) != 0) {
+                fprintf(stderr, "gsr error: gsr_capture_nvfbc_capture failed to recreate nvfbc session, trying again in %f second(s)\n", nvfbc_recreate_retry_time_seconds);
+                return -1;
+            }
+
+            cap_nvfbc->nvfbc_needs_recreate = false;
+        } else {
+            return 0;
+        }
+    }
 
     NVFBC_FRAME_GRAB_INFO frame_info;
     memset(&frame_info, 0, sizeof(frame_info));
@@ -389,8 +429,10 @@ static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame) {
 
     NVFBCSTATUS status = cap_nvfbc->nv_fbc_function_list.nvFBCToGLGrabFrame(cap_nvfbc->nv_fbc_handle, &grab_params);
     if(status != NVFBC_SUCCESS) {
-        fprintf(stderr, "gsr error: gsr_capture_nvfbc_capture failed: %s\n", cap_nvfbc->nv_fbc_function_list.nvFBCGetLastErrorStr(cap_nvfbc->nv_fbc_handle));
-        return -1;
+        fprintf(stderr, "gsr error: gsr_capture_nvfbc_capture failed: %s (%d), recreating session after %f second(s)\n", cap_nvfbc->nv_fbc_function_list.nvFBCGetLastErrorStr(cap_nvfbc->nv_fbc_handle), status, nvfbc_recreate_retry_time_seconds);
+        cap_nvfbc->nvfbc_needs_recreate = true;
+        cap_nvfbc->nvfbc_dead_start = clock_get_monotonic_seconds();
+        return 0;
     }
 
     //cap_nvfbc->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -434,7 +476,7 @@ static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame) {
 static void gsr_capture_nvfbc_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
     (void)video_codec_context;
     gsr_capture_nvfbc *cap_nvfbc = cap->priv;
-    gsr_capture_nvfbc_destroy_session(cap);
+    gsr_capture_nvfbc_destroy_session_and_handle(cap_nvfbc);
     if(cap_nvfbc) {
         gsr_capture_base_stop(&cap_nvfbc->base);
         gsr_cuda_unload(&cap_nvfbc->cuda);

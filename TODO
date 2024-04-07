@@ -34,8 +34,6 @@ NVreg_RegistryDwords.
 Restore nvfbc screen recording on monitor reconfiguration.
 Window capture doesn't work properly in _control_ game after going from pause menu to in-game (and back to pause menu). There might be some x11 event we need to catch. Same for vr-video-player.
 
-Properly handle monitor reconfiguration (kms vaapi, nvfbc).
-
 Monitor capture on steam deck is slightly below the game fps, but only when capturing on the steam deck screen. If capturing on another monitor, there is no issue.
     Is this related to the dma buf rotation issue? different modifier being slow? does this always happen?
 
@@ -79,8 +77,6 @@ Preset is set to p5 for now but it should ideally be p6 or p7.
 
 For low latency, see https://developer.download.nvidia.com/compute/nvenc/v4.0/NVENC_VideoEncoder_API_ProgGuide.pdf (section 7.1).
 Remove follow focused option.
-
-Overclocking (-oc) can overclock too much on some systems. Maybe remove the option?
 
 Exit if X11/Wayland killed (if drm plane dead or something?)
 

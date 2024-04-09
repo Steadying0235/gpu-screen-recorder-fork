@@ -114,3 +114,6 @@ Modify ffmpeg to accept opengl texture for nvenc encoding. Removes extra buffers
 When vulkan encode is added, mention minimum nvidia driver required. (550.54.14?).
 
 Support drm plane rotation. Neither X11 nor any Wayland compositor currently rotates drm planes so this might not be needed.
+
+Investigate if there is a way to do gpu->gpu copy directly without touching system ram to enable video encoding on a different gpu. On nvidia this is possible with cudaMemcpyPeer, but how about from an intel/amd gpu to an nvidia gpu or the other way around or any combination of iGPU and dedicated GPU?
+    Maybe something with clEnqueueMigrateMemObjects? on AMD something with DirectGMA maybe?

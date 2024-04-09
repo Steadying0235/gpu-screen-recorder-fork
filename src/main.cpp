@@ -2388,6 +2388,10 @@ int main(int argc, char **argv) {
                 double received_audio_time = clock_get_monotonic_seconds();
                 const int64_t timeout_ms = std::round((1000.0 / (double)audio_track.codec_context->sample_rate) * 1000.0);
 
+                // Move audio back by around 252 ms. This is just a shitty way to handle audio latency but pulseaudio latency calculation
+                // returns much lower value which isn't helpful.
+                audio_device.frame->pts = audio_track.codec_context->frame_size * 12;
+
                 while(running) {
                     void *sound_buffer;
                     int sound_buffer_size = -1;

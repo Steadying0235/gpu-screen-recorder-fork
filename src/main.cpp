@@ -1713,6 +1713,12 @@ int main(int argc, char **argv) {
         usage();
     }
 
+    if(audio_codec == AudioCodec::FLAC) {
+        fprintf(stderr, "Warning: flac audio codec has been temporary disabled, using opus audio codec instead\n");
+        audio_codec_to_use = "opus";
+        audio_codec = AudioCodec::OPUS;
+    }
+
     bool overclock = false;
     const char *overclock_str = args["-oc"].value();
     if(!overclock_str)
@@ -2388,9 +2394,35 @@ int main(int argc, char **argv) {
                 double received_audio_time = clock_get_monotonic_seconds();
                 const int64_t timeout_ms = std::round((1000.0 / (double)audio_track.codec_context->sample_rate) * 1000.0);
 
-                // Move audio back by around 252 ms. This is just a shitty way to handle audio latency but pulseaudio latency calculation
+                // Move audio forward by around 252 ms (for opus/aac), or 42ms for flac. This is just a shitty way to handle audio latency but pulseaudio latency calculation
                 // returns much lower value which isn't helpful.
-                audio_device.frame->pts = audio_track.codec_context->frame_size * 12;
+                if(needs_audio_conversion)
+                    swr_convert(swr, &audio_device.frame->data[0], audio_track.codec_context->frame_size, (const uint8_t**)&empty_audio, audio_track.codec_context->frame_size);
+                else
+                    audio_device.frame->data[0] = empty_audio;
+
+                int num_frames_to_delay = 12;
+                if(audio_codec == AudioCodec::FLAC)
+                    num_frames_to_delay = 2;
+
+                for(int i = 0; i < num_frames_to_delay; ++i) {
+                    if(audio_track.graph) {
+                        std::lock_guard<std::mutex> lock(audio_filter_mutex);
+                        // TODO: av_buffersrc_add_frame
+                        if(av_buffersrc_write_frame(audio_device.src_filter_ctx, audio_device.frame) < 0) {
+                            fprintf(stderr, "Error: failed to add audio frame to filter\n");
+                        }
+                    } else {
+                        int ret = avcodec_send_frame(audio_track.codec_context, audio_device.frame);
+                        if(ret >= 0) {
+                            // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                            receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_device.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
+                        } else {
+                            fprintf(stderr, "Failed to encode audio!\n");
+                        }
+                    }
+                    audio_device.frame->pts += audio_track.codec_context->frame_size;
+                }
 
                 while(running) {
                     void *sound_buffer;

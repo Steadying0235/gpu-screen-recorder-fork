@@ -241,7 +241,9 @@ static AVSampleFormat audio_codec_get_sample_format(AudioCodec audio_codec, cons
                 supports_s16 = false;
 
             if(!supports_s16 && !supports_flt) {
-                fprintf(stderr, "Warning: opus audio codec is chosen but your ffmpeg version does not support s16/flt sample format and performance might be slightly worse. You can either rebuild ffmpeg with libopus instead of the built-in opus, use the flatpak version of gpu screen recorder or record with flac audio codec instead (-ac flac). Falling back to fltp audio sample format instead.\n");
+                fprintf(stderr, "Warning: opus audio codec is chosen but your ffmpeg version does not support s16/flt sample format and performance might be slightly worse.\n");
+                fprintf(stderr, "  You can either rebuild ffmpeg with libopus instead of the built-in opus, use the flatpak version of gpu screen recorder or record with aac audio codec instead (-ac aac).\n");
+                fprintf(stderr, "  Falling back to fltp audio sample format instead.\n");
             }
 
             if(supports_s16)
@@ -2399,6 +2401,8 @@ int main(int argc, char **argv) {
                 double received_audio_time = clock_get_monotonic_seconds();
                 const int64_t timeout_ms = std::round((1000.0 / (double)audio_track.codec_context->sample_rate) * 1000.0);
 
+                // Remove this for now, it doesn't work well for everybody. The timing is different depending on system
+                #if 0
                 // Move audio forward by around 252 ms (for opus/aac), or 42ms for flac. This is just a shitty way to handle audio latency but pulseaudio latency calculation
                 // returns much lower value which isn't helpful.
                 if(needs_audio_conversion)
@@ -2428,6 +2432,7 @@ int main(int argc, char **argv) {
                     }
                     audio_device.frame->pts += audio_track.codec_context->frame_size;
                 }
+                #endif
 
                 while(running) {
                     void *sound_buffer;

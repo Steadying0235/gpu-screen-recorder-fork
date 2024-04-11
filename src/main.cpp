@@ -1258,6 +1258,7 @@ static bool is_livestream_path(const char *str) {
 static int init_filter_graph(AVCodecContext *audio_codec_context, AVFilterGraph **graph, AVFilterContext **sink, std::vector<AVFilterContext*> &src_filter_ctx, size_t num_sources) {
     char ch_layout[64];
     int err = 0;
+    ch_layout[0] = '\0';
  
     AVFilterGraph *filter_graph = avfilter_graph_alloc();
     if (!filter_graph) {
@@ -1716,7 +1717,7 @@ int main(int argc, char **argv) {
     }
 
     if(audio_codec == AudioCodec::OPUS || audio_codec == AudioCodec::FLAC) {
-        fprintf(stderr, "Warning: opus and flac audio codecs has been temporary disabled, using aac audio codec instead\n");
+        fprintf(stderr, "Warning: opus and flac audio codecs are temporary disabled, using aac audio codec instead\n");
         audio_codec_to_use = "aac";
         audio_codec = AudioCodec::AAC;
     }

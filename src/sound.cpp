@@ -41,6 +41,7 @@ struct pa_handle {
     size_t output_index, output_length;
 
     int operation_success;
+    double latency_seconds;
 };
 
 static void pa_sound_device_free(pa_handle *s) {
@@ -79,6 +80,7 @@ static pa_handle* pa_sound_device_new(const char *server,
     p->read_data = NULL;
     p->read_length = 0;
     p->read_index = 0;
+    p->latency_seconds = 0;
 
     const int buffer_size = attr->maxlength;
     void *buffer = malloc(buffer_size);
@@ -153,78 +155,41 @@ fail:
     return NULL;
 }
 
-// Returns a negative value on failure or if |p->output_length| data is not available within the time frame specified by the sample rate
-static int pa_sound_device_read(pa_handle *p) {
+static int pa_sound_device_read(pa_handle *p, double timeout_seconds) {
     assert(p);
 
-    const int64_t timeout_ms = std::round((1000.0 / (double)pa_stream_get_sample_spec(p->stream)->rate) * 1000.0);
     const double start_time = clock_get_monotonic_seconds();
 
-    bool success = false;
     int r = 0;
+    //pa_usec_t latency = 0;
+    //int negative = 0;
     int *rerror = &r;
     CHECK_DEAD_GOTO(p, rerror, fail);
 
-    while (p->output_index < p->output_length) {
-        if((clock_get_monotonic_seconds() - start_time) * 1000 >= timeout_ms)
-            return -1;
+    while(clock_get_monotonic_seconds() - start_time < timeout_seconds) {
+        pa_mainloop_prepare(p->mainloop, 1 * 1000);
+        pa_mainloop_poll(p->mainloop);
+        pa_mainloop_dispatch(p->mainloop);
 
-        if(!p->read_data) {
-            pa_mainloop_prepare(p->mainloop, 1 * 1000); // 1 ms
-            pa_mainloop_poll(p->mainloop);
-            pa_mainloop_dispatch(p->mainloop);
+        if(pa_stream_peek(p->stream, &p->read_data, &p->read_length) < 0)
+            goto fail;
 
-            if(pa_stream_peek(p->stream, &p->read_data, &p->read_length) < 0)
-                goto fail;
+        if(!p->read_data && p->read_length == 0)
+            continue;
 
-            if(!p->read_data && p->read_length == 0)
-                continue;
+        // pa_operation_unref(pa_stream_update_timing_info(p->stream, NULL, NULL));
+        // if (pa_stream_get_latency(p->stream, &latency, &negative) >= 0) {
+        //     fprintf(stderr, "latency: %lu ms, negative: %d, extra delay: %f ms\n", latency / 1000, negative, (clock_get_monotonic_seconds() - start_time) * 1000.0);
+        // }
 
-            if(!p->read_data && p->read_length > 0) {
-                // There is a hole in the stream :( drop it. Maybe we should generate silence instead? TODO
-                if(pa_stream_drop(p->stream) != 0)
-                    goto fail;
-                continue;
-            }
-
-            if(p->read_length <= 0) {
-                p->read_data = NULL;
-                if(pa_stream_drop(p->stream) != 0)
-                    goto fail;
-
-                CHECK_DEAD_GOTO(p, rerror, fail);
-                continue;
-            }
-        }
-
-        const size_t space_free_in_output_buffer = p->output_length - p->output_index;
-        if(space_free_in_output_buffer < p->read_length) {
-            memcpy(p->output_data + p->output_index, (const uint8_t*)p->read_data + p->read_index, space_free_in_output_buffer);
-            p->output_index = 0;
-            p->read_index += space_free_in_output_buffer;
-            p->read_length -= space_free_in_output_buffer;
-            break;
-        } else {
-            memcpy(p->output_data + p->output_index, (const uint8_t*)p->read_data + p->read_index, p->read_length);
-            p->output_index += p->read_length;
-            p->read_data = NULL;
-            p->read_length = 0;
-            p->read_index = 0;
-            
-            if(pa_stream_drop(p->stream) != 0)
-                goto fail;
-
-            if(p->output_index == p->output_length) {
-                p->output_index = 0;
-                break;
-            }
-        }
+        memcpy(p->output_data, p->read_data, p->read_length);
+        pa_stream_drop(p->stream);
+        p->latency_seconds = clock_get_monotonic_seconds() - start_time;
+        return p->read_length;
     }
 
-    success = true;
-
     fail:
-    return success ? 0 : -1;
+    return -1;
 }
 
 static pa_sample_format_t audio_format_to_pulse_audio_format(AudioFormat audio_format) {
@@ -269,6 +234,7 @@ int sound_device_get_by_name(SoundDevice *device, const char *device_name, const
 
     device->handle = handle;
     device->frames = period_frame_size;
+    device->latency_seconds = 0.0;
     return 0;
 }
 
@@ -278,14 +244,16 @@ void sound_device_close(SoundDevice *device) {
     device->handle = NULL;
 }
 
-int sound_device_read_next_chunk(SoundDevice *device, void **buffer) {
+int sound_device_read_next_chunk(SoundDevice *device, void **buffer, double timeout_sec) {
     pa_handle *pa = (pa_handle*)device->handle;
-    if(pa_sound_device_read(pa) < 0) {
+    int size = pa_sound_device_read(pa, timeout_sec);
+    if(size < 0) {
         //fprintf(stderr, "pa_simple_read() failed: %s\n", pa_strerror(error));
         return -1;
     }
     *buffer = pa->output_data;
-    return device->frames;
+    device->latency_seconds = pa->latency_seconds;
+    return size;
 }
 
 static void pa_state_cb(pa_context *c, void *userdata) {

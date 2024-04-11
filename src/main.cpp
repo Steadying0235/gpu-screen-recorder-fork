@@ -2435,7 +2435,6 @@ int main(int argc, char **argv) {
                         if(new_pts == audio_device.frame->pts)
                             continue;
                         audio_device.frame->pts = new_pts;
-                        //audio_device.frame->linesize[0] = sound_buffer_size / 2;
 
                         if(audio_track.graph) {
                             std::lock_guard<std::mutex> lock(audio_filter_mutex);
@@ -2468,7 +2467,6 @@ int main(int argc, char **argv) {
                         if(new_pts == audio_device.frame->pts)
                             continue;
                         audio_device.frame->pts = new_pts;
-                        //audio_device.frame->linesize[0] = sound_buffer_size / 2;
 
                         if(audio_track.graph) {
                             std::lock_guard<std::mutex> lock(audio_filter_mutex);
@@ -2526,7 +2524,6 @@ int main(int argc, char **argv) {
                     if(new_pts == aframe->pts)
                         continue;
                     aframe->pts = new_pts;
-                    //aframe->linesize[0] = sound_buffer_size / 2;
                     err = avcodec_send_frame(audio_track.codec_context, aframe);
                     if(err >= 0){
                         // TODO: Move to separate thread because this could write to network (for example when livestreaming)

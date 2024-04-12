@@ -291,7 +291,7 @@ static AVSampleFormat audio_format_to_sample_format(const AudioFormat audio_form
     return AV_SAMPLE_FMT_S16;
 }
 
-static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_codec, bool mix_audio) {
+static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_codec, bool mix_audio, int audio_bitrate) {
     (void)fps;
     const AVCodec *codec = avcodec_find_encoder(audio_codec_get_id(audio_codec));
     if (!codec) {
@@ -304,7 +304,7 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
     assert(codec->type == AVMEDIA_TYPE_AUDIO);
     codec_context->codec_id = codec->id;
     codec_context->sample_fmt = audio_codec_get_sample_format(audio_codec, codec, mix_audio);
-    codec_context->bit_rate = audio_codec_get_get_bitrate(audio_codec);
+    codec_context->bit_rate = audio_bitrate == 0 ? audio_codec_get_get_bitrate(audio_codec) : audio_bitrate;
     codec_context->sample_rate = 48000;
     if(audio_codec == AudioCodec::AAC)
         codec_context->profile = FF_PROFILE_AAC_LOW;
@@ -808,7 +808,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 }
 
 static void usage_header() {
-    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-oc yes|no] [-fm cfr|vfr] [-cr limited|full] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no] [-sc <script_path>] [-cursor yes|no]\n");
+    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr] [-cr limited|full] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no] [-sc <script_path>] [-cursor yes|no]\n");
 }
 
 static void usage_full() {
@@ -849,6 +849,9 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'.\n");
     fprintf(stderr, "        'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  -ab   Audio bitrate to use. Optional, by default the bitrate is 96000 for opus and flac and 128000 for aac.\n");
+    fprintf(stderr, "        If this is set to 0 then it's the same as if it's absent, in which case the bitrate is determined automatically depending on the audio codec.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -oc   Overclock memory transfer rate to the maximum performance level. This only applies to NVIDIA on X11 and exists to overcome a bug in NVIDIA driver where performance level\n");
     fprintf(stderr, "        is dropped when you record a game. Only needed if you are recording a game that is bottlenecked by GPU. The same issue exists on Wayland but overclocking is not possible on Wayland.\n");
@@ -1642,6 +1645,7 @@ int main(int argc, char **argv) {
         { "-r", Arg { {}, true, false } },
         { "-k", Arg { {}, true, false } },
         { "-ac", Arg { {}, true, false } },
+        { "-ab", Arg { {}, true, false } },
         { "-oc", Arg { {}, true, false } },
         { "-fm", Arg { {}, true, false } },
         { "-pixfmt", Arg { {}, true, false } },
@@ -1719,6 +1723,15 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Warning: opus and flac audio codecs are temporary disabled, using aac audio codec instead\n");
         audio_codec_to_use = "aac";
         audio_codec = AudioCodec::AAC;
+    }
+
+    int audio_bitrate = 0;
+    const char *audio_bitrate_str = args["-ab"].value();
+    if(audio_bitrate_str) {
+        if(sscanf(audio_bitrate_str, "%d", &audio_bitrate) != 1) {
+            fprintf(stderr, "Error: -ab argument \"%s\" is not an integer\n", audio_bitrate_str);
+            usage();
+        }
     }
 
     bool overclock = false;
@@ -2252,7 +2265,7 @@ int main(int argc, char **argv) {
     int audio_stream_index = VIDEO_STREAM_INDEX + 1;
     for(const MergedAudioInputs &merged_audio_inputs : requested_audio_inputs) {
         const bool use_amix = merged_audio_inputs.audio_inputs.size() > 1;
-        AVCodecContext *audio_codec_context = create_audio_codec_context(fps, audio_codec, use_amix);
+        AVCodecContext *audio_codec_context = create_audio_codec_context(fps, audio_codec, use_amix, audio_bitrate);
 
         AVStream *audio_stream = nullptr;
         if(replay_buffer_size_secs == -1)

@@ -2410,21 +2410,26 @@ int main(int argc, char **argv) {
                     swr_init(swr);
                 }
 
-                const int64_t no_input_sleep_ms = 500;
+                double received_audio_time = clock_get_monotonic_seconds();
+                const double timeout_sec = 1000.0 / (double)audio_track.codec_context->sample_rate;
+                const int64_t timeout_ms = std::round(timeout_sec * 1000.0);
 
                 while(running) {
                     void *sound_buffer;
                     int sound_buffer_size = -1;
                     if(audio_device.sound_device.handle)
-                        sound_buffer_size = sound_device_read_next_chunk(&audio_device.sound_device, &sound_buffer, 0.5);
+                        sound_buffer_size = sound_device_read_next_chunk(&audio_device.sound_device, &sound_buffer, timeout_ms * 1000.0);
 
                     const bool got_audio_data = sound_buffer_size >= 0;
 
                     const double this_audio_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
 
                     if(paused) {
+                        if(got_audio_data)
+                            received_audio_time = this_audio_frame_time;
+
                         if(!audio_device.sound_device.handle)
-                            usleep(no_input_sleep_ms * 1000);
+                            usleep(timeout_ms * 1000);
 
                         continue;
                     }
@@ -2435,20 +2440,44 @@ int main(int argc, char **argv) {
                         break;
                     }
 
-                    if(!got_audio_data) {
+                    // TODO: Is this |received_audio_time| really correct?
+                    const double prev_audio_time = received_audio_time;
+                    const double audio_receive_time_diff = this_audio_frame_time - received_audio_time;
+                    int64_t num_missing_frames = std::round(audio_receive_time_diff / timeout_sec);
+                    if(got_audio_data)
+                        num_missing_frames = std::max((int64_t)0, num_missing_frames - 1);
+
+                    if(!audio_device.sound_device.handle)
+                        num_missing_frames = std::max((int64_t)1, num_missing_frames);
+
+                    if(got_audio_data)
+                        received_audio_time = this_audio_frame_time;
+
+                    // Fucking hell is there a better way to do this? I JUST WANT TO KEEP VIDEO AND AUDIO SYNCED HOLY FUCK I WANT TO KILL MYSELF NOW.
+                    // THIS PIECE OF SHIT WANTS EMPTY FRAMES OTHERWISE VIDEO PLAYS TOO FAST TO KEEP UP WITH AUDIO OR THE AUDIO PLAYS TOO EARLY.
+                    // BUT WE CANT USE DELAYS TO GIVE DUMMY DATA BECAUSE PULSEAUDIO MIGHT GIVE AUDIO A BIG DELAYED!!!
+                    // This garbage is needed because we want to produce constant frame rate videos instead of variable frame rate
+                    // videos because bad software such as video editing software and VLC do not support variable frame rate software,
+                    // despite nvidia shadowplay and xbox game bar producing variable frame rate videos.
+                    // So we have to make sure we produce frames at the same relative rate as the video.
+                    if(num_missing_frames >= 5 || !audio_device.sound_device.handle) {
                         // TODO:
                         //audio_track.frame->data[0] = empty_audio;
+                        received_audio_time = this_audio_frame_time;
                         if(needs_audio_conversion)
                             swr_convert(swr, &audio_device.frame->data[0], audio_track.codec_context->frame_size, (const uint8_t**)&empty_audio, audio_track.codec_context->frame_size);
                         else
                             audio_device.frame->data[0] = empty_audio;
 
-                        const int64_t new_pts = (this_audio_frame_time - record_start_time) * AV_TIME_BASE;
-                        if(new_pts != audio_device.frame->pts) {
+                        // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
+                        std::lock_guard<std::mutex> lock(audio_filter_mutex);
+                        for(int i = 0; i < num_missing_frames; ++i) {
+                            const int64_t new_pts = ((prev_audio_time - record_start_time) + timeout_sec * i) * AV_TIME_BASE;
+                            if(new_pts == audio_device.frame->pts)
+                                continue;
+                            
                             audio_device.frame->pts = new_pts;
-
                             if(audio_track.graph) {
-                                std::lock_guard<std::mutex> lock(audio_filter_mutex);
                                 // TODO: av_buffersrc_add_frame
                                 if(av_buffersrc_write_frame(audio_device.src_filter_ctx, audio_device.frame) < 0) {
                                     fprintf(stderr, "Error: failed to add audio frame to filter\n");
@@ -2466,7 +2495,7 @@ int main(int argc, char **argv) {
                     }
 
                     if(!audio_device.sound_device.handle)
-                        usleep(no_input_sleep_ms * 1000);
+                        usleep(timeout_ms * 1000);
 
                     if(got_audio_data) {
                         // TODO: Instead of converting audio, get float audio from alsa. Or does alsa do conversion internally to get this format?

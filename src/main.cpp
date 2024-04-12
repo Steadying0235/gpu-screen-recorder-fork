@@ -292,6 +292,7 @@ static AVSampleFormat audio_format_to_sample_format(const AudioFormat audio_form
 }
 
 static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_codec, bool mix_audio) {
+    (void)fps;
     const AVCodec *codec = avcodec_find_encoder(audio_codec_get_id(audio_codec));
     if (!codec) {
         fprintf(stderr, "Error: Could not find %s audio encoder\n", audio_codec_get_name(audio_codec));
@@ -316,8 +317,6 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
 
     codec_context->time_base.num = 1;
     codec_context->time_base.den = AV_TIME_BASE;
-    codec_context->framerate.num = fps;
-    codec_context->framerate.den = 1;
     codec_context->thread_count = 1;
     codec_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
@@ -2432,23 +2431,23 @@ int main(int argc, char **argv) {
                             audio_device.frame->data[0] = empty_audio;
 
                         const int64_t new_pts = (this_audio_frame_time - record_start_time) * AV_TIME_BASE;
-                        if(new_pts == audio_device.frame->pts)
-                            continue;
-                        audio_device.frame->pts = new_pts;
+                        if(new_pts != audio_device.frame->pts) {
+                            audio_device.frame->pts = new_pts;
 
-                        if(audio_track.graph) {
-                            std::lock_guard<std::mutex> lock(audio_filter_mutex);
-                            // TODO: av_buffersrc_add_frame
-                            if(av_buffersrc_write_frame(audio_device.src_filter_ctx, audio_device.frame) < 0) {
-                                fprintf(stderr, "Error: failed to add audio frame to filter\n");
-                            }
-                        } else {
-                            ret = avcodec_send_frame(audio_track.codec_context, audio_device.frame);
-                            if(ret >= 0) {
-                                // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                                receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_device.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
+                            if(audio_track.graph) {
+                                std::lock_guard<std::mutex> lock(audio_filter_mutex);
+                                // TODO: av_buffersrc_add_frame
+                                if(av_buffersrc_write_frame(audio_device.src_filter_ctx, audio_device.frame) < 0) {
+                                    fprintf(stderr, "Error: failed to add audio frame to filter\n");
+                                }
                             } else {
-                                fprintf(stderr, "Failed to encode audio!\n");
+                                ret = avcodec_send_frame(audio_track.codec_context, audio_device.frame);
+                                if(ret >= 0) {
+                                    // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                                    receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_device.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
+                                } else {
+                                    fprintf(stderr, "Failed to encode audio!\n");
+                                }
                             }
                         }
                     }
@@ -2464,23 +2463,23 @@ int main(int argc, char **argv) {
                             audio_device.frame->data[0] = (uint8_t*)sound_buffer;
 
                         const int64_t new_pts = (this_audio_frame_time - record_start_time) * AV_TIME_BASE;
-                        if(new_pts == audio_device.frame->pts)
-                            continue;
-                        audio_device.frame->pts = new_pts;
+                        if(new_pts != audio_device.frame->pts) {
+                            audio_device.frame->pts = new_pts;
 
-                        if(audio_track.graph) {
-                            std::lock_guard<std::mutex> lock(audio_filter_mutex);
-                            // TODO: av_buffersrc_add_frame
-                            if(av_buffersrc_write_frame(audio_device.src_filter_ctx, audio_device.frame) < 0) {
-                                fprintf(stderr, "Error: failed to add audio frame to filter\n");
-                            }
-                        } else {
-                            ret = avcodec_send_frame(audio_track.codec_context, audio_device.frame);
-                            if(ret >= 0) {
-                                // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                                receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_device.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
+                            if(audio_track.graph) {
+                                std::lock_guard<std::mutex> lock(audio_filter_mutex);
+                                // TODO: av_buffersrc_add_frame
+                                if(av_buffersrc_write_frame(audio_device.src_filter_ctx, audio_device.frame) < 0) {
+                                    fprintf(stderr, "Error: failed to add audio frame to filter\n");
+                                }
                             } else {
-                                fprintf(stderr, "Failed to encode audio!\n");
+                                ret = avcodec_send_frame(audio_track.codec_context, audio_device.frame);
+                                if(ret >= 0) {
+                                    // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                                    receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_device.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
+                                } else {
+                                    fprintf(stderr, "Failed to encode audio!\n");
+                                }
                             }
                         }
                     }

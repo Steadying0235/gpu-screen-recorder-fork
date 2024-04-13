@@ -119,5 +119,3 @@ Investigate if there is a way to do gpu->gpu copy directly without touching syst
     Maybe something with clEnqueueMigrateMemObjects? on AMD something with DirectGMA maybe?
 
 Fix opus/flac ( variable framerate audio :( ).
-
-Change aac bitrate by default to 160kbps and opus/flac to 128kbps and remove the -ab option.

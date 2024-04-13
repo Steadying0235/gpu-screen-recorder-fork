@@ -263,12 +263,12 @@ static AVSampleFormat audio_codec_get_sample_format(AudioCodec audio_codec, cons
 
 static int64_t audio_codec_get_get_bitrate(AudioCodec audio_codec) {
     switch(audio_codec) {
-        case AudioCodec::AAC:  return 128000;
-        case AudioCodec::OPUS: return 96000;
-        case AudioCodec::FLAC: return 96000;
+        case AudioCodec::AAC:  return 160000;
+        case AudioCodec::OPUS: return 128000;
+        case AudioCodec::FLAC: return 128000;
     }
     assert(false);
-    return 96000;
+    return 128000;
 }
 
 static AudioFormat audio_codec_context_get_audio_format(const AVCodecContext *audio_codec_context) {
@@ -850,7 +850,7 @@ static void usage_full() {
     fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'.\n");
     fprintf(stderr, "        'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -ab   Audio bitrate to use. Optional, by default the bitrate is 96000 for opus and flac and 128000 for aac.\n");
+    fprintf(stderr, "  -ab   Audio bitrate to use. Optional, by default the bitrate is 128000 for opus and flac and 160000 for aac.\n");
     fprintf(stderr, "        If this is set to 0 then it's the same as if it's absent, in which case the bitrate is determined automatically depending on the audio codec.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -oc   Overclock memory transfer rate to the maximum performance level. This only applies to NVIDIA on X11 and exists to overcome a bug in NVIDIA driver where performance level\n");

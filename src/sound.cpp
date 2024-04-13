@@ -252,11 +252,11 @@ int sound_device_get_by_name(SoundDevice *device, const char *device_name, const
     ss.channels = num_channels;
 
     pa_buffer_attr buffer_attr;
+    buffer_attr.fragsize = period_frame_size * audio_format_to_get_bytes_per_sample(audio_format) * num_channels; // 2/4 bytes/sample, @num_channels channels
     buffer_attr.tlength = -1;
     buffer_attr.prebuf = -1;
-    buffer_attr.minreq = -1;
+    buffer_attr.minreq = buffer_attr.fragsize;
     buffer_attr.maxlength = -1;
-    buffer_attr.fragsize = period_frame_size * audio_format_to_get_bytes_per_sample(audio_format) * num_channels; // 2/4 bytes/sample, @num_channels channels
 
     int error = 0;
     pa_handle *handle = pa_sound_device_new(nullptr, description, device_name, description, &ss, &buffer_attr, &error);

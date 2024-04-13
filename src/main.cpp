@@ -2418,7 +2418,7 @@ int main(int argc, char **argv) {
                     void *sound_buffer;
                     int sound_buffer_size = -1;
                     if(audio_device.sound_device.handle)
-                        sound_buffer_size = sound_device_read_next_chunk(&audio_device.sound_device, &sound_buffer, timeout_ms * 1000.0);
+                        sound_buffer_size = sound_device_read_next_chunk(&audio_device.sound_device, &sound_buffer, timeout_sec);
 
                     const bool got_audio_data = sound_buffer_size >= 0;
 

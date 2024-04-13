@@ -2417,12 +2417,15 @@ int main(int argc, char **argv) {
                 while(running) {
                     void *sound_buffer;
                     int sound_buffer_size = -1;
+                    double latency_seconds = 0.0;
+                    const double time_before_read = clock_get_monotonic_seconds();
                     if(audio_device.sound_device.handle)
-                        sound_buffer_size = sound_device_read_next_chunk(&audio_device.sound_device, &sound_buffer, timeout_sec);
+                        sound_buffer_size = sound_device_read_next_chunk(&audio_device.sound_device, &sound_buffer, 1.0, &latency_seconds);
 
                     const bool got_audio_data = sound_buffer_size >= 0;
-
-                    const double this_audio_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
+                    const double time_after_read = clock_get_monotonic_seconds();
+                    latency_seconds = time_after_read - time_before_read; // TODO: Remove this
+                    const double this_audio_frame_time = (time_after_read - paused_time_offset) - latency_seconds;
 
                     if(paused) {
                         if(got_audio_data)

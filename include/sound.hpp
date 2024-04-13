@@ -55,7 +55,7 @@ void sound_device_close(SoundDevice *device);
     Returns the next chunk of audio into @buffer.
     Returns the number of frames read, or a negative value on failure.
 */
-int sound_device_read_next_chunk(SoundDevice *device, void **buffer, double timeout_sec);
+int sound_device_read_next_chunk(SoundDevice *device, void **buffer, double timeout_sec, double *latency_sec);
 
 std::vector<AudioInput> get_pulseaudio_inputs();
 

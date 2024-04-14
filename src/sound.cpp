@@ -123,7 +123,7 @@ static pa_handle* pa_sound_device_new(const char *server,
     }
 
     r = pa_stream_connect_record(p->stream, dev, attr,
-        (pa_stream_flags_t)(PA_STREAM_INTERPOLATE_TIMING|PA_STREAM_EARLY_REQUESTS|PA_STREAM_START_UNMUTED|PA_STREAM_AUTO_TIMING_UPDATE|PA_STREAM_DONT_MOVE));
+        (pa_stream_flags_t)(PA_STREAM_INTERPOLATE_TIMING|PA_STREAM_ADJUST_LATENCY|PA_STREAM_AUTO_TIMING_UPDATE));
 
     if (r < 0) {
         error = pa_context_errno(p->context);
@@ -255,7 +255,7 @@ int sound_device_get_by_name(SoundDevice *device, const char *device_name, const
     buffer_attr.fragsize = period_frame_size * audio_format_to_get_bytes_per_sample(audio_format) * num_channels; // 2/4 bytes/sample, @num_channels channels
     buffer_attr.tlength = -1;
     buffer_attr.prebuf = -1;
-    buffer_attr.minreq = buffer_attr.fragsize;
+    buffer_attr.minreq = -1;
     buffer_attr.maxlength = buffer_attr.fragsize;
 
     int error = 0;

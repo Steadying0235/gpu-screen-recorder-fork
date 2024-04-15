@@ -41,6 +41,7 @@ struct pa_handle {
     size_t output_index, output_length;
 
     int operation_success;
+    double latency_seconds;
 };
 
 static void pa_sound_device_free(pa_handle *s) {
@@ -79,6 +80,7 @@ static pa_handle* pa_sound_device_new(const char *server,
     p->read_data = NULL;
     p->read_length = 0;
     p->read_index = 0;
+    p->latency_seconds = 0.0;
 
     const int buffer_size = attr->fragsize;
     void *buffer = malloc(buffer_size);
@@ -161,6 +163,9 @@ static int pa_sound_device_read(pa_handle *p, double timeout_seconds) {
     bool success = false;
     int r = 0;
     int *rerror = &r;
+    pa_usec_t latency = 0;
+    int negative = 0;
+
     CHECK_DEAD_GOTO(p, rerror, fail);
 
     while (p->output_index < p->output_length) {
@@ -192,6 +197,13 @@ static int pa_sound_device_read(pa_handle *p, double timeout_seconds) {
 
                 CHECK_DEAD_GOTO(p, rerror, fail);
                 continue;
+            }
+
+            if(pa_stream_get_latency(p->stream, &latency, &negative) >= 0) {
+                p->latency_seconds = negative ? -(int64_t)latency : latency;
+                p->latency_seconds *= 0.0000001;
+                if(p->latency_seconds < 0.0)
+                    p->latency_seconds = 0.0;
             }
         }
 
@@ -276,13 +288,15 @@ void sound_device_close(SoundDevice *device) {
     device->handle = NULL;
 }
 
-int sound_device_read_next_chunk(SoundDevice *device, void **buffer, double timeout_sec) {
+int sound_device_read_next_chunk(SoundDevice *device, void **buffer, double timeout_sec, double *latency_seconds) {
     pa_handle *pa = (pa_handle*)device->handle;
     if(pa_sound_device_read(pa, timeout_sec) < 0) {
         //fprintf(stderr, "pa_simple_read() failed: %s\n", pa_strerror(error));
+        *latency_seconds = 0.0;
         return -1;
     }
     *buffer = pa->output_data;
+    *latency_seconds = pa->latency_seconds;
     return device->frames;
 }
 

@@ -2383,7 +2383,7 @@ int main(int argc, char **argv) {
     }
     memset(empty_audio, 0, audio_buffer_size);
 
-    const double audio_startup_time_seconds = 0.080833;
+    const double audio_startup_time_seconds = std::max(0.0, 0.089166 - target_fps);
 
     for(AudioTrack &audio_track : audio_tracks) {
         for(AudioDevice &audio_device : audio_track.audio_devices) {

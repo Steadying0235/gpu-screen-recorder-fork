@@ -2383,6 +2383,8 @@ int main(int argc, char **argv) {
     }
     memset(empty_audio, 0, audio_buffer_size);
 
+    const double audio_startup_time_seconds = 0.080833;
+
     for(AudioTrack &audio_track : audio_tracks) {
         for(AudioDevice &audio_device : audio_track.audio_devices) {
             audio_device.thread = std::thread([&]() mutable {
@@ -2427,7 +2429,7 @@ int main(int argc, char **argv) {
                     const bool got_audio_data = sound_buffer_size >= 0;
                     //const double time_after_read_seconds = clock_get_monotonic_seconds();
                     //const double time_to_read_seconds = time_after_read_seconds - time_before_read_seconds;
-                    const double this_audio_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
+                    const double this_audio_frame_time = (clock_get_monotonic_seconds() - audio_startup_time_seconds) - paused_time_offset;
 
                     if(paused) {
                         if(got_audio_data)
@@ -2566,7 +2568,8 @@ int main(int argc, char **argv) {
 
                 int err = 0;
                 while ((err = av_buffersink_get_frame(audio_track.sink, aframe)) >= 0) {
-                    const int64_t new_pts = ((clock_get_monotonic_seconds() - paused_time_offset) - record_start_time) * AV_TIME_BASE;
+                    const double this_audio_frame_time = (clock_get_monotonic_seconds() - audio_startup_time_seconds) - paused_time_offset;
+                    const int64_t new_pts = (this_audio_frame_time - record_start_time) * AV_TIME_BASE;
                     if(new_pts == aframe->pts)
                         continue;
                     aframe->pts = new_pts;

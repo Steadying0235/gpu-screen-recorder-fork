@@ -2181,12 +2181,12 @@ int main(int argc, char **argv) {
         const char *video_codec_name = "";
         switch(video_codec) {
             case VideoCodec::H264: {
-                video_codec_name = "h265";
+                video_codec_name = "h264";
                 break;
             }
             case VideoCodec::HEVC:
             case VideoCodec::HEVC_HDR: {
-                video_codec_name = "h265";
+                video_codec_name = "hevc";
                 break;
             }
             case VideoCodec::AV1:

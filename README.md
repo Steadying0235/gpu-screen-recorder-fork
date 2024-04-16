@@ -23,6 +23,7 @@ This software works with x11 and wayland, but when using Wayland then only monit
 1) screen-direct capture has been temporary disabled as it causes issues with stuttering. This might be a nvfbc bug.
 2) Videos are in variable framerate format. Use MPV to play such videos, otherwise you might experience stuttering in the video if you are using a buggy video player. You can try saving the video into a .mkv file instead as some software may have better support for .mkv files (such as kdenlive). You can use the "-fm cfr" option to to use constant framerate mode.
 3) HDR capture is supported (on wayland), but all GPU drivers have bugs that ignore HDR metadata so the HDR metadata will be missing in the video file. I will eventually patch the video file to workaround these GPU driver issues.
+4) Opus and FLAC audio codecs are disabled at the moment because of temporary issues.
 ### AMD/Intel/Wayland root permission
 When recording a window under AMD/Intel no special user permission is required, however when recording a monitor (or when using wayland) the program needs root permission (to access KMS).\
 To make this safer, the part that needs root access has been moved to its own executable (to make it as small as possible).\

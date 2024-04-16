@@ -2417,7 +2417,7 @@ int main(int argc, char **argv) {
                 while(running) {
                     void *sound_buffer;
                     int sound_buffer_size = -1;
-                    const double time_before_read_seconds = clock_get_monotonic_seconds();
+                    //const double time_before_read_seconds = clock_get_monotonic_seconds();
                     if(audio_device.sound_device.handle) {
                         // TODO: use this instead of calculating time to read. But this can fluctuate and we dont want to go back in time
                         double latency_seconds = 0.0;
@@ -2425,9 +2425,9 @@ int main(int argc, char **argv) {
                     }
 
                     const bool got_audio_data = sound_buffer_size >= 0;
-                    const double time_after_read_seconds = clock_get_monotonic_seconds();
-                    const double time_to_read_seconds = time_after_read_seconds - time_before_read_seconds;
-                    const double this_audio_frame_time = time_after_read_seconds - paused_time_offset - time_to_read_seconds;
+                    //const double time_after_read_seconds = clock_get_monotonic_seconds();
+                    //const double time_to_read_seconds = time_after_read_seconds - time_before_read_seconds;
+                    const double this_audio_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
 
                     if(paused) {
                         if(got_audio_data)

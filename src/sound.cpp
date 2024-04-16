@@ -199,11 +199,13 @@ static int pa_sound_device_read(pa_handle *p, double timeout_seconds) {
                 continue;
             }
 
+            pa_operation_unref(pa_stream_update_timing_info(p->stream, NULL, NULL));
+            // TODO: Deal with one pa_stream_peek not being enough. In that case we need to add multiple of these together(?)
             if(pa_stream_get_latency(p->stream, &latency, &negative) >= 0) {
-                p->latency_seconds = negative ? -(int64_t)latency : latency;
-                p->latency_seconds *= 0.0000001;
+                p->latency_seconds = negative ? -(double)latency : latency;
                 if(p->latency_seconds < 0.0)
                     p->latency_seconds = 0.0;
+                p->latency_seconds *= 0.0000001;
             }
         }
 

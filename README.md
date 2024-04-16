@@ -65,7 +65,7 @@ mesa\
 ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)\
 x11 (libx11, libxcomposite, libxrandr, xfixes)\
 libpulse\
-vaapi (libva, libva-intel-driver)\
+vaapi (libva, intel-media-driver/libva-intel-driver)\
 libdrm\
 libcap\
 wayland-client

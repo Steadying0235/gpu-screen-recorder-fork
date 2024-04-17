@@ -1851,7 +1851,7 @@ int main(int argc, char **argv) {
             if(!match) {
                 fprintf(stderr, "Error: Audio input device '%s' is not a valid audio device, expected one of:\n", request_audio_input.name.c_str());
                 for(const auto &existing_audio_input : audio_inputs) {
-                    fprintf(stderr, "    %s\n", existing_audio_input.name.c_str());
+                    fprintf(stderr, "    %s (%s)\n", existing_audio_input.name.c_str(), existing_audio_input.description.c_str());
                 }
                 _exit(2);
             }

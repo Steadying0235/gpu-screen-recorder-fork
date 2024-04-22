@@ -118,4 +118,6 @@ Support drm plane rotation. Neither X11 nor any Wayland compositor currently rot
 Investigate if there is a way to do gpu->gpu copy directly without touching system ram to enable video encoding on a different gpu. On nvidia this is possible with cudaMemcpyPeer, but how about from an intel/amd gpu to an nvidia gpu or the other way around or any combination of iGPU and dedicated GPU?
     Maybe something with clEnqueueMigrateMemObjects? on AMD something with DirectGMA maybe?
 
-Fix opus/flac ( variable framerate audio :( ).
+Fix opus/flac ( variable framerate audio :( ). Going back to constant framerate audio should fix the issue with skipped frames when recording for some people (issue only reproducable with pulseaudio, and only for some users?).
+
+Go back to using pure vaapi without opengl for video encoding? rotation (transpose) can be done if its done after (rgb to yuv) color conversion.

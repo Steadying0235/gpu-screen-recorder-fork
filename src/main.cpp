@@ -808,10 +808,14 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 }
 
 static void usage_header() {
-    fprintf(stderr, "usage: gpu-screen-recorder -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr] [-cr limited|full] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no] [-sc <script_path>] [-cursor yes|no]\n");
+    const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
+    const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr] [-cr limited|full] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no] [-sc <script_path>] [-cursor yes|no]\n", program_name);
 }
 
 static void usage_full() {
+    const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
+    const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
     usage_header();
     fprintf(stderr, "\n");
     fprintf(stderr, "OPTIONS:\n");
@@ -890,9 +894,9 @@ static void usage_full() {
     fprintf(stderr, "  Send signal SIGUSR2 to gpu-screen-recorder (killall -SIGUSR2 gpu-screen-recorder) to pause/unpause recording. Only applicable and useful when recording (not streaming nor replay).\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "EXAMPLES:\n");
-    fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -o \"$HOME/Videos/video.mp4\"\n");
-    fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -a \"$(pactl get-default-sink).monitor|$(pactl get-default-source)\" -o \"$HOME/Videos/video.mp4\"\n");
-    fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -c mkv -r 60 -o \"$HOME/Videos\"\n");
+    fprintf(stderr, "  %s -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -a \"$(pactl get-default-sink).monitor|$(pactl get-default-source)\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -c mkv -r 60 -o \"$HOME/Videos\"\n", program_name);
     //fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -q ultra -pixfmt yuv444 -o video.mp4\n");
     _exit(1);
 }
@@ -2421,7 +2425,8 @@ int main(int argc, char **argv) {
                     int sound_buffer_size = -1;
                     //const double time_before_read_seconds = clock_get_monotonic_seconds();
                     if(audio_device.sound_device.handle) {
-                        // TODO: use this instead of calculating time to read. But this can fluctuate and we dont want to go back in time
+                        // TODO: use this instead of calculating time to read. But this can fluctuate and we dont want to go back in time,
+                        // also it's 0.0 for some users???
                         double latency_seconds = 0.0;
                         sound_buffer_size = sound_device_read_next_chunk(&audio_device.sound_device, &sound_buffer, timeout_sec, &latency_seconds);
                     }

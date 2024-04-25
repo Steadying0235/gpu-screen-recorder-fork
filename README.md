@@ -39,6 +39,9 @@ NVIDIA driver has a "feature" (read: bug) where it will downclock memory transfe
 To enable overclocking for optimal performance use the `-oc` option when running GPU Screen Recorder. You also need to have "Coolbits" NVIDIA X setting set to "12" to enable overclocking. You can automatically add this option if you run `sudo nvidia-xconfig --cool-bits=12` and then reboot your computer.\
 Note that this only works when Xorg server is running as root, and using this option will only give you a performance boost if the game you are recording is bottlenecked by your GPU.\
 Note! use at your own risk!
+# VRR/G-SYNC
+This should work fine on AMD/Intel X11 or Wayland. On Nvidia X11 G-SYNC only works with the -w screen-direct-force option, but because of bugs in the Nvidia driver this option is not always recommended.
+For example it can cause your computer to freeze when recording certain games.
 
 # Installation
 If you are running an Arch Linux based distro, then you can find gpu screen recorder on aur under the name gpu-screen-recorder-git (`yay -S gpu-screen-recorder-git`).\

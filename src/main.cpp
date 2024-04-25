@@ -821,7 +821,7 @@ static void usage_full() {
     fprintf(stderr, "OPTIONS:\n");
     fprintf(stderr, "  -w    Window id to record, a display (monitor name), \"screen\", \"screen-direct-force\" or \"focused\".\n");
     fprintf(stderr, "        If this is \"screen\" or \"screen-direct-force\" then all monitors are recorded.\n");
-    fprintf(stderr, "        \"screen-direct-force\" is not recommended unless you use a VRR monitor on Nvidia X11 and you are aware that using this option can cause games to freeze/crash or other issues because of Nvidia driver issues.\n");
+    fprintf(stderr, "        \"screen-direct-force\" is not recommended unless you use a VRR (G-SYNC) monitor on Nvidia X11 and you are aware that using this option can cause games to freeze/crash or other issues because of Nvidia driver issues.\n");
     fprintf(stderr, "        \"screen-direct-force\" option is only available on Nvidia X11. VRR works without this option on other systems.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -c    Container format for output file, for example mp4, or flv. Only required if no output file is specified or if recording in replay buffer mode.\n");
@@ -849,7 +849,7 @@ static void usage_full() {
     fprintf(stderr, "        Forcefully set to 'h264' if the file container type is 'flv'.\n");
     fprintf(stderr, "        Forcefully set to 'hevc' on AMD/intel if video codec is 'h264' and if the file container type is 'mkv'.\n");
     fprintf(stderr, "        'hevc_hdr' and 'av1_hdr' option is not available on X11.\n");
-    fprintf(stderr, "        Note: hdr metadata is not included in the video when recording with 'hevc_hdr'/'av1_hdr' because of bugs in AMD, Intel and NVIDIA drivers (amazin', they are bugged).\n");
+    fprintf(stderr, "        Note: hdr metadata is not included in the video when recording with 'hevc_hdr'/'av1_hdr' because of bugs in AMD, Intel and NVIDIA drivers (amazin', they are all bugged).\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'.\n");
     fprintf(stderr, "        'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");

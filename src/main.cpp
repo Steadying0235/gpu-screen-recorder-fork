@@ -626,6 +626,8 @@ static AVFrame* create_audio_frame(AVCodecContext *audio_codec_context) {
 static void open_video(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu, gsr_gpu_vendor vendor, PixelFormat pixel_format, bool hdr) {
     AVDictionary *options = nullptr;
     if(vendor == GSR_GPU_VENDOR_NVIDIA) {
+        // Disable setting preset since some nvidia gpus cant handle it nicely and greatly reduce encoding performance (from more than 60 fps to less than 45 fps) (such as Nvidia RTX A2000)
+        #if 0
         bool supports_p4 = false;
         bool supports_p5 = false;
 
@@ -638,6 +640,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
                     supports_p5 = true;
             }
         }
+        #endif
 
         if(codec_context->codec_id == AV_CODEC_ID_AV1) {
             switch(video_quality) {
@@ -686,6 +689,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
             }
         }
 
+        #if 0
         if(!supports_p4 && !supports_p5)
             fprintf(stderr, "Info: your ffmpeg version is outdated. It's recommended that you use the flatpak version of gpu-screen-recorder version instead, which you can find at https://flathub.org/apps/details/com.dec05eba.gpu_screen_recorder\n");
 
@@ -708,6 +712,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
             av_dict_set(&options, "preset", supports_p4 ? "p4" : "medium", 0);
         else
             av_dict_set(&options, "preset", supports_p5 ? "p5" : "slow", 0);
+        #endif
 
         av_dict_set(&options, "tune", "hq", 0);
         av_dict_set(&options, "rc", "constqp", 0);

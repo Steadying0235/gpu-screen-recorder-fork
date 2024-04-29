@@ -121,3 +121,7 @@ Investigate if there is a way to do gpu->gpu copy directly without touching syst
 Fix opus/flac ( variable framerate audio :( ). Going back to constant framerate audio should fix the issue with skipped frames when recording for some people (issue only reproducable with pulseaudio, and only for some users?).
 
 Go back to using pure vaapi without opengl for video encoding? rotation (transpose) can be done if its done after (rgb to yuv) color conversion.
+
+Implement scaling and use lanczos resampling for better quality. Lanczos resampling can also be used for YUV chroma for better color quality on small text.
+
+Try fixing HDR by passing HDR+10 data as well, and in the packet. Run "ffprobe -loglevel quiet -read_intervals "%+#2" -select_streams v:0 -show_entries side_data video.mp4" to test if the file has correct metadata.

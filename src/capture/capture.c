@@ -180,6 +180,8 @@ bool gsr_capture_base_setup_vaapi_textures(gsr_capture_base *self, AVFrame *fram
             return false;
         }
 
+        gsr_color_conversion_clear(&self->color_conversion);
+
         return true;
     } else {
         fprintf(stderr, "gsr error: gsr_capture_kms_setup_vaapi_textures: unexpected fourcc %u for output drm fd, expected nv12 or p010\n", prime->fourcc);
@@ -278,6 +280,8 @@ bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *self, AVFrame *frame
         fprintf(stderr, "gsr error: gsr_capture_kms_setup_cuda_textures: failed to create color conversion\n");
         return false;
     }
+
+    gsr_color_conversion_clear(&self->color_conversion);
 
     return true;
 }

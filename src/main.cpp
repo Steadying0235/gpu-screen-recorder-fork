@@ -543,7 +543,7 @@ static const AVCodec* find_h264_encoder(gsr_gpu_vendor vendor, const char *card_
     return checked_success ? codec : nullptr;
 }
 
-static const AVCodec* find_h265_encoder(gsr_gpu_vendor vendor, const char *card_path) {
+static const AVCodec* find_hevc_encoder(gsr_gpu_vendor vendor, const char *card_path) {
     const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "hevc_nvenc" : "hevc_vaapi");
     if(!codec)
         codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "nvenc_hevc" : "vaapi_hevc");
@@ -1422,7 +1422,7 @@ static void list_supported_video_codecs() {
     // TODO: Output hdr
     if(find_h264_encoder(egl.gpu_info.vendor, card_path))
         puts("h264");
-    if(find_h265_encoder(egl.gpu_info.vendor, card_path))
+    if(find_hevc_encoder(egl.gpu_info.vendor, card_path))
         puts("hevc");
     if(find_av1_encoder(egl.gpu_info.vendor, card_path))
         puts("av1");
@@ -2114,16 +2114,18 @@ int main(int argc, char **argv) {
                 video_codec = VideoCodec::H264;
             }
         } else {
-            const AVCodec *h265_codec = find_h265_encoder(egl.gpu_info.vendor, egl.card_path);
+            const AVCodec *hevc_codec = find_hevc_encoder(egl.gpu_info.vendor, egl.card_path);
 
-            if(h265_codec && fps > 60) {
+            if(hevc_codec && fps > 60) {
                 fprintf(stderr, "Warning: recording at higher fps than 60 with hevc might result in recording at a very low fps. If this happens, switch to h264 or av1\n");
             }
+
+            // TODO: Default to h264 if resolution is around 1366x768 on AMD
 
             // hevc generally allows recording at a higher resolution than h264 on nvidia cards. On a gtx 1080 4k is the max resolution for h264 but for hevc it's 8k.
             // Another important info is that when recording at a higher fps than.. 60? hevc has very bad performance. For example when recording at 144 fps the fps drops to 1
             // while with h264 the fps doesn't drop.
-            if(!h265_codec) {
+            if(!hevc_codec) {
                 fprintf(stderr, "Info: using h264 encoder because a codec was not specified and your gpu does not support hevc\n");
                 video_codec_to_use = "h264";
                 video_codec = VideoCodec::H264;
@@ -2150,7 +2152,7 @@ int main(int argc, char **argv) {
             break;
         case VideoCodec::HEVC:
         case VideoCodec::HEVC_HDR:
-            video_codec_f = find_h265_encoder(egl.gpu_info.vendor, egl.card_path);
+            video_codec_f = find_hevc_encoder(egl.gpu_info.vendor, egl.card_path);
             break;
         case VideoCodec::AV1:
         case VideoCodec::AV1_HDR:
@@ -2164,7 +2166,7 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "Warning: selected video codec h264 is not supported, trying hevc instead\n");
                 video_codec_to_use = "hevc";
                 video_codec = VideoCodec::HEVC;
-                video_codec_f = find_h265_encoder(egl.gpu_info.vendor, egl.card_path);
+                video_codec_f = find_hevc_encoder(egl.gpu_info.vendor, egl.card_path);
                 break;
             }
             case VideoCodec::HEVC:
@@ -2367,10 +2369,8 @@ int main(int argc, char **argv) {
         av_dict_free(&options);
     }
 
-    const double start_time_pts = clock_get_monotonic_seconds();
-
-    double start_time = clock_get_monotonic_seconds();
-    double frame_timer_start = start_time - target_fps; // We want to capture the first frame immediately
+    double fps_start_time = clock_get_monotonic_seconds();
+    double frame_timer_start = fps_start_time - target_fps; // We want to capture the first frame immediately
     int fps_counter = 0;
 
     bool paused = false;
@@ -2570,6 +2570,7 @@ int main(int argc, char **argv) {
         }
         ++fps_counter;
 
+        // TODO: Move to another thread, since this shouldn't be locked to video encoding fps
         {
             std::lock_guard<std::mutex> lock(audio_filter_mutex);
             for(AudioTrack &audio_track : audio_tracks) {
@@ -2597,12 +2598,12 @@ int main(int argc, char **argv) {
 
         double time_now = clock_get_monotonic_seconds();
         double frame_timer_elapsed = time_now - frame_timer_start;
-        double elapsed = time_now - start_time;
+        double elapsed = time_now - fps_start_time;
         if (elapsed >= 1.0) {
             if(verbose) {
                 fprintf(stderr, "update fps: %d\n", fps_counter);
             }
-            start_time = time_now;
+            fps_start_time = time_now;
             fps_counter = 0;
         }
 
@@ -2612,7 +2613,7 @@ int main(int argc, char **argv) {
             frame_timer_start = time_now - frame_time_overflow;
 
             const double this_video_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
-            const int64_t expected_frames = std::round((this_video_frame_time - start_time_pts) / target_fps);
+            const int64_t expected_frames = std::round((this_video_frame_time - record_start_time) / target_fps);
             const int num_frames = framerate_mode == FramerateMode::CONSTANT ? std::max((int64_t)0LL, expected_frames - video_pts_counter) : 1;
 
             if(num_frames > 0 && !paused) {

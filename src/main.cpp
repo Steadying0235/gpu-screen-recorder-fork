@@ -414,19 +414,21 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     codec_context->bit_rate = 0;
     #endif
 
+    // 8 bit / 10 bit = 80%
+    const float qp_multiply = hdr ? 8.0f/10.0f : 1.0f;
     if(vendor != GSR_GPU_VENDOR_NVIDIA) {
         switch(video_quality) {
             case VideoQuality::MEDIUM:
-                codec_context->global_quality = 180;
+                codec_context->global_quality = 180 * qp_multiply;
                 break;
             case VideoQuality::HIGH:
-                codec_context->global_quality = 140;
+                codec_context->global_quality = 140 * qp_multiply;
                 break;
             case VideoQuality::VERY_HIGH:
-                codec_context->global_quality = 120;
+                codec_context->global_quality = 120 * qp_multiply;
                 break;
             case VideoQuality::ULTRA:
-                codec_context->global_quality = 100;
+                codec_context->global_quality = 100 * qp_multiply;
                 break;
         }
     }
@@ -624,7 +626,10 @@ static AVFrame* create_audio_frame(AVCodecContext *audio_codec_context) {
 }
 
 static void open_video(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu, gsr_gpu_vendor vendor, PixelFormat pixel_format, bool hdr) {
+    (void)very_old_gpu;
     AVDictionary *options = nullptr;
+    // 8 bit / 10 bit = 80%
+    const float qp_multiply = hdr ? 8.0f/10.0f : 1.0f;
     if(vendor == GSR_GPU_VENDOR_NVIDIA) {
         // Disable setting preset since some nvidia gpus cant handle it nicely and greatly reduce encoding performance (from more than 60 fps to less than 45 fps) (such as Nvidia RTX A2000)
         #if 0
@@ -645,46 +650,46 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
         if(codec_context->codec_id == AV_CODEC_ID_AV1) {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 37, 0);
+                    av_dict_set_int(&options, "qp", 37 * qp_multiply, 0);
                     break;
                 case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 32, 0);
+                    av_dict_set_int(&options, "qp", 32 * qp_multiply, 0);
                     break;
                 case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 28, 0);
+                    av_dict_set_int(&options, "qp", 28 * qp_multiply, 0);
                     break;
                 case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 24, 0);
+                    av_dict_set_int(&options, "qp", 24 * qp_multiply, 0);
                     break;
             }
-        } else if(very_old_gpu || codec_context->codec_id == AV_CODEC_ID_H264) {
+        } else if(codec_context->codec_id == AV_CODEC_ID_H264) {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 37, 0);
+                    av_dict_set_int(&options, "qp", 37 * qp_multiply, 0);
                     break;
                 case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 32, 0);
+                    av_dict_set_int(&options, "qp", 32 * qp_multiply, 0);
                     break;
                 case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 27, 0);
+                    av_dict_set_int(&options, "qp", 27 * qp_multiply, 0);
                     break;
                 case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 21, 0);
+                    av_dict_set_int(&options, "qp", 21 * qp_multiply, 0);
                     break;
             }
         } else {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 37, 0);
+                    av_dict_set_int(&options, "qp", 37 * qp_multiply, 0);
                     break;
                 case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 32, 0);
+                    av_dict_set_int(&options, "qp", 32 * qp_multiply, 0);
                     break;
                 case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 28, 0);
+                    av_dict_set_int(&options, "qp", 28 * qp_multiply, 0);
                     break;
                 case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 24, 0);
+                    av_dict_set_int(&options, "qp", 24 * qp_multiply, 0);
                     break;
             }
         }
@@ -750,31 +755,31 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
         } else if(codec_context->codec_id == AV_CODEC_ID_H264) {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 34, 0);
+                    av_dict_set_int(&options, "qp", 34 * qp_multiply, 0);
                     break;
                 case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 30, 0);
+                    av_dict_set_int(&options, "qp", 30 * qp_multiply, 0);
                     break;
                 case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 26, 0);
+                    av_dict_set_int(&options, "qp", 26 * qp_multiply, 0);
                     break;
                 case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 22, 0);
+                    av_dict_set_int(&options, "qp", 22 * qp_multiply, 0);
                     break;
             }
         } else {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 37, 0);
+                    av_dict_set_int(&options, "qp", 37 * qp_multiply, 0);
                     break;
                 case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 32, 0);
+                    av_dict_set_int(&options, "qp", 32 * qp_multiply, 0);
                     break;
                 case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 28, 0);
+                    av_dict_set_int(&options, "qp", 28 * qp_multiply, 0);
                     break;
                 case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 24, 0);
+                    av_dict_set_int(&options, "qp", 24 * qp_multiply, 0);
                     break;
             }
         }

@@ -414,21 +414,21 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     codec_context->bit_rate = 0;
     #endif
 
-    // 8 bit / 10 bit = 80%
-    const float qp_multiply = hdr ? 8.0f/10.0f : 1.0f;
+    // 8 bit / 10 bit = 80%, and increase it even more
+    const float quality_multiply = hdr ? (8.0f/10.0f * 0.7f) : 1.0f;
     if(vendor != GSR_GPU_VENDOR_NVIDIA) {
         switch(video_quality) {
             case VideoQuality::MEDIUM:
-                codec_context->global_quality = 180 * qp_multiply;
+                codec_context->global_quality = 180 * quality_multiply;
                 break;
             case VideoQuality::HIGH:
-                codec_context->global_quality = 140 * qp_multiply;
+                codec_context->global_quality = 140 * quality_multiply;
                 break;
             case VideoQuality::VERY_HIGH:
-                codec_context->global_quality = 120 * qp_multiply;
+                codec_context->global_quality = 120 * quality_multiply;
                 break;
             case VideoQuality::ULTRA:
-                codec_context->global_quality = 100 * qp_multiply;
+                codec_context->global_quality = 100 * quality_multiply;
                 break;
         }
     }
@@ -874,7 +874,7 @@ static void usage_full() {
     fprintf(stderr, "  -fm   Framerate mode. Should be either 'cfr' or 'vfr'. Defaults to 'vfr'.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -cr   Color range. Should be either 'limited' (aka mpeg) or 'full' (aka jpeg). Defaults to 'limited'.\n");
-    fprintf(stderr, "        Limited color range means that colors are in range 16-235 while full color range means that colors are in range 0-255 (when not recording with hdr).\n");
+    fprintf(stderr, "        Limited color range means that colors are in range 16-235 (4112-60395 for hdr) while full color range means that colors are in range 0-255 (0-65535 for hdr).\n");
     fprintf(stderr, "        Note that some buggy video players (such as vlc) are unable to correctly display videos in full color range.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -v    Prints per second, fps updates. Optional, set to 'yes' by default.\n");

@@ -127,7 +127,7 @@ static bool create_socket_path(char *output_path, size_t output_path_size) {
     return true;
 }
 
-static void strncpy_safe(char *dst, const char *src, int len) {
+static void string_copy(char *dst, const char *src, int len) {
     int src_len = strlen(src);
     int min_len = src_len;
     if(len - 1 < min_len)
@@ -232,7 +232,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     }
 
     local_addr.sun_family = AF_UNIX;
-    strncpy_safe(local_addr.sun_path, self->initial_socket_path, sizeof(local_addr.sun_path));
+    string_copy(local_addr.sun_path, self->initial_socket_path, sizeof(local_addr.sun_path));
 
     const mode_t prev_mask = umask(0000);
     const int bind_res = bind(self->initial_socket_fd, (struct sockaddr*)&local_addr, sizeof(local_addr.sun_family) + strlen(local_addr.sun_path));

@@ -414,9 +414,18 @@ static bool try_card_has_valid_plane(const char *card_path) {
     return false;
 }
 
+static void string_copy(char *dst, const char *src, int len) {
+    int src_len = strlen(src);
+    int min_len = src_len;
+    if(len - 1 < min_len)
+        min_len = len - 1;
+    memcpy(dst, src, min_len);
+    dst[min_len] = '\0';
+}
+
 bool gsr_get_valid_card_path(gsr_egl *egl, char *output) {
     if(egl->dri_card_path) {
-        strncpy(output, egl->dri_card_path, 127);
+        string_copy(output, egl->dri_card_path, 127);
         return try_card_has_valid_plane(output);
     }
 
@@ -435,7 +444,7 @@ bool gsr_card_path_get_render_path(const char *card_path, char *render_path) {
 
     char *render_path_tmp = drmGetRenderDeviceNameFromFd(fd);
     if(render_path_tmp) {
-        strncpy(render_path, render_path_tmp, 127);
+        string_copy(render_path, render_path_tmp, 127);
         free(render_path_tmp);
         close(fd);
         return true;

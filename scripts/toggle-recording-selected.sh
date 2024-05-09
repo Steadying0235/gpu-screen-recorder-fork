@@ -1,6 +1,6 @@
 #!/bin/sh -e
 
-killall -INT gpu-screen-recorder && notify-send -u low 'GPU Screen Recorder' 'Stopped recording' && exit 0;
+killall -SIGINT gpu-screen-recorder && sleep 0.5 && notify-send -t 1500 -u low 'GPU Screen Recorder' 'Stopped recording' && exit 0;
 window=$(xdotool selectwindow)
 active_sink="$(pactl get-default-sink).monitor"
 mkdir -p "$HOME/Videos"

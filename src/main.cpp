@@ -46,6 +46,8 @@ extern "C" {
 
 // TODO: Remove LIBAVUTIL_VERSION_MAJOR checks in the future when ubuntu, pop os LTS etc update ffmpeg to >= 5.0
 
+static const int AUDIO_SAMPLE_RATE = 48000;
+
 static const int VIDEO_STREAM_INDEX = 0;
 
 static thread_local char av_error_buffer[AV_ERROR_MAX_STRING_SIZE];
@@ -176,7 +178,7 @@ static void receive_frames(AVCodecContext *av_codec_context, int stream_index, A
             } else {
                 av_packet_rescale_ts(av_packet, av_codec_context->time_base, stream->time_base);
                 av_packet->stream_index = stream->index;
-                // TODO: Is av_interleaved_write_frame needed?
+                // TODO: Is av_interleaved_write_frame needed?. Answer: might be needed for mkv but dont use it! it causes frames to be inconsistent, skipping frames and duplicating frames
                 int ret = av_write_frame(av_format_context, av_packet);
                 if(ret < 0) {
                     fprintf(stderr, "Error: Failed to write frame index %d to muxer, reason: %s (%d)\n", av_packet->stream_index, av_error_to_string(ret), ret);
@@ -305,7 +307,7 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
     codec_context->codec_id = codec->id;
     codec_context->sample_fmt = audio_codec_get_sample_format(audio_codec, codec, mix_audio);
     codec_context->bit_rate = audio_bitrate == 0 ? audio_codec_get_get_bitrate(audio_codec) : audio_bitrate;
-    codec_context->sample_rate = 48000;
+    codec_context->sample_rate = AUDIO_SAMPLE_RATE;
     if(audio_codec == AudioCodec::AAC)
         codec_context->profile = FF_PROFILE_AAC_LOW;
 #if LIBAVCODEC_VERSION_MAJOR < 60
@@ -316,7 +318,7 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
 #endif
 
     codec_context->time_base.num = 1;
-    codec_context->time_base.den = AV_TIME_BASE;
+    codec_context->time_base.den = codec_context->sample_rate;
     codec_context->thread_count = 1;
     codec_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
@@ -863,6 +865,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'.\n");
     fprintf(stderr, "        'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
+    fprintf(stderr, "        Flac audio codec is option is disable at the moment because of a temporary issue.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -ab   Audio bitrate to use. Optional, by default the bitrate is 128000 for opus and flac and 160000 for aac.\n");
     fprintf(stderr, "        If this is set to 0 then it's the same as if it's absent, in which case the bitrate is determined automatically depending on the audio codec.\n");
@@ -1039,6 +1042,20 @@ static void run_recording_saved_script_async(const char *script_file, const char
     } else { // parent
         waitpid(pid, NULL, 0);
     }
+}
+
+static double audio_codec_get_desired_delay(AudioCodec audio_codec) {
+    switch(audio_codec) {
+        case AudioCodec::OPUS:
+            return 0.04;
+        case AudioCodec::AAC:
+            return 0.04 * 1.5;
+        case AudioCodec::FLAC:
+            // TODO: Test
+            return 0.04;
+    }
+    assert(false);
+    return 0.04;
 }
 
 struct AudioDevice {
@@ -1717,10 +1734,10 @@ int main(int argc, char **argv) {
         usage();
     }
 
-    AudioCodec audio_codec = AudioCodec::AAC;
+    AudioCodec audio_codec = AudioCodec::OPUS;
     const char *audio_codec_to_use = args["-ac"].value();
     if(!audio_codec_to_use)
-        audio_codec_to_use = "aac";
+        audio_codec_to_use = "opus";
 
     if(strcmp(audio_codec_to_use, "aac") == 0) {
         audio_codec = AudioCodec::AAC;
@@ -1733,10 +1750,10 @@ int main(int argc, char **argv) {
         usage();
     }
 
-    if(audio_codec == AudioCodec::OPUS || audio_codec == AudioCodec::FLAC) {
-        fprintf(stderr, "Warning: opus and flac audio codecs are temporary disabled, using aac audio codec instead\n");
-        audio_codec_to_use = "aac";
-        audio_codec = AudioCodec::AAC;
+    if(audio_codec == AudioCodec::FLAC) {
+        fprintf(stderr, "Warning: flac audio codec is temporary disabled, using opus audio codec instead\n");
+        audio_codec_to_use = "opus";
+        audio_codec = AudioCodec::OPUS;
     }
 
     int audio_bitrate = 0;
@@ -2095,6 +2112,7 @@ int main(int argc, char **argv) {
                 audio_codec = AudioCodec::AAC;
                 fprintf(stderr, "Warning: flac audio codec is only supported by .mp4 and .mkv files, falling back to aac instead\n");
             } else if(uses_amix) {
+                // TODO: remove this? is it true anymore?
                 audio_codec_to_use = "opus";
                 audio_codec = AudioCodec::OPUS;
                 fprintf(stderr, "Warning: flac audio codec is not supported when mixing audio sources, falling back to opus instead\n");
@@ -2278,6 +2296,7 @@ int main(int argc, char **argv) {
     if(video_stream)
         avcodec_parameters_from_context(video_stream->codecpar, video_codec_context);
 
+    int audio_max_frame_size = 1024;
     int audio_stream_index = VIDEO_STREAM_INDEX + 1;
     for(const MergedAudioInputs &merged_audio_inputs : requested_audio_inputs) {
         const bool use_amix = merged_audio_inputs.audio_inputs.size() > 1;
@@ -2312,6 +2331,12 @@ int main(int argc, char **argv) {
 
         // TODO: Cleanup above
 
+        const double audio_fps = (double)audio_codec_context->sample_rate / (double)audio_codec_context->frame_size;
+        const double timeout_sec = 1000.0 / audio_fps / 1000.0;
+
+        const double audio_startup_time_seconds = audio_codec_get_desired_delay(audio_codec);// * ((double)audio_codec_context->frame_size / 1024.0);
+        const int num_audio_frames_shift = std::round(audio_startup_time_seconds / timeout_sec);
+
         std::vector<AudioDevice> audio_devices;
         for(size_t i = 0; i < merged_audio_inputs.audio_inputs.size(); ++i) {
             auto &audio_input = merged_audio_inputs.audio_inputs[i];
@@ -2334,7 +2359,7 @@ int main(int argc, char **argv) {
             }
 
             audio_device.frame = create_audio_frame(audio_codec_context);
-            audio_device.frame->pts = 0;
+            audio_device.frame->pts = -audio_codec_context->frame_size * num_audio_frames_shift;
 
             audio_devices.push_back(std::move(audio_device));
         }
@@ -2346,8 +2371,11 @@ int main(int argc, char **argv) {
         audio_track.graph = graph;
         audio_track.sink = sink;
         audio_track.stream_index = audio_stream_index;
+        audio_track.pts = -audio_codec_context->frame_size * num_audio_frames_shift;
         audio_tracks.push_back(std::move(audio_track));
         ++audio_stream_index;
+
+        audio_max_frame_size = std::max(audio_max_frame_size, audio_codec_context->frame_size);
     }
 
     //av_dump_format(av_format_context, 0, filename, 1);
@@ -2389,15 +2417,13 @@ int main(int argc, char **argv) {
     std::deque<std::shared_ptr<PacketData>> frame_data_queue;
     bool frames_erased = false;
 
-    const size_t audio_buffer_size = 1024 * 4 * 2; // max 4 bytes/sample, 2 channels
+    const size_t audio_buffer_size = audio_max_frame_size * 4 * 2; // max 4 bytes/sample, 2 channels
     uint8_t *empty_audio = (uint8_t*)malloc(audio_buffer_size);
     if(!empty_audio) {
         fprintf(stderr, "Error: failed to create empty audio\n");
         _exit(1);
     }
     memset(empty_audio, 0, audio_buffer_size);
-
-    const double audio_startup_time_seconds = std::max(0.0, 0.089166 - target_fps);
 
     for(AudioTrack &audio_track : audio_tracks) {
         for(AudioDevice &audio_device : audio_track.audio_devices) {
@@ -2426,9 +2452,11 @@ int main(int argc, char **argv) {
                     swr_init(swr);
                 }
 
-                double received_audio_time = clock_get_monotonic_seconds();
-                const double timeout_sec = 1000.0 / (double)audio_track.codec_context->sample_rate;
-                const int64_t timeout_ms = std::round(timeout_sec * 1000.0);
+                const double audio_fps = (double)audio_track.codec_context->sample_rate / (double)audio_track.codec_context->frame_size;
+                const int64_t timeout_ms = std::round(1000.0 / audio_fps);
+                const double timeout_sec = 1000.0 / audio_fps / 1000.0;
+                const double audio_startup_time_seconds = audio_codec_get_desired_delay(audio_codec);// * ((double)audio_track.codec_context->frame_size / 1024.0);
+                bool first_frame = true;
 
                 while(running) {
                     void *sound_buffer;
@@ -2438,18 +2466,17 @@ int main(int argc, char **argv) {
                         // TODO: use this instead of calculating time to read. But this can fluctuate and we dont want to go back in time,
                         // also it's 0.0 for some users???
                         double latency_seconds = 0.0;
-                        sound_buffer_size = sound_device_read_next_chunk(&audio_device.sound_device, &sound_buffer, timeout_sec, &latency_seconds);
+                        sound_buffer_size = sound_device_read_next_chunk(&audio_device.sound_device, &sound_buffer, timeout_sec * 2.0, &latency_seconds);
                     }
 
                     const bool got_audio_data = sound_buffer_size >= 0;
+                    //fprintf(stderr, "got audio data: %s\n", got_audio_data ? "yes" : "no");
                     //const double time_after_read_seconds = clock_get_monotonic_seconds();
                     //const double time_to_read_seconds = time_after_read_seconds - time_before_read_seconds;
+                    //fprintf(stderr, "time to read: %f, %s, %f\n", time_to_read_seconds, got_audio_data ? "yes" : "no", timeout_sec);
                     const double this_audio_frame_time = (clock_get_monotonic_seconds() - audio_startup_time_seconds) - paused_time_offset;
 
                     if(paused) {
-                        if(got_audio_data)
-                            received_audio_time = this_audio_frame_time;
-
                         if(!audio_device.sound_device.handle)
                             usleep(timeout_ms * 1000);
 
@@ -2463,17 +2490,15 @@ int main(int argc, char **argv) {
                     }
 
                     // TODO: Is this |received_audio_time| really correct?
-                    const double prev_audio_time = received_audio_time;
-                    const double audio_receive_time_diff = this_audio_frame_time - received_audio_time;
-                    int64_t num_missing_frames = std::round(audio_receive_time_diff / timeout_sec);
+                    const int64_t num_expected_frames = std::round((this_audio_frame_time - record_start_time) / timeout_sec);
+                    const int64_t num_received_frames = audio_device.frame->pts / (int64_t)audio_track.codec_context->frame_size;
+                    int64_t num_missing_frames = std::max((int64_t)0LL, num_expected_frames - num_received_frames);
+
                     if(got_audio_data)
-                        num_missing_frames = std::max((int64_t)0, num_missing_frames - 1);
+                        num_missing_frames = std::max((int64_t)0LL, num_missing_frames - 1);
 
                     if(!audio_device.sound_device.handle)
                         num_missing_frames = std::max((int64_t)1, num_missing_frames);
-
-                    if(got_audio_data)
-                        received_audio_time = this_audio_frame_time;
 
                     // Fucking hell is there a better way to do this? I JUST WANT TO KEEP VIDEO AND AUDIO SYNCED HOLY FUCK I WANT TO KILL MYSELF NOW.
                     // THIS PIECE OF SHIT WANTS EMPTY FRAMES OTHERWISE VIDEO PLAYS TOO FAST TO KEEP UP WITH AUDIO OR THE AUDIO PLAYS TOO EARLY.
@@ -2482,23 +2507,19 @@ int main(int argc, char **argv) {
                     // videos because bad software such as video editing software and VLC do not support variable frame rate software,
                     // despite nvidia shadowplay and xbox game bar producing variable frame rate videos.
                     // So we have to make sure we produce frames at the same relative rate as the video.
-                    if(num_missing_frames >= 5 || !audio_device.sound_device.handle) {
+                    if((num_missing_frames >= 1 && got_audio_data) || num_missing_frames >= 5) {
                         // TODO:
                         //audio_track.frame->data[0] = empty_audio;
-                        received_audio_time = this_audio_frame_time;
-                        if(needs_audio_conversion)
-                            swr_convert(swr, &audio_device.frame->data[0], audio_track.codec_context->frame_size, (const uint8_t**)&empty_audio, audio_track.codec_context->frame_size);
-                        else
-                            audio_device.frame->data[0] = empty_audio;
+                        if(first_frame || num_missing_frames >= 5) {
+                            if(needs_audio_conversion)
+                                swr_convert(swr, &audio_device.frame->data[0], audio_track.codec_context->frame_size, (const uint8_t**)&empty_audio, audio_track.codec_context->frame_size);
+                            else
+                                audio_device.frame->data[0] = empty_audio;
+                        }
 
                         // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
                         std::lock_guard<std::mutex> lock(audio_filter_mutex);
                         for(int i = 0; i < num_missing_frames; ++i) {
-                            const int64_t new_pts = ((prev_audio_time - record_start_time) + timeout_sec * i) * AV_TIME_BASE;
-                            if(new_pts == audio_device.frame->pts)
-                                continue;
-                            
-                            audio_device.frame->pts = new_pts;
                             if(audio_track.graph) {
                                 // TODO: av_buffersrc_add_frame
                                 if(av_buffersrc_write_frame(audio_device.src_filter_ctx, audio_device.frame) < 0) {
@@ -2513,7 +2534,11 @@ int main(int argc, char **argv) {
                                     fprintf(stderr, "Failed to encode audio!\n");
                                 }
                             }
+
+                            audio_device.frame->pts += audio_track.codec_context->frame_size;
                         }
+
+                        first_frame = false;
                     }
 
                     if(!audio_device.sound_device.handle)
@@ -2526,26 +2551,24 @@ int main(int argc, char **argv) {
                         else
                             audio_device.frame->data[0] = (uint8_t*)sound_buffer;
 
-                        const int64_t new_pts = (this_audio_frame_time - record_start_time) * AV_TIME_BASE;
-                        if(new_pts != audio_device.frame->pts) {
-                            audio_device.frame->pts = new_pts;
-
-                            if(audio_track.graph) {
-                                std::lock_guard<std::mutex> lock(audio_filter_mutex);
-                                // TODO: av_buffersrc_add_frame
-                                if(av_buffersrc_write_frame(audio_device.src_filter_ctx, audio_device.frame) < 0) {
-                                    fprintf(stderr, "Error: failed to add audio frame to filter\n");
-                                }
+                        if(audio_track.graph) {
+                            std::lock_guard<std::mutex> lock(audio_filter_mutex);
+                            // TODO: av_buffersrc_add_frame
+                            if(av_buffersrc_write_frame(audio_device.src_filter_ctx, audio_device.frame) < 0) {
+                                fprintf(stderr, "Error: failed to add audio frame to filter\n");
+                            }
+                        } else {
+                            ret = avcodec_send_frame(audio_track.codec_context, audio_device.frame);
+                            if(ret >= 0) {
+                                // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                                receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_device.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
                             } else {
-                                ret = avcodec_send_frame(audio_track.codec_context, audio_device.frame);
-                                if(ret >= 0) {
-                                    // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                                    receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, audio_device.frame->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
-                                } else {
-                                    fprintf(stderr, "Failed to encode audio!\n");
-                                }
+                                fprintf(stderr, "Failed to encode audio!\n");
                             }
                         }
+
+                        audio_device.frame->pts += audio_track.codec_context->frame_size;
+                        first_frame = false;
                     }
                 }
 
@@ -2584,11 +2607,7 @@ int main(int argc, char **argv) {
 
                 int err = 0;
                 while ((err = av_buffersink_get_frame(audio_track.sink, aframe)) >= 0) {
-                    const double this_audio_frame_time = (clock_get_monotonic_seconds() - audio_startup_time_seconds) - paused_time_offset;
-                    const int64_t new_pts = (this_audio_frame_time - record_start_time) * AV_TIME_BASE;
-                    if(new_pts == aframe->pts)
-                        continue;
-                    aframe->pts = new_pts;
+                    aframe->pts = audio_track.pts;
                     err = avcodec_send_frame(audio_track.codec_context, aframe);
                     if(err >= 0){
                         // TODO: Move to separate thread because this could write to network (for example when livestreaming)
@@ -2597,6 +2616,7 @@ int main(int argc, char **argv) {
                         fprintf(stderr, "Failed to encode audio!\n");
                     }
                     av_frame_unref(aframe);
+                    audio_track.pts += audio_track.codec_context->frame_size;
                 }
             }
         }

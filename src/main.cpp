@@ -2507,7 +2507,7 @@ int main(int argc, char **argv) {
                     // videos because bad software such as video editing software and VLC do not support variable frame rate software,
                     // despite nvidia shadowplay and xbox game bar producing variable frame rate videos.
                     // So we have to make sure we produce frames at the same relative rate as the video.
-                    if((num_missing_frames >= 1 && got_audio_data) || num_missing_frames >= 5) {
+                    if((num_missing_frames >= 1 && got_audio_data) || num_missing_frames >= 5 || !audio_device.sound_device.handle) {
                         // TODO:
                         //audio_track.frame->data[0] = empty_audio;
                         if(first_frame || num_missing_frames >= 5) {

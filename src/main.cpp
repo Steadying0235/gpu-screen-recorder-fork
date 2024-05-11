@@ -2086,6 +2086,8 @@ int main(int argc, char **argv) {
             file_extension = file_extension.substr(0, comma_index);
     }
 
+    const bool force_no_audio_offset = file_extension == "ts" || file_extension == "flv";
+
     if(egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA && file_extension == "mkv" && strcmp(video_codec_to_use, "h264") == 0) {
         video_codec_to_use = "hevc";
         video_codec = VideoCodec::HEVC;
@@ -2334,7 +2336,7 @@ int main(int argc, char **argv) {
         const double audio_fps = (double)audio_codec_context->sample_rate / (double)audio_codec_context->frame_size;
         const double timeout_sec = 1000.0 / audio_fps / 1000.0;
 
-        const double audio_startup_time_seconds = audio_codec_get_desired_delay(audio_codec);// * ((double)audio_codec_context->frame_size / 1024.0);
+        const double audio_startup_time_seconds = force_no_audio_offset ? 0 : audio_codec_get_desired_delay(audio_codec);// * ((double)audio_codec_context->frame_size / 1024.0);
         const int num_audio_frames_shift = std::round(audio_startup_time_seconds / timeout_sec);
 
         std::vector<AudioDevice> audio_devices;
@@ -2455,7 +2457,7 @@ int main(int argc, char **argv) {
                 const double audio_fps = (double)audio_track.codec_context->sample_rate / (double)audio_track.codec_context->frame_size;
                 const int64_t timeout_ms = std::round(1000.0 / audio_fps);
                 const double timeout_sec = 1000.0 / audio_fps / 1000.0;
-                const double audio_startup_time_seconds = audio_codec_get_desired_delay(audio_codec);// * ((double)audio_track.codec_context->frame_size / 1024.0);
+                const double audio_startup_time_seconds = force_no_audio_offset ? 0 : audio_codec_get_desired_delay(audio_codec);// * ((double)audio_track.codec_context->frame_size / 1024.0);
                 bool first_frame = true;
 
                 while(running) {

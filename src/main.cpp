@@ -1044,18 +1044,20 @@ static void run_recording_saved_script_async(const char *script_file, const char
     }
 }
 
-static double audio_codec_get_desired_delay(AudioCodec audio_codec) {
+static double audio_codec_get_desired_delay(AudioCodec audio_codec, int fps) {
+    const double fps_inv = 1.0 / (double)fps;
+    const double base = 0.01 + 1.0/165.0;
     switch(audio_codec) {
         case AudioCodec::OPUS:
-            return 0.01;
+            return std::max(0.0, base - fps_inv);
         case AudioCodec::AAC:
-            return 0.0185 * 2.0;
+            return std::max(0.0, (base + 0.008) * 2.0 - fps_inv);
         case AudioCodec::FLAC:
             // TODO: Test
-            return 0.01;
+            return std::max(0.0, base - fps_inv);
     }
     assert(false);
-    return 0.01;
+    return std::max(0.0, base - fps_inv);
 }
 
 struct AudioDevice {
@@ -2336,7 +2338,7 @@ int main(int argc, char **argv) {
         const double audio_fps = (double)audio_codec_context->sample_rate / (double)audio_codec_context->frame_size;
         const double timeout_sec = 1000.0 / audio_fps / 1000.0;
 
-        const double audio_startup_time_seconds = force_no_audio_offset ? 0 : audio_codec_get_desired_delay(audio_codec);// * ((double)audio_codec_context->frame_size / 1024.0);
+        const double audio_startup_time_seconds = force_no_audio_offset ? 0 : audio_codec_get_desired_delay(audio_codec, fps);// * ((double)audio_codec_context->frame_size / 1024.0);
         const double num_audio_frames_shift = audio_startup_time_seconds / timeout_sec;
 
         std::vector<AudioDevice> audio_devices;

@@ -1047,15 +1047,15 @@ static void run_recording_saved_script_async(const char *script_file, const char
 static double audio_codec_get_desired_delay(AudioCodec audio_codec) {
     switch(audio_codec) {
         case AudioCodec::OPUS:
-            return 0.04;
+            return 0.03757;
         case AudioCodec::AAC:
-            return 0.04 * 1.5;
+            return 0.03757 * 1.9375;
         case AudioCodec::FLAC:
             // TODO: Test
-            return 0.04;
+            return 0.03757;
     }
     assert(false);
-    return 0.04;
+    return 0.03757;
 }
 
 struct AudioDevice {
@@ -2337,7 +2337,7 @@ int main(int argc, char **argv) {
         const double timeout_sec = 1000.0 / audio_fps / 1000.0;
 
         const double audio_startup_time_seconds = force_no_audio_offset ? 0 : audio_codec_get_desired_delay(audio_codec);// * ((double)audio_codec_context->frame_size / 1024.0);
-        const int num_audio_frames_shift = std::round(audio_startup_time_seconds / timeout_sec);
+        const double num_audio_frames_shift = audio_startup_time_seconds / timeout_sec;
 
         std::vector<AudioDevice> audio_devices;
         for(size_t i = 0; i < merged_audio_inputs.audio_inputs.size(); ++i) {
@@ -2457,8 +2457,8 @@ int main(int argc, char **argv) {
                 const double audio_fps = (double)audio_track.codec_context->sample_rate / (double)audio_track.codec_context->frame_size;
                 const int64_t timeout_ms = std::round(1000.0 / audio_fps);
                 const double timeout_sec = 1000.0 / audio_fps / 1000.0;
-                const double audio_startup_time_seconds = force_no_audio_offset ? 0 : audio_codec_get_desired_delay(audio_codec);// * ((double)audio_track.codec_context->frame_size / 1024.0);
                 bool first_frame = true;
+                int64_t num_received_frames = 0;
 
                 while(running) {
                     void *sound_buffer;
@@ -2476,7 +2476,7 @@ int main(int argc, char **argv) {
                     //const double time_after_read_seconds = clock_get_monotonic_seconds();
                     //const double time_to_read_seconds = time_after_read_seconds - time_before_read_seconds;
                     //fprintf(stderr, "time to read: %f, %s, %f\n", time_to_read_seconds, got_audio_data ? "yes" : "no", timeout_sec);
-                    const double this_audio_frame_time = (clock_get_monotonic_seconds() - audio_startup_time_seconds) - paused_time_offset;
+                    const double this_audio_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
 
                     if(paused) {
                         if(!audio_device.sound_device.handle)
@@ -2493,7 +2493,6 @@ int main(int argc, char **argv) {
 
                     // TODO: Is this |received_audio_time| really correct?
                     const int64_t num_expected_frames = std::round((this_audio_frame_time - record_start_time) / timeout_sec);
-                    const int64_t num_received_frames = audio_device.frame->pts / (int64_t)audio_track.codec_context->frame_size;
                     int64_t num_missing_frames = std::max((int64_t)0LL, num_expected_frames - num_received_frames);
 
                     if(got_audio_data)
@@ -2518,6 +2517,7 @@ int main(int argc, char **argv) {
                             else
                                 audio_device.frame->data[0] = empty_audio;
                         }
+                        first_frame = false;
 
                         // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
                         std::lock_guard<std::mutex> lock(audio_filter_mutex);
@@ -2538,9 +2538,8 @@ int main(int argc, char **argv) {
                             }
 
                             audio_device.frame->pts += audio_track.codec_context->frame_size;
+                            num_received_frames++;
                         }
-
-                        first_frame = false;
                     }
 
                     if(!audio_device.sound_device.handle)
@@ -2552,6 +2551,7 @@ int main(int argc, char **argv) {
                             swr_convert(swr, &audio_device.frame->data[0], audio_track.codec_context->frame_size, (const uint8_t**)&sound_buffer, audio_track.codec_context->frame_size);
                         else
                             audio_device.frame->data[0] = (uint8_t*)sound_buffer;
+                        first_frame = false;
 
                         if(audio_track.graph) {
                             std::lock_guard<std::mutex> lock(audio_filter_mutex);
@@ -2570,7 +2570,7 @@ int main(int argc, char **argv) {
                         }
 
                         audio_device.frame->pts += audio_track.codec_context->frame_size;
-                        first_frame = false;
+                        num_received_frames++;
                     }
                 }
 

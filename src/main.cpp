@@ -1047,15 +1047,15 @@ static void run_recording_saved_script_async(const char *script_file, const char
 static double audio_codec_get_desired_delay(AudioCodec audio_codec) {
     switch(audio_codec) {
         case AudioCodec::OPUS:
-            return 0.03757;
+            return 0.01;
         case AudioCodec::AAC:
-            return 0.03757 * 1.9375;
+            return 0.0185 * 2.0;
         case AudioCodec::FLAC:
             // TODO: Test
-            return 0.03757;
+            return 0.01;
     }
     assert(false);
-    return 0.03757;
+    return 0.01;
 }
 
 struct AudioDevice {

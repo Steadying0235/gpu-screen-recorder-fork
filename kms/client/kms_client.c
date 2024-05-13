@@ -79,7 +79,7 @@ static int send_msg_to_server(int server_fd, gsr_kms_request *request) {
     return sendmsg(server_fd, &response_message, 0);
 }
 
-static int recv_msg_from_server(int server_fd, gsr_kms_response *response) {
+static int recv_msg_from_server(int server_pid, int server_fd, gsr_kms_response *response) {
     struct iovec iov;
     iov.iov_base = response;
     iov.iov_len = sizeof(*response);
@@ -93,11 +93,26 @@ static int recv_msg_from_server(int server_fd, gsr_kms_response *response) {
     response_message.msg_control = cmsgbuf;
     response_message.msg_controllen = sizeof(cmsgbuf);
 
-    int res = recvmsg(server_fd, &response_message, MSG_WAITALL);
-    if(res <= 0)
-        return res;
+    int res = 0;
+    for(;;) {
+        res = recvmsg(server_fd, &response_message, MSG_DONTWAIT);
+        if(res <= 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            // If we are replacing the connection and closing the application at the same time
+            // then recvmsg can get stuck (because the server died), so we prevent that by doing
+            // non-blocking recvmsg and checking if the server died
+            int status = 0;
+            int wait_result = waitpid(server_pid, &status, WNOHANG);
+            if(wait_result != 0) {
+                res = -1;
+                break;
+            }
+            usleep(1000);
+        } else {
+            break;
+        }
+    }
 
-    if(response->num_fds > 0) {
+    if(res > 0 && response->num_fds > 0) {
         struct cmsghdr *cmsg = CMSG_FIRSTHDR(&response_message);
         if(cmsg) {
             int *fds = (int*)CMSG_DATA(cmsg);
@@ -371,7 +386,7 @@ int gsr_kms_client_replace_connection(gsr_kms_client *self) {
         return -1;
     }
 
-    const int recv_res = recv_msg_from_server(self->socket_pair[GSR_SOCKET_PAIR_LOCAL], &response);
+    const int recv_res = recv_msg_from_server(self->kms_server_pid, self->socket_pair[GSR_SOCKET_PAIR_LOCAL], &response);
     if(recv_res == 0) {
         fprintf(stderr, "gsr warning: gsr_kms_client_replace_connection: kms server shut down\n");
         return -1;
@@ -404,7 +419,7 @@ int gsr_kms_client_get_kms(gsr_kms_client *self, gsr_kms_response *response) {
         return -1;
     }
 
-    const int recv_res = recv_msg_from_server(self->socket_pair[GSR_SOCKET_PAIR_LOCAL], response);
+    const int recv_res = recv_msg_from_server(self->kms_server_pid, self->socket_pair[GSR_SOCKET_PAIR_LOCAL], response);
     if(recv_res == 0) {
         fprintf(stderr, "gsr warning: gsr_kms_client_get_kms: kms server shut down\n");
         strcpy(response->err_msg, "failed to receive");

@@ -2267,12 +2267,6 @@ int main(int argc, char **argv) {
         requested_audio_inputs.push_back(std::move(mai));
     }
 
-    if(is_livestream && framerate_mode != FramerateMode::CONSTANT) {
-        fprintf(stderr, "Info: framerate mode was forcefully set to \"cfr\" because live streaming was detected\n");
-        framerate_mode = FramerateMode::CONSTANT;
-        framerate_mode_str = "cfr";
-    }
-
     if(is_livestream && recording_saved_script) {
         fprintf(stderr, "Warning: live stream detected, -sc script is ignored\n");
         recording_saved_script = nullptr;

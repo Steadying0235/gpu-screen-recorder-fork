@@ -19,3 +19,5 @@ gsr-kms-server
 *.flv
 *.mkv
 *.mov
+*.webm
+*.ts

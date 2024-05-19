@@ -1209,6 +1209,7 @@ static void save_replay_async(AVCodecContext *video_codec_context, int video_str
             av_packet.pts = save_replay_packets[i]->data.pts;
             av_packet.dts = save_replay_packets[i]->data.pts;
             av_packet.flags = save_replay_packets[i]->data.flags;
+            //av_packet.duration = save_replay_packets[i]->data.duration;
 
             AVStream *stream = video_stream;
             AVCodecContext *codec_context = video_codec_context;
@@ -2098,20 +2099,29 @@ int main(int argc, char **argv) {
 
     switch(audio_codec) {
         case AudioCodec::AAC: {
+            if(file_extension == "webm") {
+                audio_codec_to_use = "opus";
+                audio_codec = AudioCodec::OPUS;
+                fprintf(stderr, "Warning: .webm files only support opus audio codec, changing audio codec from aac to opus\n");
+            }
             break;
         }
         case AudioCodec::OPUS: {
             // TODO: Also check mpegts?
-            if(file_extension != "mp4" && file_extension != "mkv") {
+            if(file_extension != "mp4" && file_extension != "mkv" && file_extension != "webm") {
                 audio_codec_to_use = "aac";
                 audio_codec = AudioCodec::AAC;
-                fprintf(stderr, "Warning: opus audio codec is only supported by .mp4 and .mkv files, falling back to aac instead\n");
+                fprintf(stderr, "Warning: opus audio codec is only supported by .mp4, .mkv and .webm files, falling back to aac instead\n");
             }
             break;
         }
         case AudioCodec::FLAC: {
             // TODO: Also check mpegts?
-            if(file_extension != "mp4" && file_extension != "mkv") {
+            if(file_extension == "webm") {
+                audio_codec_to_use = "opus";
+                audio_codec = AudioCodec::OPUS;
+                fprintf(stderr, "Warning: .webm files only support opus audio codec, changing audio codec from flac to opus\n");
+            } else if(file_extension != "mp4" && file_extension != "mkv") {
                 audio_codec_to_use = "aac";
                 audio_codec = AudioCodec::AAC;
                 fprintf(stderr, "Warning: flac audio codec is only supported by .mp4 and .mkv files, falling back to aac instead\n");

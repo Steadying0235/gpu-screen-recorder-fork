@@ -14,7 +14,8 @@ Environment=REPLAYDURATION=30
 Environment=OUTPUTDIR=%h/Videos
 Environment=MAKEFOLDERS=no
 Environment=COLOR_RANGE=limited
-ExecStart=/bin/sh -c 'AUDIO="${AUDIO_DEVICE:-$(pactl get-default-sink).monitor}"; gpu-screen-recorder -v no -w $WINDOW -c $CONTAINER -q $QUALITY -k $CODEC -ac $AUDIO_CODEC -a "$AUDIO" -f $FRAMERATE -r $REPLAYDURATION -o "$OUTPUTDIR" -mf $MAKEFOLDERS $ADDITIONAL_ARGS -cr $COLOR_RANGE'
+Environment=GOPM=2
+ExecStart=/bin/sh -c 'AUDIO="${AUDIO_DEVICE:-$(pactl get-default-sink).monitor}"; gpu-screen-recorder -v no -w $WINDOW -c $CONTAINER -q $QUALITY -k $CODEC -ac $AUDIO_CODEC -a "$AUDIO" -f $FRAMERATE -r $REPLAYDURATION -o "$OUTPUTDIR" -mf $MAKEFOLDERS $ADDITIONAL_ARGS -cr $COLOR_RANGE -gopm $GOPM'
 KillSignal=SIGINT
 Restart=on-failure
 RestartSec=5s

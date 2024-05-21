@@ -894,7 +894,7 @@ static void usage_full() {
     fprintf(stderr, "        Record cursor. Defaults to 'yes'.\n");
     fprintf(stderr, "  -gopm\n");
     fprintf(stderr, "        Set GOP multiplication. This specifies in seconds how often an I-frame (complete image) should be generated. For the final GOP this value is multiplied by the fps.\n");
-    fprintf(stderr, "        This also affects seeking in the video and how the replay video is cut. If this is set to 10 for example then you can only seek in 10-second chunks in the video.\n");
+    fprintf(stderr, "        This also affects seeking in the video and may affect how the replay video is cut. If this is set to 10 for example then you can only seek in 10-second chunks in the video.\n");
     fprintf(stderr, "        Setting this to a higher value reduces the video file size if you are ok with the previously described downside. This option is expected to be an integer value.\n");
     fprintf(stderr, "        By default this value is set to 2.\n");
     fprintf(stderr, "\n");
@@ -1950,7 +1950,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Error: option -r has to be between 5 and 1200, was: %s\n", replay_buffer_size_secs_str);
             _exit(1);
         }
-        replay_buffer_size_secs += 3; // Add a few seconds to account of lost packets because of non-keyframe packets skipped
+        replay_buffer_size_secs += gopm; // Add a few seconds to account of lost packets because of non-keyframe packets skipped
     }
 
     const char *window_str = strdup(args["-w"].value());

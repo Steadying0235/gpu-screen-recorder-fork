@@ -328,7 +328,7 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
 static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
                             VideoQuality video_quality,
                             int fps, const AVCodec *codec, bool is_livestream, gsr_gpu_vendor vendor, FramerateMode framerate_mode,
-                            bool hdr, gsr_color_range color_range, int gopm) {
+                            bool hdr, gsr_color_range color_range, float keyint) {
 
     AVCodecContext *codec_context = avcodec_alloc_context3(codec);
 
@@ -352,9 +352,9 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
         codec_context->flags2 |= AV_CODEC_FLAG2_FAST;
         //codec_context->gop_size = std::numeric_limits<int>::max();
         //codec_context->keyint_min = std::numeric_limits<int>::max();
-        codec_context->gop_size = fps * gopm;
+        codec_context->gop_size = fps * keyint;
     } else {
-        codec_context->gop_size = fps * gopm;
+        codec_context->gop_size = fps * keyint;
     }
     codec_context->max_b_frames = 0;
     codec_context->pix_fmt = pix_fmt;
@@ -822,7 +822,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr] [-cr limited|full] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no] [-sc <script_path>] [-cursor yes|no] [-gopm <value>]\n", program_name);
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr] [-cr limited|full] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>]\n", program_name);
 }
 
 static void usage_full() {
@@ -892,11 +892,11 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -cursor\n");
     fprintf(stderr, "        Record cursor. Defaults to 'yes'.\n");
-    fprintf(stderr, "  -gopm\n");
-    fprintf(stderr, "        Set GOP multiplication. This specifies in seconds how often an I-frame (complete image) should be generated. For the final GOP this value is multiplied by the fps.\n");
+    fprintf(stderr, "  -keyint\n");
+    fprintf(stderr, "        Specifies the keyframe interval in seconds, the max amount of time to wait to generate a keyframe. Keyframes can be generated more often than this.\n");
     fprintf(stderr, "        This also affects seeking in the video and may affect how the replay video is cut. If this is set to 10 for example then you can only seek in 10-second chunks in the video.\n");
-    fprintf(stderr, "        Setting this to a higher value reduces the video file size if you are ok with the previously described downside. This option is expected to be an integer value.\n");
-    fprintf(stderr, "        By default this value is set to 2.\n");
+    fprintf(stderr, "        Setting this to a higher value reduces the video file size if you are ok with the previously described downside. This option is expected to be a floating point number.\n");
+    fprintf(stderr, "        By default this value is set to 2.0.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  --list-supported-video-codecs\n");
     fprintf(stderr, "        List supported video codecs and exits. Prints h264, hevc, hevc_hdr, av1 and av1_hdr (if supported).\n");
@@ -1693,7 +1693,8 @@ int main(int argc, char **argv) {
         { "-sc", Arg { {}, true, false } },
         { "-cr", Arg { {}, true, false } },
         { "-cursor", Arg { {}, true, false } },
-        { "-gopm", Arg { {}, true, false } },
+        { "-gopm", Arg { {}, true, false } }, // deprecated, used keyint instead
+        { "-keyint", Arg { {}, true, false } },
     };
 
     for(int i = 1; i < argc; i += 2) {
@@ -1774,18 +1775,31 @@ int main(int argc, char **argv) {
         }
     }
 
-    int gopm = 2;
+    float keyint = 2.0;
     const char *gopm_str = args["-gopm"].value();
-    if(gopm_str) {
-        if(sscanf(gopm_str, "%d", &gopm) != 1) {
-            fprintf(stderr, "Error: -gopm argument \"%s\" is not an integer\n", gopm_str);
+    const char *keyint_str = args["-keyint"].value();
+    if(keyint_str) {
+        if(sscanf(keyint_str, "%f", &keyint) != 1) {
+            fprintf(stderr, "Error: -keyint argument \"%s\" is not a floating point number\n", keyint_str);
             usage();
         }
 
-        if(gopm < 0) {
+        if(keyint < 0) {
+            fprintf(stderr, "Error: -keyint is expected to be 0 or larger\n");
+            usage();
+        }
+    } else if(gopm_str) {
+        if(sscanf(gopm_str, "%f", &keyint) != 1) {
+            fprintf(stderr, "Error: -gopm argument \"%s\" is not a floating point number\n", gopm_str);
+            usage();
+        }
+
+        if(keyint < 0) {
             fprintf(stderr, "Error: -gopm is expected to be 0 or larger\n");
             usage();
         }
+
+        fprintf(stderr, "Warning: -gopm argument is deprecated, use -keyint instead\n");
     }
 
     bool overclock = false;
@@ -1950,7 +1964,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Error: option -r has to be between 5 and 1200, was: %s\n", replay_buffer_size_secs_str);
             _exit(1);
         }
-        replay_buffer_size_secs += gopm; // Add a few seconds to account of lost packets because of non-keyframe packets skipped
+        replay_buffer_size_secs += std::ceil(keyint); // Add a few seconds to account of lost packets because of non-keyframe packets skipped
     }
 
     const char *window_str = strdup(args["-w"].value());
@@ -2296,7 +2310,7 @@ int main(int argc, char **argv) {
     std::vector<AudioTrack> audio_tracks;
     const bool hdr = video_codec_is_hdr(video_codec);
 
-    AVCodecContext *video_codec_context = create_video_codec_context(egl.gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_CUDA : AV_PIX_FMT_VAAPI, quality, fps, video_codec_f, is_livestream, egl.gpu_info.vendor, framerate_mode, hdr, color_range, gopm);
+    AVCodecContext *video_codec_context = create_video_codec_context(egl.gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_CUDA : AV_PIX_FMT_VAAPI, quality, fps, video_codec_f, is_livestream, egl.gpu_info.vendor, framerate_mode, hdr, color_range, keyint);
     if(replay_buffer_size_secs == -1)
         video_stream = create_stream(av_format_context, video_codec_context);
 

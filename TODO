@@ -84,7 +84,9 @@ Use SRC_W and SRC_H for screen plane instead of crtc_w and crtc_h.
 
 Make it possible to select which /dev/dri/card* to use, but that requires opengl to also use the same card. Not sure if that is possible for amd, intel and nvidia without using vulkan instead.
 
-Support I915_FORMAT_MOD_Y_TILED_CCS (and other power saving modifiers, see https://trac.ffmpeg.org/ticket/8542). The only fix may be to use desktop portal for recording. This issue doesn't appear on x11 since these modifiers are not used by xorg server.
+Support intel display framebuffer compression (I915_FORMAT_MOD_Y_TILED_CCS modifier) (and other power saving modifiers, see https://trac.ffmpeg.org/ticket/8542). The only fix may be to use desktop portal for recording. This issue doesn't appear on x11 since these modifiers are not used by xorg server.
+This issue only appears on some intel iGPUs, such as Intel Iris Xe, see: https://github.com/dec05eba/gpu-screen-recorder-issues/issues/1.
+Intel dedicated GPU (intel arc a750) can have a similar issue, but it's not related to compression. In that case the modifier is I915_FORMAT_MOD_4_TILED.
 
 Test if p2 state can be worked around by using pure nvenc api and overwriting cuInit/cuCtxCreate* to not do anything. Cuda might be loaded when using nvenc but it might not be used, with certain record options? (such as h264 p5).
     nvenc uses cuda when using b frames and rgb->yuv conversion, so convert the image ourselves instead.-
@@ -125,3 +127,5 @@ Implement scaling and use lanczos resampling for better quality. Lanczos resampl
 Try fixing HDR by passing HDR+10 data as well, and in the packet. Run "ffprobe -loglevel quiet -read_intervals "%+#2" -select_streams v:0 -show_entries side_data video.mp4" to test if the file has correct metadata.
 
 Flac is disabled because the frame sizes are too large which causes big audio/video desync.
+
+Add 10-bit capture option. This is good because it reduces banding and quality in very dark areas while reducing the file size compared to doing the same thing with 8-bits.

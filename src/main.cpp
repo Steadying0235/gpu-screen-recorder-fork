@@ -1659,6 +1659,10 @@ int main(int argc, char **argv) {
     // nvidia doesn't support vaapi and nvidia-vaapi-driver doesn't support encoding yet.
     // Let vaapi find the match vaapi driver instead of forcing a specific one.
     unsetenv("LIBVA_DRIVER_NAME");
+    // Some people set this to force all applications to vsync on nvidia, but this makes eglSwapBuffers never return.
+    unsetenv("__GL_SYNC_TO_VBLANK");
+    // Same as above, but for amd/intel
+    unsetenv("vblank_mode");
 
     if(argc <= 1)
         usage_full();

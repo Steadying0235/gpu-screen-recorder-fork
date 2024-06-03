@@ -4,7 +4,7 @@
 # gpu-screen-recorder -w screen -f 60 -a "$(pactl get-default-sink).monitor" -r 60 -sc scripts/record-save-application-name.sh -c mp4 -o "$HOME/Videos"
 
 window=$(xdotool getwindowfocus)
-window_name=$(xdotool getwindowclassname "$window" || xdotool getwindowname "$window" || echo "game")
+window_name=$(xdotool getwindowclassname "$window" || xdotool getwindowname "$window" || echo "Game")
 window_name="$(echo "$window_name" | tr '/\\' '_')"
 
 video_dir="$HOME/Videos/Replays/$window_name"

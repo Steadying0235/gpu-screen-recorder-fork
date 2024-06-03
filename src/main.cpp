@@ -2128,7 +2128,7 @@ int main(int argc, char **argv) {
             file_extension = file_extension.substr(0, comma_index);
     }
 
-    const bool force_no_audio_offset = file_extension == "ts" || file_extension == "flv";
+    const bool force_no_audio_offset = is_livestream || (file_extension != "mp4" && file_extension == "mkv" && file_extension != "webm");
 
     if(egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA && file_extension == "mkv" && strcmp(video_codec_to_use, "h264") == 0) {
         video_codec_to_use = "hevc";
@@ -2215,10 +2215,33 @@ int main(int argc, char **argv) {
 
     // TODO: Allow hevc, vp9 and av1 in (enhanced) flv (supported since ffmpeg 6.1)
     const bool is_flv = strcmp(file_extension.c_str(), "flv") == 0;
-    if(video_codec != VideoCodec::H264 && is_flv) {
-        video_codec_to_use = "h264";
-        video_codec = VideoCodec::H264;
-        fprintf(stderr, "Warning: hevc/av1 is not compatible with flv, falling back to h264 instead.\n");
+    if(is_flv) {
+        if(video_codec != VideoCodec::H264) {
+            video_codec_to_use = "h264";
+            video_codec = VideoCodec::H264;
+            fprintf(stderr, "Warning: hevc/av1 is not compatible with flv, falling back to h264 instead.\n");
+        }
+
+        if(audio_codec != AudioCodec::AAC) {
+            audio_codec_to_use = "aac";
+            audio_codec = AudioCodec::AAC;
+            fprintf(stderr, "Warning: flv only supports aac, falling back to aac instead.\n");
+        }
+    }
+
+    const bool is_hls = strcmp(file_extension.c_str(), "m3u8") == 0;
+    if(is_hls) {
+        if(video_codec == VideoCodec::AV1 || video_codec == VideoCodec::AV1_HDR) {
+            video_codec_to_use = "hevc";
+            video_codec = VideoCodec::HEVC;
+            fprintf(stderr, "Warning: av1 is not compatible with hls (m3u8), falling back to hevc instead.\n");
+        }
+
+        if(audio_codec != AudioCodec::AAC) {
+            audio_codec_to_use = "aac";
+            audio_codec = AudioCodec::AAC;
+            fprintf(stderr, "Warning: hls (m3u8) only supports aac, falling back to aac instead.\n");
+        }
     }
 
     const AVCodec *video_codec_f = nullptr;

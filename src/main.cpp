@@ -2128,7 +2128,7 @@ int main(int argc, char **argv) {
             file_extension = file_extension.substr(0, comma_index);
     }
 
-    const bool force_no_audio_offset = is_livestream || (file_extension != "mp4" && file_extension == "mkv" && file_extension != "webm");
+    const bool force_no_audio_offset = is_livestream || (file_extension != "mp4" && file_extension != "mkv" && file_extension != "webm");
 
     if(egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA && file_extension == "mkv" && strcmp(video_codec_to_use, "h264") == 0) {
         video_codec_to_use = "hevc";

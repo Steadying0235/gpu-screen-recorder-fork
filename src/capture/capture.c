@@ -11,9 +11,6 @@
 #include <libavutil/hwcontext_cuda.h>
 #include <libavcodec/avcodec.h>
 
-#define FOURCC_NV12 842094158
-#define FOURCC_P010 808530000
-
 int gsr_capture_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
     if(cap->started)
         return -1;
@@ -110,8 +107,8 @@ bool gsr_capture_base_setup_vaapi_textures(gsr_capture_base *self, AVFrame *fram
     const uint32_t formats_nv12[2] = { fourcc('R', '8', ' ', ' '), fourcc('G', 'R', '8', '8') };
     const uint32_t formats_p010[2] = { fourcc('R', '1', '6', ' '), fourcc('G', 'R', '3', '2') };
 
-    if(prime->fourcc == FOURCC_NV12 || prime->fourcc == FOURCC_P010) {
-        const uint32_t *formats = prime->fourcc == FOURCC_NV12 ? formats_nv12 : formats_p010;
+    if(prime->fourcc == VA_FOURCC_NV12 || prime->fourcc == VA_FOURCC_P010) {
+        const uint32_t *formats = prime->fourcc == VA_FOURCC_NV12 ? formats_nv12 : formats_p010;
         const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
 
         self->egl->glGenTextures(2, self->target_textures);
@@ -166,7 +163,7 @@ bool gsr_capture_base_setup_vaapi_textures(gsr_capture_base *self, AVFrame *fram
         color_conversion_params.color_range = color_range;
         color_conversion_params.egl = self->egl;
         color_conversion_params.source_color = GSR_SOURCE_COLOR_RGB;
-        if(prime->fourcc == FOURCC_NV12)
+        if(prime->fourcc == VA_FOURCC_NV12)
             color_conversion_params.destination_color = GSR_DESTINATION_COLOR_NV12;
         else
             color_conversion_params.destination_color = GSR_DESTINATION_COLOR_P010;

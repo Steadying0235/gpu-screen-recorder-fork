@@ -193,7 +193,7 @@ static vec2i swap_vec2i(vec2i value) {
     return value;
 }
 
-bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bool screen_plane_use_modifiers, bool cursor_texture_is_external, bool record_cursor) {
+bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bool cursor_texture_is_external, bool record_cursor) {
     //egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     self->base.egl->glClear(0);
 
@@ -260,28 +260,17 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bo
     // Error: avcodec_send_frame failed, error: Input/output error
     // Assertion pic->display_order == pic->encode_order failed at libavcodec/vaapi_encode_h265.c:765
     // kms server info: kms client shutdown, shutting down the server
-    intptr_t img_attr[18] = {
+    const intptr_t img_attr[] = {
         EGL_LINUX_DRM_FOURCC_EXT,       drm_fd->pixel_format,
         EGL_WIDTH,                      drm_fd->width,
         EGL_HEIGHT,                     drm_fd->height,
         EGL_DMA_BUF_PLANE0_FD_EXT,      drm_fd->fd,
         EGL_DMA_BUF_PLANE0_OFFSET_EXT,  drm_fd->offset,
         EGL_DMA_BUF_PLANE0_PITCH_EXT,   drm_fd->pitch,
+        EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, drm_fd->modifier & 0xFFFFFFFFULL,
+        EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, drm_fd->modifier >> 32ULL,
+        EGL_NONE
     };
-
-    if(screen_plane_use_modifiers) {
-        img_attr[12] = EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT;
-        img_attr[13] = drm_fd->modifier & 0xFFFFFFFFULL;
-
-        img_attr[14] = EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT;
-        img_attr[15] = drm_fd->modifier >> 32ULL;
-
-        img_attr[16] = EGL_NONE;
-        img_attr[17] = EGL_NONE;
-    } else {
-        img_attr[12] = EGL_NONE;
-        img_attr[13] = EGL_NONE;
-    }
 
     EGLImage image = self->base.egl->eglCreateImage(self->base.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
     self->base.egl->glBindTexture(GL_TEXTURE_2D, self->base.input_texture);

@@ -44,7 +44,7 @@ struct gsr_capture_kms {
 /* Returns 0 on success */
 int gsr_capture_kms_start(gsr_capture_kms *self, const char *display_to_capture, gsr_egl *egl, AVCodecContext *video_codec_context, AVFrame *frame);
 void gsr_capture_kms_stop(gsr_capture_kms *self);
-bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bool cursor_texture_is_external, bool record_cursor);
+bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bool screen_plane_use_modifiers, bool cursor_texture_is_external, bool record_cursor);
 void gsr_capture_kms_cleanup_kms_fds(gsr_capture_kms *self);
 
 #endif /* GSR_CAPTURE_KMS_H */

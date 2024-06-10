@@ -116,7 +116,8 @@ bool gsr_capture_base_setup_vaapi_textures(gsr_capture_base *self, AVFrame *fram
             const int layer = i;
             const int plane = 0;
 
-            const uint64_t modifier = prime->objects[prime->layers[layer].object_index[plane]].drm_format_modifier;
+            //const uint64_t modifier = prime->objects[prime->layers[layer].object_index[plane]].drm_format_modifier;
+
             const intptr_t img_attr[] = {
                 EGL_LINUX_DRM_FOURCC_EXT,       formats[i],
                 EGL_WIDTH,                      prime->width / div[i],
@@ -124,8 +125,9 @@ bool gsr_capture_base_setup_vaapi_textures(gsr_capture_base *self, AVFrame *fram
                 EGL_DMA_BUF_PLANE0_FD_EXT,      prime->objects[prime->layers[layer].object_index[plane]].fd,
                 EGL_DMA_BUF_PLANE0_OFFSET_EXT,  prime->layers[layer].offset[plane],
                 EGL_DMA_BUF_PLANE0_PITCH_EXT,   prime->layers[layer].pitch[plane],
-                EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier & 0xFFFFFFFFULL,
-                EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, modifier >> 32ULL,
+                // TODO:
+                //EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier & 0xFFFFFFFFULL,
+                //EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, modifier >> 32ULL,
                 EGL_NONE
             };
 

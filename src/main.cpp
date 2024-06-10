@@ -1465,7 +1465,7 @@ static void list_supported_video_codecs() {
         XCloseDisplay(dpy);
 }
 
-static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_gpu_info gpu_inf, gsr_egl &egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range, bool record_cursor) {
+static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl &egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range, bool record_cursor) {
     vec2i region_size = { 0, 0 };
     Window src_window_id = None;
     bool follow_focused = false;
@@ -1535,7 +1535,6 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 gsr_capture_kms_cuda_params kms_params;
                 kms_params.egl = &egl;
                 kms_params.display_to_capture = window_str;
-                kms_params.gpu_inf = gpu_inf;
                 kms_params.hdr = video_codec_is_hdr(video_codec);
                 kms_params.color_range = color_range;
                 kms_params.record_cursor = record_cursor;
@@ -1576,7 +1575,6 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
             gsr_capture_kms_vaapi_params kms_params;
             kms_params.egl = &egl;
             kms_params.display_to_capture = window_str;
-            kms_params.gpu_inf = gpu_inf;
             kms_params.hdr = video_codec_is_hdr(video_codec);
             kms_params.color_range = color_range;
             kms_params.record_cursor = record_cursor;
@@ -2318,7 +2316,7 @@ int main(int argc, char **argv) {
         _exit(2);
     }
 
-    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, egl.gpu_info, egl, fps, overclock, video_codec, color_range, record_cursor);
+    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, egl, fps, overclock, video_codec, color_range, record_cursor);
 
     // (Some?) livestreaming services require at least one audio track to work.
     // If not audio is provided then create one silent audio track.

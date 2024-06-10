@@ -41,6 +41,4 @@ bool gsr_get_valid_card_path(gsr_egl *egl, char *output, bool is_monitor_capture
 /* |render_path| should be at least 128 bytes in size */
 bool gsr_card_path_get_render_path(const char *card_path, char *render_path);
 
-int even_number_ceil(int value);
-
 #endif /* GSR_UTILS_H */

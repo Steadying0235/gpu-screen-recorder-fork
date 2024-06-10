@@ -17,10 +17,6 @@ static int max_int(int a, int b) {
     return a > b ? a : b;
 }
 
-static int min_int(int a, int b) {
-    return a < b ? a : b;
-}
-
 void gsr_capture_xcomposite_init(gsr_capture_xcomposite *self, const gsr_capture_xcomposite_params *params) {
     memset(self, 0, sizeof(*self));
     self->params = *params;
@@ -102,15 +98,24 @@ int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *v
     self->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &self->texture_size.y);
     self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
-    self->texture_size.x = max_int(2, even_number_ceil(self->texture_size.x));
-    self->texture_size.y = max_int(2, even_number_ceil(self->texture_size.y));
-
-    video_codec_context->width = self->texture_size.x;
-    video_codec_context->height = self->texture_size.y;
+    if(self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_HEVC) {
+        // TODO: dont do this if using ffmpeg reports that this is not needed (AMD driver bug that was fixed recently)
+        video_codec_context->width = FFALIGN(self->texture_size.x, 64);
+        video_codec_context->height = FFALIGN(self->texture_size.y, 16);
+    } else {
+        video_codec_context->width = FFALIGN(self->texture_size.x, 2);
+        video_codec_context->height = FFALIGN(self->texture_size.y, 2);
+    }
 
     if(self->params.region_size.x > 0 && self->params.region_size.y > 0) {
-        video_codec_context->width = max_int(2, even_number_ceil(self->params.region_size.x));
-        video_codec_context->height = max_int(2, even_number_ceil(self->params.region_size.y));
+        if(self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_HEVC) {
+            // TODO: dont do this if using ffmpeg reports that this is not needed (AMD driver bug that was fixed recently)
+            video_codec_context->width = FFALIGN(self->params.region_size.x, 64);
+            video_codec_context->height = FFALIGN(self->params.region_size.y, 16);
+        } else {
+            video_codec_context->width = FFALIGN(self->params.region_size.x, 2);
+            video_codec_context->height = FFALIGN(self->params.region_size.y, 2);
+        }
     }
 
     frame->width = video_codec_context->width;
@@ -128,6 +133,7 @@ void gsr_capture_xcomposite_stop(gsr_capture_xcomposite *self) {
 }
 
 void gsr_capture_xcomposite_tick(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context) {
+    (void)video_codec_context;
     //self->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     self->params.egl->glClear(0);
 
@@ -219,9 +225,6 @@ void gsr_capture_xcomposite_tick(gsr_capture_xcomposite *self, AVCodecContext *v
         self->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &self->texture_size.x);
         self->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &self->texture_size.y);
         self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
-
-        self->texture_size.x = min_int(video_codec_context->width, max_int(2, even_number_ceil(self->texture_size.x)));
-        self->texture_size.y = min_int(video_codec_context->height, max_int(2, even_number_ceil(self->texture_size.y)));
 
         gsr_color_conversion_clear(&self->base.color_conversion);
     }

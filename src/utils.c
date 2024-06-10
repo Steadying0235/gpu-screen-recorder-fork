@@ -453,7 +453,3 @@ bool gsr_card_path_get_render_path(const char *card_path, char *render_path) {
     close(fd);
     return false;
 }
-
-int even_number_ceil(int value) {
-    return value + (value & 1);
-}

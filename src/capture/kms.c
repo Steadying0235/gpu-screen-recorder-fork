@@ -35,10 +35,6 @@ static void monitor_callback(const gsr_monitor *monitor, void *userdata) {
         fprintf(stderr, "gsr warning: reached max connector ids\n");
 }
 
-static int max_int(int a, int b) {
-    return a > b ? a : b;
-}
-
 int gsr_capture_kms_start(gsr_capture_kms *self, const char *display_to_capture, gsr_egl *egl, AVCodecContext *video_codec_context, AVFrame *frame) {
     memset(self, 0, sizeof(*self));
     self->base.video_codec_context = video_codec_context;
@@ -77,8 +73,14 @@ int gsr_capture_kms_start(gsr_capture_kms *self, const char *display_to_capture,
     /* Disable vsync */
     egl->eglSwapInterval(egl->egl_display, 0);
 
-    self->base.video_codec_context->width = max_int(2, even_number_ceil(self->capture_size.x));
-    self->base.video_codec_context->height = max_int(2, even_number_ceil(self->capture_size.y));
+    if(egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_HEVC) {
+        // TODO: dont do this if using ffmpeg reports that this is not needed (AMD driver bug that was fixed recently)
+        self->base.video_codec_context->width = FFALIGN(self->capture_size.x, 64);
+        self->base.video_codec_context->height = FFALIGN(self->capture_size.y, 16);
+    } else {
+        self->base.video_codec_context->width = FFALIGN(self->capture_size.x, 2);
+        self->base.video_codec_context->height = FFALIGN(self->capture_size.y, 2);
+    }
 
     frame->width = self->base.video_codec_context->width;
     frame->height = self->base.video_codec_context->height;

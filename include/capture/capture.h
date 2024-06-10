@@ -42,6 +42,7 @@ struct gsr_capture_base {
     gsr_color_conversion color_conversion;
 
     AVCodecContext *video_codec_context;
+    vec2i video_alignment_padding;
 };
 
 typedef struct {

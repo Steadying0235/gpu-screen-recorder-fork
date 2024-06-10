@@ -329,10 +329,8 @@ gsr_monitor_rotation drm_monitor_get_display_server_rotation(const gsr_egl *egl,
             userdata.rotation = GSR_MONITOR_ROT_0;
             userdata.match_found = false;
             for_each_active_monitor_output_wayland(egl, get_monitor_by_name_and_size_callback, &userdata);
-            if(userdata.match_found) {
-                fprintf(stderr, "found!\n");
+            if(userdata.match_found)
                 return userdata.rotation;
-            }
         }
         {
             get_monitor_by_connector_id_userdata userdata;

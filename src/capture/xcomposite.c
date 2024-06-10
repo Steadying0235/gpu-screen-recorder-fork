@@ -98,25 +98,22 @@ int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *v
     self->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &self->texture_size.y);
     self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
+    vec2i video_size = self->texture_size;
+
+    if(self->params.region_size.x > 0 && self->params.region_size.y > 0)
+        video_size = self->params.region_size;
+
     if(self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_HEVC) {
         // TODO: dont do this if using ffmpeg reports that this is not needed (AMD driver bug that was fixed recently)
-        video_codec_context->width = FFALIGN(self->texture_size.x, 64);
-        video_codec_context->height = FFALIGN(self->texture_size.y, 16);
+        video_codec_context->width = FFALIGN(video_size.x, 64);
+        video_codec_context->height = FFALIGN(video_size.y, 16);
     } else {
-        video_codec_context->width = FFALIGN(self->texture_size.x, 2);
-        video_codec_context->height = FFALIGN(self->texture_size.y, 2);
+        video_codec_context->width = FFALIGN(video_size.x, 2);
+        video_codec_context->height = FFALIGN(video_size.y, 2);
     }
 
-    if(self->params.region_size.x > 0 && self->params.region_size.y > 0) {
-        if(self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_HEVC) {
-            // TODO: dont do this if using ffmpeg reports that this is not needed (AMD driver bug that was fixed recently)
-            video_codec_context->width = FFALIGN(self->params.region_size.x, 64);
-            video_codec_context->height = FFALIGN(self->params.region_size.y, 16);
-        } else {
-            video_codec_context->width = FFALIGN(self->params.region_size.x, 2);
-            video_codec_context->height = FFALIGN(self->params.region_size.y, 2);
-        }
-    }
+    self->base.video_alignment_padding.x = self->base.video_codec_context->width - video_size.x;
+    self->base.video_alignment_padding.y = self->base.video_codec_context->height - video_size.y;
 
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;

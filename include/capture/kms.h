@@ -39,6 +39,7 @@ struct gsr_capture_kms {
     AVContentLightMetadata *light_metadata;
 
     gsr_monitor_rotation monitor_rotation;
+    vec2i video_alignment_padding;
 };
 
 /* Returns 0 on success */

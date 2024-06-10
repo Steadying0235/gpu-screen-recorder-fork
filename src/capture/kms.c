@@ -82,6 +82,9 @@ int gsr_capture_kms_start(gsr_capture_kms *self, const char *display_to_capture,
         self->base.video_codec_context->height = FFALIGN(self->capture_size.y, 2);
     }
 
+    self->base.video_alignment_padding.x = self->base.video_codec_context->width - self->capture_size.x;
+    self->base.video_alignment_padding.y = self->base.video_codec_context->height - self->capture_size.y;
+
     frame->width = self->base.video_codec_context->width;
     frame->height = self->base.video_codec_context->height;
     return 0;
@@ -298,7 +301,7 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bo
     const float texture_rotation = monitor_rotation_to_radians(self->monitor_rotation);
 
     gsr_color_conversion_draw(&self->base.color_conversion, self->base.input_texture,
-        (vec2i){0, 0}, self->capture_size,
+        (vec2i){self->base.video_alignment_padding.x / 2, self->base.video_alignment_padding.y / 2}, self->capture_size,
         capture_pos, self->capture_size,
         texture_rotation, false);
 
@@ -328,6 +331,9 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bo
                 cursor_pos.y -= cursor_size.y;
                 break;
         }
+
+        cursor_pos.x += (self->base.video_alignment_padding.x / 2);
+        cursor_pos.y += (self->base.video_alignment_padding.y / 2);
 
         const intptr_t img_attr_cursor[] = {
             EGL_LINUX_DRM_FOURCC_EXT,       cursor_drm_fd->pixel_format,

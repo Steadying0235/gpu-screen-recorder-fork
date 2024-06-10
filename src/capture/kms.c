@@ -10,6 +10,10 @@
 #define HDMI_STATIC_METADATA_TYPE1 0
 #define HDMI_EOTF_SMPTE_ST2084 2
 
+static int max_int(int a, int b) {
+    return a > b ? a : b;
+}
+
 /* TODO: On monitor reconfiguration, find monitor x, y, width and height again. Do the same for nvfbc. */
 
 typedef struct {
@@ -81,9 +85,6 @@ int gsr_capture_kms_start(gsr_capture_kms *self, const char *display_to_capture,
         self->base.video_codec_context->width = FFALIGN(self->capture_size.x, 2);
         self->base.video_codec_context->height = FFALIGN(self->capture_size.y, 2);
     }
-
-    self->base.video_alignment_padding.x = self->base.video_codec_context->width - self->capture_size.x;
-    self->base.video_alignment_padding.y = self->base.video_codec_context->height - self->capture_size.y;
 
     frame->width = self->base.video_codec_context->width;
     frame->height = self->base.video_codec_context->height;
@@ -300,8 +301,11 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bo
 
     const float texture_rotation = monitor_rotation_to_radians(self->monitor_rotation);
 
+    const int target_x = max_int(0, frame->width / 2 - self->capture_size.x / 2);
+    const int target_y = max_int(0, frame->height / 2 - self->capture_size.y / 2);
+
     gsr_color_conversion_draw(&self->base.color_conversion, self->base.input_texture,
-        (vec2i){self->base.video_alignment_padding.x / 2, self->base.video_alignment_padding.y / 2}, self->capture_size,
+        (vec2i){target_x, target_y}, self->capture_size,
         capture_pos, self->capture_size,
         texture_rotation, false);
 
@@ -332,8 +336,8 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bo
                 break;
         }
 
-        cursor_pos.x += (self->base.video_alignment_padding.x / 2);
-        cursor_pos.y += (self->base.video_alignment_padding.y / 2);
+        cursor_pos.x += target_x;
+        cursor_pos.y += target_y;
 
         const intptr_t img_attr_cursor[] = {
             EGL_LINUX_DRM_FOURCC_EXT,       cursor_drm_fd->pixel_format,

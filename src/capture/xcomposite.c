@@ -112,9 +112,6 @@ int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *v
         video_codec_context->height = FFALIGN(video_size.y, 2);
     }
 
-    self->base.video_alignment_padding.x = self->base.video_codec_context->width - video_size.x;
-    self->base.video_alignment_padding.y = self->base.video_codec_context->height - video_size.y;
-
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
 

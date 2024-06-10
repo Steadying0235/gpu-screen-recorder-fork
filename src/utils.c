@@ -423,10 +423,10 @@ static void string_copy(char *dst, const char *src, int len) {
     dst[min_len] = '\0';
 }
 
-bool gsr_get_valid_card_path(gsr_egl *egl, char *output) {
+bool gsr_get_valid_card_path(gsr_egl *egl, char *output, bool is_monitor_capture) {
     if(egl->dri_card_path) {
         string_copy(output, egl->dri_card_path, 127);
-        return try_card_has_valid_plane(output);
+        return is_monitor_capture ? try_card_has_valid_plane(output) : true;
     }
 
     for(int i = 0; i < 10; ++i) {

@@ -488,7 +488,6 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
 // }
 
 bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland, bool is_monitor_capture) {
-    (void)is_monitor_capture;
     memset(self, 0, sizeof(gsr_egl));
     self->x11.dpy = dpy;
     self->context_type = GSR_GL_CONTEXT_TYPE_EGL;

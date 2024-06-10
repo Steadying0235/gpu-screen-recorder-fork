@@ -296,7 +296,20 @@ bool get_monitor_by_name(const gsr_egl *egl, gsr_connection_type connection_type
 typedef struct {
     const gsr_monitor *monitor;
     gsr_monitor_rotation rotation;
+    bool match_found;
 } get_monitor_by_connector_id_userdata;
+
+static bool vec2i_eql(vec2i a, vec2i b) {
+    return a.x == b.x && a.y == b.y;
+}
+
+static void get_monitor_by_name_and_size_callback(const gsr_monitor *monitor, void *userdata) {
+    get_monitor_by_connector_id_userdata *data = (get_monitor_by_connector_id_userdata*)userdata;
+    if(monitor->name && data->monitor->name && strcmp(monitor->name, data->monitor->name) == 0 && vec2i_eql(monitor->size, data->monitor->size)) {
+        data->rotation = monitor->rotation;
+        data->match_found = true;
+    }
+}
 
 static void get_monitor_by_connector_id_callback(const gsr_monitor *monitor, void *userdata) {
     get_monitor_by_connector_id_userdata *data = (get_monitor_by_connector_id_userdata*)userdata;
@@ -304,20 +317,36 @@ static void get_monitor_by_connector_id_callback(const gsr_monitor *monitor, voi
         (!monitor->connector_id && monitor->monitor_identifier == data->monitor->monitor_identifier))
     {
         data->rotation = monitor->rotation;
+        data->match_found = true;
     }
 }
 
 gsr_monitor_rotation drm_monitor_get_display_server_rotation(const gsr_egl *egl, const gsr_monitor *monitor) {
     if(egl->wayland.dpy) {
-        get_monitor_by_connector_id_userdata userdata;
-        userdata.monitor = monitor;
-        userdata.rotation = GSR_MONITOR_ROT_0;
-        for_each_active_monitor_output_wayland(egl, get_monitor_by_connector_id_callback, &userdata);
-        return userdata.rotation;
+        {
+            get_monitor_by_connector_id_userdata userdata;
+            userdata.monitor = monitor;
+            userdata.rotation = GSR_MONITOR_ROT_0;
+            userdata.match_found = false;
+            for_each_active_monitor_output_wayland(egl, get_monitor_by_name_and_size_callback, &userdata);
+            if(userdata.match_found) {
+                fprintf(stderr, "found!\n");
+                return userdata.rotation;
+            }
+        }
+        {
+            get_monitor_by_connector_id_userdata userdata;
+            userdata.monitor = monitor;
+            userdata.rotation = GSR_MONITOR_ROT_0;
+            userdata.match_found = false;
+            for_each_active_monitor_output_wayland(egl, get_monitor_by_connector_id_callback, &userdata);
+            return userdata.rotation;
+        }
     } else {
         get_monitor_by_connector_id_userdata userdata;
         userdata.monitor = monitor;
         userdata.rotation = GSR_MONITOR_ROT_0;
+        userdata.match_found = false;
         for_each_active_monitor_output_x11(egl->x11.dpy, get_monitor_by_connector_id_callback, &userdata);
         return userdata.rotation;
     }

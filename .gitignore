@@ -11,6 +11,8 @@ external/wlr-export-dmabuf-unstable-v1-protocol.c
 .cache/
 .vscode/
 
+build/
+
 *.o
 gpu-screen-recorder
 gsr-kms-server

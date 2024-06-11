@@ -1,6 +1,6 @@
-project('gpu-screen-recorder', ['c', 'cpp'])
+project('gpu-screen-recorder', ['c', 'cpp'], version : '3.8.0', default_options : ['warning_level=2'])
 
-add_project_arguments('-Wall', '-Wextra', '-Wshadow', language : ['c', 'cpp'])
+add_project_arguments('-Wshadow', language : ['c', 'cpp'])
 if get_option('buildtype') == 'debug'
     add_project_arguments('-g3', language : ['c', 'cpp'])
 elif get_option('buildtype') == 'release'

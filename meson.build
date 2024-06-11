@@ -8,6 +8,7 @@ elif get_option('buildtype') == 'release'
 endif
 
 src = [
+    'kms/client/kms_client.c',
     'src/capture/capture.c',
     'src/capture/nvfbc.c',
     'src/capture/xcomposite.c',
@@ -16,7 +17,6 @@ src = [
     'src/capture/kms_vaapi.c',
     'src/capture/kms_cuda.c',
     'src/capture/kms.c',
-    'kms/client/kms_client.c',
     'src/egl.c',
     'src/cuda.c',
     'src/xnvctrl.c',
@@ -55,4 +55,6 @@ if get_option('systemd') == true
     install_data(files('extra/gpu-screen-recorder.service'), install_dir : '/usr/lib/systemd/user')
 endif
 
-meson.add_install_script('extra/meson_post_install.sh')
+if get_option('capabilities') == true
+    meson.add_install_script('extra/meson_post_install.sh')
+endif

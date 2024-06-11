@@ -1,1 +1,2 @@
 option('systemd', type : 'boolean', value : false, description : 'Install systemd service file')
+option('capabilities', type : 'boolean', value : true, description : 'Set binary admin capabilities to remove password prompt and increase performance')

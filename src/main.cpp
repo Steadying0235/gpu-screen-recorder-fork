@@ -1504,6 +1504,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                     window_str = first_output.output_name;
                 } else {
                     fprintf(stderr, "Error: no available output found\n");
+                    _exit(1);
                 }
             }
 

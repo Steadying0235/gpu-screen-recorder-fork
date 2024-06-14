@@ -452,11 +452,13 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
         { (void**)&self->glEnableVertexAttribArray, "glEnableVertexAttribArray" },
         { (void**)&self->glDrawArrays, "glDrawArrays" },
         { (void**)&self->glEnable, "glEnable" },
+        { (void**)&self->glDisable, "glDisable" },
         { (void**)&self->glBlendFunc, "glBlendFunc" },
         { (void**)&self->glGetUniformLocation, "glGetUniformLocation" },
         { (void**)&self->glUniform1f, "glUniform1f" },
         { (void**)&self->glUniform2f, "glUniform2f" },
         { (void**)&self->glDebugMessageCallback, "glDebugMessageCallback" },
+        { (void**)&self->glScissor, "glScissor" },
 
         { NULL, NULL }
     };

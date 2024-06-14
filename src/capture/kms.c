@@ -358,10 +358,15 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bo
         self->base.egl->eglDestroyImage(self->base.egl->egl_display, cursor_image);
         self->base.egl->glBindTexture(target, 0);
 
+        self->base.egl->glEnable(GL_SCISSOR_TEST);
+        self->base.egl->glScissor(target_x, target_y, self->capture_size.x, self->capture_size.y);
+
         gsr_color_conversion_draw(&self->base.color_conversion, self->base.cursor_texture,
             cursor_pos, cursor_size,
             (vec2i){0, 0}, cursor_size,
             texture_rotation, cursor_texture_is_external);
+
+        self->base.egl->glDisable(GL_SCISSOR_TEST);
     }
 
     self->base.egl->eglSwapBuffers(self->base.egl->egl_display, self->base.egl->egl_surface);

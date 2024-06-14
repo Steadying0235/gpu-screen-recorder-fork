@@ -110,6 +110,7 @@ typedef void(*__GLXextFuncPtr)(void);
 #define GL_SRC_ALPHA                            0x0302
 #define GL_ONE_MINUS_SRC_ALPHA                  0x0303
 #define GL_DEBUG_OUTPUT                         0x92E0
+#define GL_SCISSOR_TEST                         0x0C11
 
 #define GL_VENDOR                               0x1F00
 #define GL_RENDERER                             0x1F01
@@ -270,11 +271,13 @@ struct gsr_egl {
     void (*glEnableVertexAttribArray)(unsigned int index);
     void (*glDrawArrays)(unsigned int mode, int first, int count);
     void (*glEnable)(unsigned int cap);
+    void (*glDisable)(unsigned int cap);
     void (*glBlendFunc)(unsigned int sfactor, unsigned int dfactor);
     int (*glGetUniformLocation)(unsigned int program, const char *name);
     void (*glUniform1f)(int location, float v0);
     void (*glUniform2f)(int location, float v0, float v1);
     void (*glDebugMessageCallback)(GLDEBUGPROC callback, const void *userParam);
+    void (*glScissor)(int x, int y, int width, int height);
 };
 
 bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland, bool is_monitor_capture);

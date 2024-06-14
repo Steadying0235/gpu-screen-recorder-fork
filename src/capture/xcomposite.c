@@ -116,7 +116,6 @@ int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *v
     frame->height = video_codec_context->height;
 
     self->window_resize_timer = clock_get_monotonic_seconds();
-    self->clear_next_frame = true;
     return 0;
 }
 
@@ -251,30 +250,11 @@ int gsr_capture_xcomposite_capture(gsr_capture_xcomposite *self, AVFrame *frame)
         target_y + self->cursor.position.y - self->cursor.hotspot.y
     };
 
-    const bool cursor_completely_inside_window =
-        cursor_pos.x >= target_x &&
-        cursor_pos.x + self->cursor.size.x <= target_x + self->texture_size.x &&
-        cursor_pos.y >= target_y &&
-        cursor_pos.y + self->cursor.size.y <= target_y + self->texture_size.y;
-
     const bool cursor_inside_window =
         cursor_pos.x + self->cursor.size.x >= target_x &&
         cursor_pos.x <= target_x + self->texture_size.x &&
         cursor_pos.y + self->cursor.size.y >= target_y &&
         cursor_pos.y <= target_y + self->texture_size.y;
-
-    if(self->clear_next_frame) {
-        self->clear_next_frame = false;
-        gsr_color_conversion_clear(&self->base.color_conversion);
-    }
-
-    /*
-        We dont draw the cursor if it's outside the window but if it's partially inside the window then the cursor area that is outside the window
-        will not get overdrawn the next frame causing a cursor trail to be visible since we dont clear the background.
-        To fix this we detect if the cursor is partially inside the window and clear the background only in that case.
-    */
-    if(!cursor_completely_inside_window && cursor_inside_window && self->params.record_cursor)
-        self->clear_next_frame = true;
 
     gsr_color_conversion_draw(&self->base.color_conversion, window_texture_get_opengl_texture_id(&self->window_texture),
         (vec2i){target_x, target_y}, self->texture_size,
@@ -282,10 +262,15 @@ int gsr_capture_xcomposite_capture(gsr_capture_xcomposite *self, AVFrame *frame)
         0.0f, false);
 
     if(cursor_inside_window && self->params.record_cursor) {
+        self->base.egl->glEnable(GL_SCISSOR_TEST);
+        self->base.egl->glScissor(target_x, target_y, self->texture_size.x, self->texture_size.y);
+
         gsr_color_conversion_draw(&self->base.color_conversion, self->cursor.texture_id,
             cursor_pos, self->cursor.size,
             (vec2i){0, 0}, self->cursor.size,
             0.0f, false);
+
+        self->base.egl->glDisable(GL_SCISSOR_TEST);
     }
 
     self->params.egl->eglSwapBuffers(self->params.egl->egl_display, self->params.egl->egl_surface);

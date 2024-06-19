@@ -843,7 +843,9 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -s    The size (area) to record at in the format WxH, for example 1920x1080. This option is only supported (and required) when -w is \"focused\".\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -f    Framerate to record at.\n");
+    fprintf(stderr, "  -f    Frame rate to record at. Recording will only capture frames at this target frame rate.\n");
+    fprintf(stderr, "        For constant frame rate mode this option is the frame rate every frame will be captured at and if the capture frame rate is below this target frame rate then the frames will be duplicated.\n");
+    fprintf(stderr, "        For variable frame rate mode this option is the max frame rate and if the capture frame rate is below this target frame rate then frames will not be duplicated.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -a    Audio device to record from (pulse audio device). Can be specified multiple times. Each time this is specified a new audio track is added for the specified audio device.\n");
     fprintf(stderr, "        A name can be given to the audio input device by prefixing the audio input with <name>/, for example \"dummy/alsa_output.pci-0000_00_1b.0.analog-stereo.monitor\".\n");
@@ -875,7 +877,8 @@ static void usage_full() {
     fprintf(stderr, "        is dropped when you record a game. Only needed if you are recording a game that is bottlenecked by GPU. The same issue exists on Wayland but overclocking is not possible on Wayland.\n");
     fprintf(stderr, "        Works only if your have \"Coolbits\" set to \"12\" in NVIDIA X settings, see README for more information. Note! use at your own risk! Optional, disabled by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -fm   Framerate mode. Should be either 'cfr' or 'vfr'. Defaults to 'vfr'.\n");
+    fprintf(stderr, "  -fm   Framerate mode. Should be either 'cfr' (constant frame rate) or 'vfr' (variable frame rate). Defaults to 'vfr'.\n");
+    fprintf(stderr, "        'vfr' is recommended for recording for less issue with very high system load but some applications such as video editors may not support it properly.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -cr   Color range. Should be either 'limited' (aka mpeg) or 'full' (aka jpeg). Defaults to 'limited'.\n");
     fprintf(stderr, "        Limited color range means that colors are in range 16-235 (4112-60395 for hdr) while full color range means that colors are in range 0-255 (0-65535 for hdr).\n");

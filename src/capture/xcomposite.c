@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <assert.h>
 #include <X11/Xlib.h>
+#include <X11/extensions/Xdamage.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/frame.h>
@@ -36,6 +37,23 @@ static Window get_focused_window(Display *display, Atom net_active_window_atom) 
     return None;
 }
 
+static void gsr_capture_xcomposite_setup_damage(gsr_capture_xcomposite *self, Window window) {
+    if(self->damage_event == 0)
+        return;
+
+    if(self->damage) {
+        XDamageDestroy(self->params.egl->x11.dpy, self->damage);
+        self->damage = None;
+    }
+
+    self->damage = XDamageCreate(self->params.egl->x11.dpy, window, XDamageReportNonEmpty);
+    if(self->damage) {
+        XDamageSubtract(self->params.egl->x11.dpy, self->damage, None, None);
+    } else {
+        fprintf(stderr, "gsr warning: gsr_capture_xcomposite_setup_damage: XDamageCreate failed\n");
+    }
+}
+
 int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context, AVFrame *frame) {
     self->base.video_codec_context = video_codec_context;
     self->base.egl = self->params.egl;
@@ -50,6 +68,20 @@ int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *v
     } else {
         self->window = self->params.window;
     }
+
+    if(self->params.track_damage) {
+        if(!XDamageQueryExtension(self->params.egl->x11.dpy, &self->damage_event, &self->damage_error)) {
+            fprintf(stderr, "gsr warning: gsr_capture_xcomposite_start: XDamage is not supported by your X11 server\n");
+            self->damage_event = 0;
+            self->damage_error = 0;
+        }
+    } else {
+        self->damage_event = 0;
+        self->damage_error = 0;
+    }
+
+    self->damaged = true;
+    gsr_capture_xcomposite_setup_damage(self, self->window);
 
     /* TODO: Do these in tick, and allow error if follow_focused */
 
@@ -130,6 +162,11 @@ int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *v
 }
 
 void gsr_capture_xcomposite_stop(gsr_capture_xcomposite *self) {
+    if(self->damage) {
+        XDamageDestroy(self->params.egl->x11.dpy, self->damage);
+        self->damage = None;
+    }
+
     window_texture_deinit(&self->window_texture);
     gsr_cursor_deinit(&self->cursor);
     gsr_capture_base_stop(&self->base);
@@ -180,7 +217,20 @@ void gsr_capture_xcomposite_tick(gsr_capture_xcomposite *self, AVCodecContext *v
             }
         }
 
-        gsr_cursor_update(&self->cursor, &self->xev);
+        if(self->damage_event && self->xev.type == self->damage_event + XDamageNotify) {
+            XDamageNotifyEvent *de = (XDamageNotifyEvent*)&self->xev;
+            XserverRegion region = XFixesCreateRegion(self->params.egl->x11.dpy, NULL, 0);
+            // Subtract all the damage, repairing the window
+            XDamageSubtract(self->params.egl->x11.dpy, de->damage, None, region);
+            XFixesDestroyRegion(self->params.egl->x11.dpy, region);
+            self->damaged = true;
+        }
+
+        if(gsr_cursor_update(&self->cursor, &self->xev)) {
+            if(self->params.record_cursor && self->cursor.visible) {
+                self->damaged = true;
+            }
+        }
     }
 
     if(self->params.follow_focused && !self->follow_focused_initialized) {
@@ -207,6 +257,7 @@ void gsr_capture_xcomposite_tick(gsr_capture_xcomposite *self, AVCodecContext *v
 
             window_texture_deinit(&self->window_texture);
             window_texture_init(&self->window_texture, self->params.egl->x11.dpy, self->window, self->params.egl); // TODO: Do not do the below window_texture_on_resize after this
+            gsr_capture_xcomposite_setup_damage(self, self->window);
         }
     }
 
@@ -230,6 +281,18 @@ void gsr_capture_xcomposite_tick(gsr_capture_xcomposite *self, AVCodecContext *v
         self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
         gsr_color_conversion_clear(&self->base.color_conversion);
+        gsr_capture_xcomposite_setup_damage(self, self->window);
+    }
+}
+
+bool gsr_capture_xcomposite_consume_damage(gsr_capture_xcomposite *self) {
+    if(self->damage_event) {
+        const bool damaged = self->damaged;
+        self->damaged = false;
+        //fprintf(stderr, "consume: %s\n", damaged ? "yes" : "no");
+        return damaged;
+    } else {
+        return true;
     }
 }
 
@@ -251,36 +314,36 @@ int gsr_capture_xcomposite_capture(gsr_capture_xcomposite *self, AVFrame *frame)
     const int target_x = max_int(0, frame->width / 2 - self->texture_size.x / 2);
     const int target_y = max_int(0, frame->height / 2 - self->texture_size.y / 2);
 
-    // TODO: Can we do this a better way than to call it every capture?
-    if(self->params.record_cursor)
-        gsr_cursor_tick(&self->cursor, self->window);
-
     const vec2i cursor_pos = {
         target_x + self->cursor.position.x - self->cursor.hotspot.x,
         target_y + self->cursor.position.y - self->cursor.hotspot.y
     };
-
-    const bool cursor_inside_window =
-        cursor_pos.x + self->cursor.size.x >= target_x &&
-        cursor_pos.x <= target_x + self->texture_size.x &&
-        cursor_pos.y + self->cursor.size.y >= target_y &&
-        cursor_pos.y <= target_y + self->texture_size.y;
 
     gsr_color_conversion_draw(&self->base.color_conversion, window_texture_get_opengl_texture_id(&self->window_texture),
         (vec2i){target_x, target_y}, self->texture_size,
         (vec2i){0, 0}, self->texture_size,
         0.0f, false);
 
-    if(cursor_inside_window && self->params.record_cursor) {
-        self->base.egl->glEnable(GL_SCISSOR_TEST);
-        self->base.egl->glScissor(target_x, target_y, self->texture_size.x, self->texture_size.y);
+    if(self->params.record_cursor && self->cursor.visible) {
+        gsr_cursor_tick(&self->cursor, self->window);
 
-        gsr_color_conversion_draw(&self->base.color_conversion, self->cursor.texture_id,
-            cursor_pos, self->cursor.size,
-            (vec2i){0, 0}, self->cursor.size,
-            0.0f, false);
+        const bool cursor_inside_window =
+            cursor_pos.x + self->cursor.size.x >= target_x &&
+            cursor_pos.x <= target_x + self->texture_size.x &&
+            cursor_pos.y + self->cursor.size.y >= target_y &&
+            cursor_pos.y <= target_y + self->texture_size.y;
 
-        self->base.egl->glDisable(GL_SCISSOR_TEST);
+        if(cursor_inside_window) {
+            self->base.egl->glEnable(GL_SCISSOR_TEST);
+            self->base.egl->glScissor(target_x, target_y, self->texture_size.x, self->texture_size.y);
+
+            gsr_color_conversion_draw(&self->base.color_conversion, self->cursor.texture_id,
+                cursor_pos, self->cursor.size,
+                (vec2i){0, 0}, self->cursor.size,
+                0.0f, false);
+
+            self->base.egl->glDisable(GL_SCISSOR_TEST);
+        }
     }
 
     self->params.egl->eglSwapBuffers(self->params.egl->egl_display, self->params.egl->egl_surface);

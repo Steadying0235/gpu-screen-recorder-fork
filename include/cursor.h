@@ -8,6 +8,7 @@ typedef struct {
     gsr_egl *egl;
     Display *display;
     int x_fixes_event_base;
+    int xi_opcode;
 
     unsigned int texture_id;
     vec2i size;
@@ -15,12 +16,15 @@ typedef struct {
     vec2i position;
 
     bool cursor_image_set;
+    bool visible;
+    bool cursor_moved;
 } gsr_cursor;
 
 int gsr_cursor_init(gsr_cursor *self, gsr_egl *egl, Display *display);
 void gsr_cursor_deinit(gsr_cursor *self);
 
-void gsr_cursor_update(gsr_cursor *self, XEvent *xev);
+/* Returns true if the cursor image has updated or if the cursor has moved */
+bool gsr_cursor_update(gsr_cursor *self, XEvent *xev);
 void gsr_cursor_tick(gsr_cursor *self, Window relative_to);
 
 #endif /* GSR_CURSOR_H */

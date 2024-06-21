@@ -15,6 +15,7 @@ typedef struct {
     vec2i region_size; /* This is currently only used with |follow_focused| */
     gsr_color_range color_range;
     bool record_cursor;
+    bool track_damage;
 } gsr_capture_xcomposite_params;
 
 typedef struct {
@@ -37,6 +38,11 @@ typedef struct {
     Atom net_active_window_atom;
 
     gsr_cursor cursor;
+
+    int damage_event;
+    int damage_error;
+    XID damage;
+    bool damaged;
 } gsr_capture_xcomposite;
 
 void gsr_capture_xcomposite_init(gsr_capture_xcomposite *self, const gsr_capture_xcomposite_params *params);
@@ -44,6 +50,7 @@ void gsr_capture_xcomposite_init(gsr_capture_xcomposite *self, const gsr_capture
 int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context, AVFrame *frame);
 void gsr_capture_xcomposite_stop(gsr_capture_xcomposite *self);
 void gsr_capture_xcomposite_tick(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context);
+bool gsr_capture_xcomposite_consume_damage(gsr_capture_xcomposite *self);
 bool gsr_capture_xcomposite_should_stop(gsr_capture_xcomposite *self, bool *err);
 int gsr_capture_xcomposite_capture(gsr_capture_xcomposite *self, AVFrame *frame);
 

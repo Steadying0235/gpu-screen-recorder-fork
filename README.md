@@ -56,7 +56,7 @@ If you install GPU Screen Recorder flatpak, which is the gtk gui version then yo
 libglvnd (which provides libgl and libegl)\
 mesa\
 ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)\
-x11 (libx11, libxcomposite, libxrandr, xfixes)\
+x11 (libx11, libxcomposite, libxrandr, xfixes, xi2)\
 libpulse\
 vaapi (libva, libva-mesa-driver)\
 libdrm\
@@ -66,7 +66,7 @@ wayland-client
 libglvnd (which provides libgl and libegl)\
 mesa\
 ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)\
-x11 (libx11, libxcomposite, libxrandr, xfixes)\
+x11 (libx11, libxcomposite, libxrandr, xfixes, xi2)\
 libpulse\
 vaapi (libva, intel-media-driver/libva-intel-driver)\
 libdrm\
@@ -75,7 +75,7 @@ wayland-client
 ## NVIDIA
 libglvnd (which provides libgl and libegl)\
 ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)\
-x11 (libx11, libxcomposite, libxrandr, xfixes)\
+x11 (libx11, libxcomposite, libxrandr, xfixes, xi2)\
 libpulse\
 cuda runtime (libcuda.so.1) (libnvidia-compute)\
 nvenc (libnvidia-encode)\

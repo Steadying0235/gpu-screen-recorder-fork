@@ -101,7 +101,8 @@ enum class PixelFormat {
 
 enum class FramerateMode {
     CONSTANT,
-    VARIABLE
+    VARIABLE,
+    CONTENT
 };
 
 static int x11_error_handler(Display*, XErrorEvent*) {
@@ -792,6 +793,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 
         if(codec_context->codec_id == AV_CODEC_ID_H264) {
             av_dict_set(&options, "profile", "high", 0);
+            // Removed because it causes stutter in games for some people
             //av_dict_set_int(&options, "quality", 5, 0); // quality preset
         } else if(codec_context->codec_id == AV_CODEC_ID_AV1) {
             av_dict_set(&options, "profile", "main", 0); // TODO: use professional instead?
@@ -822,7 +824,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr] [-cr limited|full] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>]\n", program_name);
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-cr limited|full] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>]\n", program_name);
 }
 
 static void usage_full() {
@@ -846,6 +848,7 @@ static void usage_full() {
     fprintf(stderr, "  -f    Frame rate to record at. Recording will only capture frames at this target frame rate.\n");
     fprintf(stderr, "        For constant frame rate mode this option is the frame rate every frame will be captured at and if the capture frame rate is below this target frame rate then the frames will be duplicated.\n");
     fprintf(stderr, "        For variable frame rate mode this option is the max frame rate and if the capture frame rate is below this target frame rate then frames will not be duplicated.\n");
+    fprintf(stderr, "        Content frame rate is similar to variable frame rate mode, except the frame rate will match the frame rate of the captured content when possible, but not capturing above the frame rate set in this -f option.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -a    Audio device to record from (pulse audio device). Can be specified multiple times. Each time this is specified a new audio track is added for the specified audio device.\n");
     fprintf(stderr, "        A name can be given to the audio input device by prefixing the audio input with <name>/, for example \"dummy/alsa_output.pci-0000_00_1b.0.analog-stereo.monitor\".\n");
@@ -877,8 +880,9 @@ static void usage_full() {
     fprintf(stderr, "        is dropped when you record a game. Only needed if you are recording a game that is bottlenecked by GPU. The same issue exists on Wayland but overclocking is not possible on Wayland.\n");
     fprintf(stderr, "        Works only if your have \"Coolbits\" set to \"12\" in NVIDIA X settings, see README for more information. Note! use at your own risk! Optional, disabled by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -fm   Framerate mode. Should be either 'cfr' (constant frame rate) or 'vfr' (variable frame rate). Defaults to 'vfr'.\n");
+    fprintf(stderr, "  -fm   Framerate mode. Should be either 'cfr' (constant frame rate), 'vfr' (variable frame rate) or 'content'. Defaults to 'vfr'.\n");
     fprintf(stderr, "        'vfr' is recommended for recording for less issue with very high system load but some applications such as video editors may not support it properly.\n");
+    fprintf(stderr, "        'content' is currently only supported when recording a single window, on X11. The 'content' option matches the recording frame rate to the captured content.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -cr   Color range. Should be either 'limited' (aka mpeg) or 'full' (aka jpeg). Defaults to 'limited'.\n");
     fprintf(stderr, "        Limited color range means that colors are in range 16-235 (4112-60395 for hdr) while full color range means that colors are in range 0-255 (0-65535 for hdr).\n");
@@ -1468,7 +1472,7 @@ static void list_supported_video_codecs() {
         XCloseDisplay(dpy);
 }
 
-static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl &egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range, bool record_cursor) {
+static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl &egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range, bool record_cursor, bool track_damage) {
     vec2i region_size = { 0, 0 };
     Window src_window_id = None;
     bool follow_focused = false;
@@ -1611,6 +1615,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 xcomposite_params.base.region_size = region_size;
                 xcomposite_params.base.color_range = color_range;
                 xcomposite_params.base.record_cursor = record_cursor;
+                xcomposite_params.base.track_damage = track_damage;
                 capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
                 if(!capture)
                     _exit(1);
@@ -1624,6 +1629,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 xcomposite_params.base.region_size = region_size;
                 xcomposite_params.base.color_range = color_range;
                 xcomposite_params.base.record_cursor = record_cursor;
+                xcomposite_params.base.track_damage = track_damage;
                 xcomposite_params.overclock = overclock;
                 capture = gsr_capture_xcomposite_cuda_create(&xcomposite_params);
                 if(!capture)
@@ -2037,8 +2043,10 @@ int main(int argc, char **argv) {
         framerate_mode = FramerateMode::CONSTANT;
     } else if(strcmp(framerate_mode_str, "vfr") == 0) {
         framerate_mode = FramerateMode::VARIABLE;
+    } else if(strcmp(framerate_mode_str, "content") == 0) {
+        framerate_mode = FramerateMode::CONTENT;
     } else {
-        fprintf(stderr, "Error: -fm should either be either 'cfr' or 'vfr', got: '%s'\n", framerate_mode_str);
+        fprintf(stderr, "Error: -fm should either be either 'cfr', 'vfr' or 'content', got: '%s'\n", framerate_mode_str);
         usage();
     }
 
@@ -2320,7 +2328,7 @@ int main(int argc, char **argv) {
         _exit(2);
     }
 
-    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, egl, fps, overclock, video_codec, color_range, record_cursor);
+    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, egl, fps, overclock, video_codec, color_range, record_cursor, framerate_mode == FramerateMode::CONTENT);
 
     // (Some?) livestreaming services require at least one audio track to work.
     // If not audio is provided then create one silent audio track.
@@ -2477,6 +2485,7 @@ int main(int argc, char **argv) {
     double fps_start_time = clock_get_monotonic_seconds();
     double frame_timer_start = fps_start_time - target_fps; // We want to capture the first frame immediately
     int fps_counter = 0;
+    int damage_fps_counter = 0;
 
     bool paused = false;
     double paused_time_offset = 0.0;
@@ -2668,7 +2677,6 @@ int main(int argc, char **argv) {
             running = 0;
             break;
         }
-        ++fps_counter;
 
         // TODO: Move to another thread, since this shouldn't be locked to video encoding fps
         {
@@ -2693,19 +2701,26 @@ int main(int argc, char **argv) {
             }
         }
 
+        ++fps_counter;
         double time_now = clock_get_monotonic_seconds();
         double frame_timer_elapsed = time_now - frame_timer_start;
         double elapsed = time_now - fps_start_time;
         if (elapsed >= 1.0) {
             if(verbose) {
-                fprintf(stderr, "update fps: %d\n", fps_counter);
+                fprintf(stderr, "update fps: %d, damage fps: %d\n", fps_counter, damage_fps_counter);
             }
             fps_start_time = time_now;
             fps_counter = 0;
+            damage_fps_counter = 0;
+        }
+
+        const bool damaged = !capture->consume_damage || capture->consume_damage(capture);
+        if(damaged) {
+            ++damage_fps_counter;
         }
 
         double frame_time_overflow = frame_timer_elapsed - target_fps;
-        if (frame_time_overflow >= 0.0) {
+        if (frame_time_overflow >= 0.0 && damaged) {
             frame_time_overflow = std::min(frame_time_overflow, target_fps);
             frame_timer_start = time_now - frame_time_overflow;
 

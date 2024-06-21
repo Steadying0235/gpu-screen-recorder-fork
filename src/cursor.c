@@ -6,10 +6,15 @@
 #include <assert.h>
 
 #include <X11/extensions/Xfixes.h>
+#include <X11/extensions/XI2.h>
+#include <X11/extensions/XInput2.h>
 
-static bool gsr_cursor_set_from_x11_cursor_image(gsr_cursor *self, XFixesCursorImage *x11_cursor_image) {
+// TODO: Test cursor visibility with XFixesHideCursor
+
+static bool gsr_cursor_set_from_x11_cursor_image(gsr_cursor *self, XFixesCursorImage *x11_cursor_image, bool *visible) {
     uint8_t *cursor_data = NULL;
     uint8_t *out = NULL;
+    *visible = false;
 
     if(!x11_cursor_image)
         goto err;
@@ -34,8 +39,11 @@ static bool gsr_cursor_set_from_x11_cursor_image(gsr_cursor *self, XFixesCursorI
             uint32_t pixel = *pixels++;
             uint8_t *in = (uint8_t*)&pixel;
             uint8_t alpha = in[3];
-            if(alpha == 0)
+            if(alpha == 0) {
                 alpha = 1;
+            } else {
+                *visible = true;
+            }
 
             *out++ = (unsigned)*in++ * 255/alpha;
             *out++ = (unsigned)*in++ * 255/alpha;
@@ -63,6 +71,26 @@ static bool gsr_cursor_set_from_x11_cursor_image(gsr_cursor *self, XFixesCursorI
     return false;
 }
 
+static bool xinput_is_supported(Display *dpy, int *xi_opcode) {
+    *xi_opcode = 0;
+    int query_event = 0;
+    int query_error = 0;
+    if(!XQueryExtension(dpy, "XInputExtension", xi_opcode, &query_event, &query_error)) {
+        fprintf(stderr, "gsr error: gsr_cursor_init: X Input extension not available\n");
+        return false;
+    }
+
+    int major = 2;
+    int minor = 1;
+    int retval = XIQueryVersion(dpy, &major, &minor);
+    if (retval != Success) {
+        fprintf(stderr, "gsr error: gsr_cursor_init: XInput 2.1 is not supported\n");
+        return false;
+    }
+
+    return true;
+}
+
 int gsr_cursor_init(gsr_cursor *self, gsr_egl *egl, Display *display) {
     int x_fixes_error_base = 0;
 
@@ -79,11 +107,31 @@ int gsr_cursor_init(gsr_cursor *self, gsr_egl *egl, Display *display) {
         return -1;
     }
 
+    if(!xinput_is_supported(self->display, &self->xi_opcode)) {
+        gsr_cursor_deinit(self);
+        return -1;
+    }
+
+    unsigned char mask[XIMaskLen(XI_LASTEVENT)];
+    memset(mask, 0, sizeof(mask));
+    XISetMask(mask, XI_RawMotion);
+
+    XIEventMask xi_masks;
+    xi_masks.deviceid = XIAllMasterDevices;
+    xi_masks.mask_len = sizeof(mask);
+    xi_masks.mask = mask;
+    if(XISelectEvents(self->display, DefaultRootWindow(self->display), &xi_masks, 1) != Success) {
+        fprintf(stderr, "gsr error: gsr_cursor_init: XISelectEvents failed\n");
+        gsr_cursor_deinit(self);
+        return -1;
+    }
+
     self->egl->glGenTextures(1, &self->texture_id);
 
     XFixesSelectCursorInput(self->display, DefaultRootWindow(self->display), XFixesDisplayCursorNotifyMask);
-    gsr_cursor_set_from_x11_cursor_image(self, XFixesGetCursorImage(self->display));
+    gsr_cursor_set_from_x11_cursor_image(self, XFixesGetCursorImage(self->display), &self->visible);
     self->cursor_image_set = true;
+    self->cursor_moved = true;
 
     return 0;
 }
@@ -97,29 +145,46 @@ void gsr_cursor_deinit(gsr_cursor *self) {
         self->texture_id = 0;
     }
 
+    XISelectEvents(self->display, DefaultRootWindow(self->display), NULL, 0);
     XFixesSelectCursorInput(self->display, DefaultRootWindow(self->display), 0);
 
     self->display = NULL;
     self->egl = NULL;
 }
 
-void gsr_cursor_update(gsr_cursor *self, XEvent *xev) {
+bool gsr_cursor_update(gsr_cursor *self, XEvent *xev) {
+    bool updated = false;
+    XGenericEventCookie *cookie = (XGenericEventCookie*)&xev->xcookie;
+    const Bool got_event_data = XGetEventData(self->display, cookie);
+    if(got_event_data && cookie->type == GenericEvent && cookie->extension == self->xi_opcode && cookie->evtype == XI_RawMotion) {
+        updated = true;
+        self->cursor_moved = true;
+    }
+    if(got_event_data)
+        XFreeEventData(self->display, cookie);
+
     if(xev->type == self->x_fixes_event_base + XFixesCursorNotify) {
         XFixesCursorNotifyEvent *cursor_notify_event = (XFixesCursorNotifyEvent*)xev;
         if(cursor_notify_event->subtype == XFixesDisplayCursorNotify && cursor_notify_event->window == DefaultRootWindow(self->display)) {
-            self->cursor_image_set = true;
-            gsr_cursor_set_from_x11_cursor_image(self, XFixesGetCursorImage(self->display));
+            self->cursor_image_set = false;
         }
     }
 
     if(!self->cursor_image_set) {
         self->cursor_image_set = true;
-        gsr_cursor_set_from_x11_cursor_image(self, XFixesGetCursorImage(self->display));
+        gsr_cursor_set_from_x11_cursor_image(self, XFixesGetCursorImage(self->display), &self->visible);
+        updated = true;
     }
+
+    return updated;
 }
 
 void gsr_cursor_tick(gsr_cursor *self, Window relative_to) {
-    /* TODO: Use XInput2 instead. However that doesn't work when the pointer is grabbed. Maybe check for focused window change and XSelectInput PointerMask */
+    if(!self->cursor_moved)
+        return;
+
+    self->cursor_moved = false;
+
     Window dummy_window;
     int dummy_i;
     unsigned int dummy_u;

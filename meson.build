@@ -38,6 +38,8 @@ dep = [
     dependency('xcomposite'),
     dependency('xrandr'),
     dependency('xfixes'),
+    dependency('xdamage'),
+    dependency('xi'),
     dependency('libpulse'),
     dependency('libswresample'),
     dependency('libavfilter'),

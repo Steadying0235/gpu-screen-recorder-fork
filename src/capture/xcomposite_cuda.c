@@ -76,9 +76,14 @@ static void gsr_capture_xcomposite_cuda_tick(gsr_capture *cap, AVCodecContext *v
     gsr_capture_xcomposite_tick(&cap_xcomp->xcomposite, video_codec_context);
 }
 
-static bool gsr_capture_xcomposite_cuda_consume_damage(gsr_capture *cap) {
+static bool gsr_capture_xcomposite_cuda_is_damaged(gsr_capture *cap) {
     gsr_capture_xcomposite_cuda *cap_xcomp = cap->priv;
-    return gsr_capture_xcomposite_consume_damage(&cap_xcomp->xcomposite);
+    return gsr_capture_xcomposite_is_damaged(&cap_xcomp->xcomposite);
+}
+
+static void gsr_capture_xcomposite_cuda_clear_damage(gsr_capture *cap) {
+    gsr_capture_xcomposite_cuda *cap_xcomp = cap->priv;
+    gsr_capture_xcomposite_clear_damage(&cap_xcomp->xcomposite);
 }
 
 static bool gsr_capture_xcomposite_cuda_should_stop(gsr_capture *cap, bool *err) {
@@ -149,7 +154,8 @@ gsr_capture* gsr_capture_xcomposite_cuda_create(const gsr_capture_xcomposite_cud
     *cap = (gsr_capture) {
         .start = gsr_capture_xcomposite_cuda_start,
         .tick = gsr_capture_xcomposite_cuda_tick,
-        .consume_damage = gsr_capture_xcomposite_cuda_consume_damage,
+        .is_damaged = gsr_capture_xcomposite_cuda_is_damaged,
+        .clear_damage = gsr_capture_xcomposite_cuda_clear_damage,
         .should_stop = gsr_capture_xcomposite_cuda_should_stop,
         .capture = gsr_capture_xcomposite_cuda_capture,
         .capture_end = NULL,

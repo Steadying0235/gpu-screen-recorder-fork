@@ -21,7 +21,8 @@ struct gsr_capture {
     /* These methods should not be called manually. Call gsr_capture_* instead */
     int (*start)(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame);
     void (*tick)(gsr_capture *cap, AVCodecContext *video_codec_context); /* can be NULL */
-    bool (*consume_damage)(gsr_capture *cap); /* can be NULL */
+    bool (*is_damaged)(gsr_capture *cap); /* can be NULL */
+    void (*clear_damage)(gsr_capture *cap); /* can be NULL */
     bool (*should_stop)(gsr_capture *cap, bool *err); /* can be NULL */
     int (*capture)(gsr_capture *cap, AVFrame *frame);
     void (*capture_end)(gsr_capture *cap, AVFrame *frame); /* can be NULL */

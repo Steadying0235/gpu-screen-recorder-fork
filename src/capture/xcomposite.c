@@ -285,15 +285,12 @@ void gsr_capture_xcomposite_tick(gsr_capture_xcomposite *self, AVCodecContext *v
     }
 }
 
-bool gsr_capture_xcomposite_consume_damage(gsr_capture_xcomposite *self) {
-    if(self->damage_event) {
-        const bool damaged = self->damaged;
-        self->damaged = false;
-        //fprintf(stderr, "consume: %s\n", damaged ? "yes" : "no");
-        return damaged;
-    } else {
-        return true;
-    }
+bool gsr_capture_xcomposite_is_damaged(gsr_capture_xcomposite *self) {
+    return self->damage_event ? self->damaged : true;
+}
+
+void gsr_capture_xcomposite_clear_damage(gsr_capture_xcomposite *self) {
+    self->damaged = false;
 }
 
 bool gsr_capture_xcomposite_should_stop(gsr_capture_xcomposite *self, bool *err) {

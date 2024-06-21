@@ -2719,13 +2719,15 @@ int main(int argc, char **argv) {
             damage_fps_counter = 0;
         }
 
-        const bool damaged = !capture->consume_damage || capture->consume_damage(capture);
+        const bool damaged = !capture->is_damaged || capture->is_damaged(capture);
         if(damaged) {
             ++damage_fps_counter;
         }
 
         double frame_time_overflow = frame_timer_elapsed - target_fps;
         if (frame_time_overflow >= 0.0 && damaged) {
+            if(capture->clear_damage)
+                capture->clear_damage(capture);
             frame_time_overflow = std::min(frame_time_overflow, target_fps);
             frame_timer_start = time_now - frame_time_overflow;
 

@@ -50,7 +50,8 @@ void gsr_capture_xcomposite_init(gsr_capture_xcomposite *self, const gsr_capture
 int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context, AVFrame *frame);
 void gsr_capture_xcomposite_stop(gsr_capture_xcomposite *self);
 void gsr_capture_xcomposite_tick(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context);
-bool gsr_capture_xcomposite_consume_damage(gsr_capture_xcomposite *self);
+bool gsr_capture_xcomposite_is_damaged(gsr_capture_xcomposite *self);
+void gsr_capture_xcomposite_clear_damage(gsr_capture_xcomposite *self);
 bool gsr_capture_xcomposite_should_stop(gsr_capture_xcomposite *self, bool *err);
 int gsr_capture_xcomposite_capture(gsr_capture_xcomposite *self, AVFrame *frame);
 

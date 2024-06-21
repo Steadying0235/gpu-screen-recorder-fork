@@ -1951,11 +1951,11 @@ int main(int argc, char **argv) {
     if(fps < 1)
         fps = 1;
 
+    VideoQuality quality = VideoQuality::VERY_HIGH;
     const char *quality_str = args["-q"].value();
     if(!quality_str)
         quality_str = "very_high";
 
-    VideoQuality quality;
     if(strcmp(quality_str, "medium") == 0) {
         quality = VideoQuality::MEDIUM;
     } else if(strcmp(quality_str, "high") == 0) {
@@ -2034,7 +2034,7 @@ int main(int argc, char **argv) {
     // TODO: Fix constant framerate not working properly on amd/intel because capture framerate gets locked to the same framerate as
     // game framerate, which doesn't work well when you need to encode multiple duplicate frames (AMD/Intel is slow at encoding!).
     // It also appears to skip audio frames on nvidia wayland? why? that should be fine, but it causes video stuttering because of audio/video sync.
-    FramerateMode framerate_mode;
+    FramerateMode framerate_mode = FramerateMode::VARIABLE;
     const char *framerate_mode_str = args["-fm"].value();
     if(!framerate_mode_str)
         framerate_mode_str = "vfr";
@@ -2050,7 +2050,12 @@ int main(int argc, char **argv) {
         usage();
     }
 
-    gsr_color_range color_range;
+    if(framerate_mode == FramerateMode::CONTENT && (wayland || is_monitor_capture)) {
+        fprintf(stderr, "Error: -fm 'content' is currently only supported on X11 and when capturing a single window.\n");
+        usage();
+    }
+
+    gsr_color_range color_range = GSR_COLOR_RANGE_LIMITED;
     const char *color_range_str = args["-cr"].value();
     if(!color_range_str)
         color_range_str = "limited";

@@ -863,9 +863,8 @@ static void usage_full() {
     fprintf(stderr, "        and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature.\n");
     fprintf(stderr, "        This option has be between 5 and 1200. Note that the replay buffer size will not always be precise, because of keyframes. Optional, disabled by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'hevc', 'av1', 'hevc_hdr' or 'av1_hdr'. Defaults to 'auto' which defaults to 'hevc' on AMD/Nvidia and 'h264' on intel.\n");
+    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'hevc', 'av1', 'hevc_hdr' or 'av1_hdr'. Defaults to 'auto' which defaults to 'h264'.\n");
     fprintf(stderr, "        Forcefully set to 'h264' if the file container type is 'flv'.\n");
-    fprintf(stderr, "        Forcefully set to 'hevc' on AMD/intel if video codec is 'h264' and if the file container type is 'mkv'.\n");
     fprintf(stderr, "        'hevc_hdr' and 'av1_hdr' option is not available on X11.\n");
     fprintf(stderr, "        Note: hdr metadata is not included in the video when recording with 'hevc_hdr'/'av1_hdr' because of bugs in AMD, Intel and NVIDIA drivers (amazin', they are all bugged).\n");
     fprintf(stderr, "\n");
@@ -2145,12 +2144,6 @@ int main(int argc, char **argv) {
 
     const bool force_no_audio_offset = is_livestream || (file_extension != "mp4" && file_extension != "mkv" && file_extension != "webm");
 
-    if(egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA && file_extension == "mkv" && strcmp(video_codec_to_use, "h264") == 0) {
-        video_codec_to_use = "hevc";
-        video_codec = VideoCodec::HEVC;
-        fprintf(stderr, "Warning: video codec was forcefully set to hevc because mkv container is used and mesa (AMD and Intel driver) does not support h264 in mkv files\n");
-    }
-
     switch(audio_codec) {
         case AudioCodec::AAC: {
             if(file_extension == "webm") {
@@ -2193,38 +2186,15 @@ int main(int argc, char **argv) {
 
     const bool video_codec_auto = strcmp(video_codec_to_use, "auto") == 0;
     if(video_codec_auto) {
-        if(egl.gpu_info.vendor == GSR_GPU_VENDOR_INTEL) {
-            const AVCodec *h264_codec = find_h264_encoder(egl.gpu_info.vendor, egl.card_path);
-            if(!h264_codec) {
-                fprintf(stderr, "Info: using hevc encoder because a codec was not specified and your gpu does not support h264\n");
-                video_codec_to_use = "hevc";
-                video_codec = VideoCodec::HEVC;
-            } else {
-                fprintf(stderr, "Info: using h264 encoder because a codec was not specified\n");
-                video_codec_to_use = "h264";
-                video_codec = VideoCodec::H264;
-            }
+        const AVCodec *h264_codec = find_h264_encoder(egl.gpu_info.vendor, egl.card_path);
+        if(!h264_codec) {
+            fprintf(stderr, "Info: using hevc encoder because a codec was not specified and your gpu does not support h264\n");
+            video_codec_to_use = "hevc";
+            video_codec = VideoCodec::HEVC;
         } else {
-            const AVCodec *hevc_codec = find_hevc_encoder(egl.gpu_info.vendor, egl.card_path);
-
-            if(hevc_codec && fps > 60) {
-                fprintf(stderr, "Warning: recording at higher fps than 60 with hevc might result in recording at a very low fps. If this happens, switch to h264 or av1\n");
-            }
-
-            // TODO: Default to h264 if resolution is around 1366x768 on AMD
-
-            // hevc generally allows recording at a higher resolution than h264 on nvidia cards. On a gtx 1080 4k is the max resolution for h264 but for hevc it's 8k.
-            // Another important info is that when recording at a higher fps than.. 60? hevc has very bad performance. For example when recording at 144 fps the fps drops to 1
-            // while with h264 the fps doesn't drop.
-            if(!hevc_codec) {
-                fprintf(stderr, "Info: using h264 encoder because a codec was not specified and your gpu does not support hevc\n");
-                video_codec_to_use = "h264";
-                video_codec = VideoCodec::H264;
-            } else {
-                fprintf(stderr, "Info: using hevc encoder because a codec was not specified\n");
-                video_codec_to_use = "hevc";
-                video_codec = VideoCodec::HEVC;
-            }
+            fprintf(stderr, "Info: using h264 encoder because a codec was not specified\n");
+            video_codec_to_use = "h264";
+            video_codec = VideoCodec::H264;
         }
     }
 

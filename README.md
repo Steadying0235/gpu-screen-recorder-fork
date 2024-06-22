@@ -8,8 +8,8 @@ This screen recorder can be used for recording your desktop offline, for live st
 where only the last few minutes are saved.
 
 Supported video codecs:
-* H264 (default on Intel)
-* HEVC (default on AMD and NVIDIA)
+* H264 (default)
+* HEVC
 * AV1 (not currently supported on NVIDIA if you use GPU Screen Recorder flatpak)
 
 Supported audio codecs:

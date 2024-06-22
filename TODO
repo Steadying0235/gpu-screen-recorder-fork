@@ -136,3 +136,5 @@ Support vfr matching games exact fps all the time. On x11 use damage tracking, o
 
 Support selecting which gpu to use. This can be done in egl with eglQueryDevicesEXT and then eglGetPlatformDisplayEXT. This will automatically work on AMD and Intel as vaapi uses the same device. On nvidia we need to use eglQueryDeviceAttribEXT with EGL_CUDA_DEVICE_NV.
     Maybe on glx (nvidia x11 nvfbc) we need to use __NV_PRIME_RENDER_OFFLOAD_PROVIDER and __GLX_VENDOR_LIBRARY_NAME instead.
+
+Remove is_damaged and clear_damage and return a value from capture function instead that states if the image has been updated or not.

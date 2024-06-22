@@ -77,25 +77,8 @@ int gsr_capture_kms_start(gsr_capture_kms *self, const char *display_to_capture,
     /* Disable vsync */
     egl->eglSwapInterval(egl->egl_display, 0);
 
-    // TODO: Move this and xcomposite equivalent to a common section unrelated to capture method
-    if(egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_HEVC) {
-        // TODO: dont do this if using ffmpeg reports that this is not needed (AMD driver bug that was fixed recently)
-        self->base.video_codec_context->width = FFALIGN(self->capture_size.x, 64);
-        self->base.video_codec_context->height = FFALIGN(self->capture_size.y, 16);
-    } else if(egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_AV1) {
-        // TODO: Dont do this for VCN 5 and forward which should fix this hardware bug
-        self->base.video_codec_context->width = FFALIGN(self->capture_size.x, 64);
-        // AMD driver has special case handling for 1080 height to set it to 1082 instead of 1088 (1080 aligned to 16).
-        // TODO: Set height to 1082 in this case, but it wont work because it will be aligned to 1088.
-        if(self->capture_size.y == 1080) {
-            self->base.video_codec_context->height = 1080;
-        } else {
-            self->base.video_codec_context->height = FFALIGN(self->capture_size.y, 16);
-        }
-    } else {
-        self->base.video_codec_context->width = FFALIGN(self->capture_size.x, 2);
-        self->base.video_codec_context->height = FFALIGN(self->capture_size.y, 2);
-    }
+    self->base.video_codec_context->width = FFALIGN(self->capture_size.x, 2);
+    self->base.video_codec_context->height = FFALIGN(self->capture_size.y, 2);
 
     frame->width = self->base.video_codec_context->width;
     frame->height = self->base.video_codec_context->height;

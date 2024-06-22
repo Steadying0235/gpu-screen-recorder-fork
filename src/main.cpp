@@ -2679,6 +2679,11 @@ int main(int argc, char **argv) {
             }
         }
 
+        const bool damaged = !capture->is_damaged || capture->is_damaged(capture);
+        if(damaged) {
+            ++damage_fps_counter;
+        }
+
         ++fps_counter;
         double time_now = clock_get_monotonic_seconds();
         double frame_timer_elapsed = time_now - frame_timer_start;
@@ -2690,11 +2695,6 @@ int main(int argc, char **argv) {
             fps_start_time = time_now;
             fps_counter = 0;
             damage_fps_counter = 0;
-        }
-
-        const bool damaged = !capture->is_damaged || capture->is_damaged(capture);
-        if(damaged) {
-            ++damage_fps_counter;
         }
 
         double frame_time_overflow = frame_timer_elapsed - target_fps;

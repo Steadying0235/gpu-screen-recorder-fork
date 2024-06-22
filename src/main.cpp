@@ -2527,6 +2527,9 @@ int main(int argc, char **argv) {
                     #if LIBAVUTIL_VERSION_MAJOR <= 56
                     av_opt_set_channel_layout(swr, "in_channel_layout", AV_CH_LAYOUT_STEREO, 0);
                     av_opt_set_channel_layout(swr, "out_channel_layout", AV_CH_LAYOUT_STEREO, 0);
+                    #elif LIBAVUTIL_VERSION_MAJOR >= 59
+                    av_opt_set_chlayout(swr, "in_chlayout", &audio_track.codec_context->ch_layout, 0);
+                    av_opt_set_chlayout(swr, "out_chlayout", &audio_track.codec_context->ch_layout, 0);
                     #else
                     av_opt_set_chlayout(swr, "in_channel_layout", &audio_track.codec_context->ch_layout, 0);
                     av_opt_set_chlayout(swr, "out_channel_layout", &audio_track.codec_context->ch_layout, 0);

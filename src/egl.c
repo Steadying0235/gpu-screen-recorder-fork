@@ -328,7 +328,7 @@ static bool gsr_egl_switch_to_glx_context(gsr_egl *self) {
 }
 
 static bool gsr_egl_load_egl(gsr_egl *self, void *library) {
-    dlsym_assign required_dlsym[] = {
+    const dlsym_assign required_dlsym[] = {
         { (void**)&self->eglGetError, "eglGetError" },
         { (void**)&self->eglGetDisplay, "eglGetDisplay" },
         { (void**)&self->eglInitialize, "eglInitialize" },
@@ -373,7 +373,7 @@ static bool gsr_egl_proc_load_egl(gsr_egl *self) {
 }
 
 static bool gsr_egl_load_glx(gsr_egl *self, void *library) {
-    dlsym_assign required_dlsym[] = {
+    const dlsym_assign required_dlsym[] = {
         { (void**)&self->glXGetProcAddress, "glXGetProcAddress" },
         { (void**)&self->glXChooseFBConfig, "glXChooseFBConfig" },
         { (void**)&self->glXMakeContextCurrent, "glXMakeContextCurrent" },
@@ -403,7 +403,7 @@ static bool gsr_egl_load_glx(gsr_egl *self, void *library) {
 }
 
 static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
-    dlsym_assign required_dlsym[] = {
+    const dlsym_assign required_dlsym[] = {
         { (void**)&self->glGetError, "glGetError" },
         { (void**)&self->glGetString, "glGetString" },
         { (void**)&self->glFlush, "glFlush" },

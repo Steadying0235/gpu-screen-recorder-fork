@@ -133,3 +133,6 @@ Add 10-bit capture option. This is good because it reduces banding and quality i
 Enable b-frames.
 
 Support vfr matching games exact fps all the time. On x11 use damage tracking, on wayland? maybe there is drm plane damage tracking. But that may not be accurate as the compositor may update it every monitor hz anyways. On wayland maybe only support it for desktop portal + pipewire capture.
+
+Support selecting which gpu to use. This can be done in egl with eglQueryDevicesEXT and then eglGetPlatformDisplayEXT. This will automatically work on AMD and Intel as vaapi uses the same device. On nvidia we need to use eglQueryDeviceAttribEXT with EGL_CUDA_DEVICE_NV.
+    Maybe on glx (nvidia x11 nvfbc) we need to use __NV_PRIME_RENDER_OFFLOAD_PROVIDER and __GLX_VENDOR_LIBRARY_NAME instead.

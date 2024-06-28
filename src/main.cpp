@@ -328,7 +328,7 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
 
 static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
                             VideoQuality video_quality,
-                            int fps, const AVCodec *codec, bool is_livestream, gsr_gpu_vendor vendor, FramerateMode framerate_mode,
+                            int fps, const AVCodec *codec, bool low_latency, gsr_gpu_vendor vendor, FramerateMode framerate_mode,
                             bool hdr, gsr_color_range color_range, float keyint) {
 
     AVCodecContext *codec_context = avcodec_alloc_context3(codec);
@@ -347,14 +347,14 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     codec_context->framerate.den = 1;
     codec_context->sample_aspect_ratio.num = 0;
     codec_context->sample_aspect_ratio.den = 0;
-    // High values reduce file size but increases time it takes to seek
-    if(is_livestream) {
+    if(low_latency) {
         codec_context->flags |= (AV_CODEC_FLAG_CLOSED_GOP | AV_CODEC_FLAG_LOW_DELAY);
         codec_context->flags2 |= AV_CODEC_FLAG2_FAST;
         //codec_context->gop_size = std::numeric_limits<int>::max();
         //codec_context->keyint_min = std::numeric_limits<int>::max();
         codec_context->gop_size = fps * keyint;
     } else {
+        // High values reduce file size but increases time it takes to seek
         codec_context->gop_size = fps * keyint;
     }
     codec_context->max_b_frames = 0;
@@ -824,7 +824,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-cr limited|full] [-v yes|no] [-h|--help] [-o <output_file>] [-mf yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>]\n", program_name);
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-cr limited|full] [-mf yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-o <output_file>] [-v yes|no] [-h|--help]\n", program_name);
 }
 
 static void usage_full() {
@@ -887,11 +887,6 @@ static void usage_full() {
     fprintf(stderr, "        Limited color range means that colors are in range 16-235 (4112-60395 for hdr) while full color range means that colors are in range 0-255 (0-65535 for hdr).\n");
     fprintf(stderr, "        Note that some buggy video players (such as vlc) are unable to correctly display videos in full color range.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -v    Prints per second, fps updates. Optional, set to 'yes' by default.\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "  -h, --help\n");
-    fprintf(stderr, "        Show this help.\n");
-    fprintf(stderr, "\n");
     fprintf(stderr, "  -mf   Organise replays in folders based on the current date.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -sc   Run a script on the saved video file (non-blocking). The first argument to the script is the filepath to the saved video file and the second argument is the recording type (either \"regular\" or \"replay\").\n");
@@ -912,6 +907,11 @@ static void usage_full() {
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r).\n");
     fprintf(stderr, "        In replay mode this has to be a directory instead of a file.\n");
     fprintf(stderr, "        The directory to the file is created (recursively) if it doesn't already exist.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  -v    Prints per second, fps updates. Optional, set to 'yes' by default.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  -h, --help\n");
+    fprintf(stderr, "        Show this help.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "NOTES:\n");
     fprintf(stderr, "  Send signal SIGINT to gpu-screen-recorder (Ctrl+C, or killall -SIGINT gpu-screen-recorder) to stop and save the recording. When in replay mode this stops recording without saving.\n");
@@ -1297,6 +1297,12 @@ static bool is_livestream_path(const char *str) {
     if((len >= 7 && memcmp(str, "http://", 7) == 0) || (len >= 8 && memcmp(str, "https://", 8) == 0))
         return true;
     else if((len >= 7 && memcmp(str, "rtmp://", 7) == 0) || (len >= 8 && memcmp(str, "rtmps://", 8) == 0))
+        return true;
+    else if((len >= 6 && memcmp(str, "srt://", 6) == 0))
+        return true;
+    else if((len >= 6 && memcmp(str, "tcp://", 6) == 0))
+        return true;
+    else if((len >= 6 && memcmp(str, "udp://", 6) == 0))
         return true;
     else
         return false;
@@ -1736,7 +1742,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    VideoCodec video_codec = VideoCodec::HEVC;
+    VideoCodec video_codec = VideoCodec::H264;
     const char *video_codec_to_use = args["-k"].value();
     if(!video_codec_to_use)
         video_codec_to_use = "auto";
@@ -2122,14 +2128,18 @@ int main(int argc, char **argv) {
         }
     }
 
+    const bool is_output_piped = strcmp(filename, "/dev/stdout") == 0;
+
     AVFormatContext *av_format_context;
     // The output format is automatically guessed by the file extension
     avformat_alloc_output_context2(&av_format_context, nullptr, container_format, filename);
     if (!av_format_context) {
-        if(container_format)
+        if(container_format) {
             fprintf(stderr, "Error: Container format '%s' (argument -c) is not valid\n", container_format);
-        else
-            fprintf(stderr, "Error: Failed to deduce container format from file extension\n");
+        } else {
+            fprintf(stderr, "Error: Failed to deduce container format from file extension. Use the '-c' option to specify container format\n");
+            usage();
+        }
         _exit(1);
     }
 
@@ -2142,7 +2152,7 @@ int main(int argc, char **argv) {
             file_extension = file_extension.substr(0, comma_index);
     }
 
-    const bool force_no_audio_offset = is_livestream || (file_extension != "mp4" && file_extension != "mkv" && file_extension != "webm");
+    const bool force_no_audio_offset = is_livestream || is_output_piped || (file_extension != "mp4" && file_extension != "mkv" && file_extension != "webm");
 
     switch(audio_codec) {
         case AudioCodec::AAC: {
@@ -2322,8 +2332,9 @@ int main(int argc, char **argv) {
     AVStream *video_stream = nullptr;
     std::vector<AudioTrack> audio_tracks;
     const bool hdr = video_codec_is_hdr(video_codec);
+    const bool low_latency_recording = is_livestream || is_output_piped;
 
-    AVCodecContext *video_codec_context = create_video_codec_context(egl.gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_CUDA : AV_PIX_FMT_VAAPI, quality, fps, video_codec_f, is_livestream, egl.gpu_info.vendor, framerate_mode, hdr, color_range, keyint);
+    AVCodecContext *video_codec_context = create_video_codec_context(egl.gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_CUDA : AV_PIX_FMT_VAAPI, quality, fps, video_codec_f, low_latency_recording, egl.gpu_info.vendor, framerate_mode, hdr, color_range, keyint);
     if(replay_buffer_size_secs == -1)
         video_stream = create_stream(av_format_context, video_codec_context);
 

@@ -1298,6 +1298,8 @@ static bool is_livestream_path(const char *str) {
         return true;
     else if((len >= 7 && memcmp(str, "rtmp://", 7) == 0) || (len >= 8 && memcmp(str, "rtmps://", 8) == 0))
         return true;
+    else if((len >= 7 && memcmp(str, "rtsp://", 7) == 0))
+        return true;
     else if((len >= 6 && memcmp(str, "srt://", 6) == 0))
         return true;
     else if((len >= 6 && memcmp(str, "tcp://", 6) == 0))

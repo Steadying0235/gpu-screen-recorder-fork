@@ -14,8 +14,10 @@ src = [
     'src/capture/xcomposite.c',
     'src/capture/xcomposite_cuda.c',
     'src/capture/xcomposite_vaapi.c',
-    'src/capture/kms_vaapi.c',
+    'src/capture/xcomposite_software.c',
     'src/capture/kms_cuda.c',
+    'src/capture/kms_vaapi.c',
+    'src/capture/kms_software.c',
     'src/capture/kms.c',
     'src/egl.c',
     'src/cuda.c',
@@ -30,6 +32,7 @@ src = [
     'src/sound.cpp',
     'src/main.cpp',
 ]
+
 dep = [
     dependency('libavcodec'),
     dependency('libavformat'),

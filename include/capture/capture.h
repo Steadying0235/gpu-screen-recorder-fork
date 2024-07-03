@@ -62,9 +62,10 @@ void gsr_capture_destroy(gsr_capture *cap, AVCodecContext *video_codec_context);
 
 bool gsr_capture_base_setup_vaapi_textures(gsr_capture_base *self, AVFrame *frame, VADisplay va_dpy, VADRMPRIMESurfaceDescriptor *prime, gsr_color_range color_range);
 bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *self, AVFrame *frame, gsr_cuda_context *cuda_context, gsr_color_range color_range, gsr_source_color source_color, bool hdr);
+bool gsr_capture_base_setup_textures(gsr_capture_base *self, AVFrame *frame, gsr_color_range color_range, gsr_source_color source_color, bool hdr, bool cursor_texture_is_external);
 void gsr_capture_base_stop(gsr_capture_base *self);
 
-bool drm_create_codec_context(const char *card_path, AVCodecContext *video_codec_context, int width, int height, bool hdr, VADisplay *va_dpy);
+bool vaapi_create_codec_context(const char *card_path, AVCodecContext *video_codec_context, int width, int height, bool hdr, VADisplay *va_dpy);
 bool cuda_create_codec_context(CUcontext cu_ctx, AVCodecContext *video_codec_context, int width, int height, bool hdr, CUstream *cuda_stream);
 
 #endif /* GSR_CAPTURE_CAPTURE_H */

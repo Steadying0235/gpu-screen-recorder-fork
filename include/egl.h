@@ -104,7 +104,7 @@ typedef void(*__GLXextFuncPtr)(void);
 #define GL_FRAMEBUFFER                          0x8D40
 #define GL_COLOR_ATTACHMENT0                    0x8CE0
 #define GL_FRAMEBUFFER_COMPLETE                 0x8CD5
-#define GL_STREAM_DRAW                          0x88E0
+#define GL_DYNAMIC_DRAW                         0x88E8
 #define GL_ARRAY_BUFFER                         0x8892
 #define GL_BLEND                                0x0BE2
 #define GL_SRC_ALPHA                            0x0302
@@ -238,6 +238,7 @@ struct gsr_egl {
     void (*glTexImage2D)(unsigned int target, int level, int internalFormat, int width, int height, int border, unsigned int format, unsigned int type, const void *pixels);
     void (*glCopyImageSubData)(unsigned int srcName, unsigned int srcTarget, int srcLevel, int srcX, int srcY, int srcZ, unsigned int dstName, unsigned int dstTarget, int dstLevel, int dstX, int dstY, int dstZ, int srcWidth, int srcHeight, int srcDepth);
     void (*glClearTexImage)(unsigned int texture, unsigned int level, unsigned int format, unsigned int type, const void *data);
+    void (*glGetTexImage)(unsigned int target, int level, unsigned int format, unsigned int type, void *pixels);
     void (*glGenFramebuffers)(int n, unsigned int *framebuffers);
     void (*glBindFramebuffer)(unsigned int target, unsigned int framebuffer);
     void (*glDeleteFramebuffers)(int n, const unsigned int *framebuffers);

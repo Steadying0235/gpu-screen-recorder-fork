@@ -212,7 +212,6 @@ static vec2i swap_vec2i(vec2i value) {
 
 bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bool screen_plane_use_modifiers, bool cursor_texture_is_external, bool record_cursor) {
     //egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    self->base.egl->glClear(0);
 
     gsr_capture_kms_cleanup_kms_fds(self);
 
@@ -380,7 +379,6 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bo
         self->base.egl->glDisable(GL_SCISSOR_TEST);
     }
 
-    self->base.egl->eglSwapBuffers(self->base.egl->egl_display, self->base.egl->egl_surface);
     //self->base.egl->glFlush();
     //self->base.egl->glFinish();
 

@@ -29,7 +29,7 @@ static int gsr_capture_kms_vaapi_start(gsr_capture *cap, AVCodecContext *video_c
         return res;
     }
 
-    if(!drm_create_codec_context(cap_kms->params.egl->card_path, video_codec_context, video_codec_context->width, video_codec_context->height, cap_kms->params.hdr, &cap_kms->va_dpy)) {
+    if(!vaapi_create_codec_context(cap_kms->params.egl->card_path, video_codec_context, video_codec_context->width, video_codec_context->height, cap_kms->params.hdr, &cap_kms->va_dpy)) {
         gsr_capture_kms_vaapi_stop(cap, video_codec_context);
         return -1;
     }
@@ -57,7 +57,9 @@ static bool gsr_capture_kms_vaapi_should_stop(gsr_capture *cap, bool *err) {
 
 static int gsr_capture_kms_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_kms_vaapi *cap_kms = cap->priv;
+    cap_kms->kms.base.egl->glClear(0);
     gsr_capture_kms_capture(&cap_kms->kms, frame, cap_kms->params.hdr, cap_kms->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_INTEL, false, cap_kms->params.record_cursor);
+    cap_kms->kms.base.egl->eglSwapBuffers(cap_kms->kms.base.egl->egl_display, cap_kms->kms.base.egl->egl_surface);
     return 0;
 }
 

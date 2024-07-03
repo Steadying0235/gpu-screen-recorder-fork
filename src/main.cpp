@@ -2,8 +2,10 @@ extern "C" {
 #include "../include/capture/nvfbc.h"
 #include "../include/capture/xcomposite_cuda.h"
 #include "../include/capture/xcomposite_vaapi.h"
+#include "../include/capture/xcomposite_software.h"
 #include "../include/capture/kms_vaapi.h"
 #include "../include/capture/kms_cuda.h"
+#include "../include/capture/kms_software.h"
 #include "../include/egl.h"
 #include "../include/utils.h"
 #include "../include/color_conversion.h"
@@ -530,6 +532,10 @@ static bool check_if_codec_valid_for_hardware(const AVCodec *codec, gsr_gpu_vend
     return success;
 }
 
+static const AVCodec* find_h264_software_encoder() {
+    return avcodec_find_encoder_by_name("libx264");
+}
+
 static const AVCodec* find_h264_encoder(gsr_gpu_vendor vendor, const char *card_path) {
     const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "h264_nvenc" : "h264_vaapi");
     if(!codec)
@@ -628,7 +634,81 @@ static AVFrame* create_audio_frame(AVCodecContext *audio_codec_context) {
     return frame;
 }
 
-static void open_video(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu, gsr_gpu_vendor vendor, PixelFormat pixel_format, bool hdr) {
+static void open_video_software(AVCodecContext *codec_context, VideoQuality video_quality, PixelFormat pixel_format, bool hdr) {
+    (void)pixel_format; // TODO:
+    AVDictionary *options = nullptr;
+
+    const float qp_multiply = hdr ? 8.0f/10.0f : 1.0f;
+    if(codec_context->codec_id == AV_CODEC_ID_AV1) {
+        switch(video_quality) {
+            case VideoQuality::MEDIUM:
+                av_dict_set_int(&options, "qp", 37 * qp_multiply, 0);
+                break;
+            case VideoQuality::HIGH:
+                av_dict_set_int(&options, "qp", 32 * qp_multiply, 0);
+                break;
+            case VideoQuality::VERY_HIGH:
+                av_dict_set_int(&options, "qp", 28 * qp_multiply, 0);
+                break;
+            case VideoQuality::ULTRA:
+                av_dict_set_int(&options, "qp", 24 * qp_multiply, 0);
+                break;
+        }
+    } else if(codec_context->codec_id == AV_CODEC_ID_H264) {
+        switch(video_quality) {
+            case VideoQuality::MEDIUM:
+                av_dict_set_int(&options, "qp", 34 * qp_multiply, 0);
+                break;
+            case VideoQuality::HIGH:
+                av_dict_set_int(&options, "qp", 30 * qp_multiply, 0);
+                break;
+            case VideoQuality::VERY_HIGH:
+                av_dict_set_int(&options, "qp", 26 * qp_multiply, 0);
+                break;
+            case VideoQuality::ULTRA:
+                av_dict_set_int(&options, "qp", 22 * qp_multiply, 0);
+                break;
+        }
+    } else {
+        switch(video_quality) {
+            case VideoQuality::MEDIUM:
+                av_dict_set_int(&options, "qp", 37 * qp_multiply, 0);
+                break;
+            case VideoQuality::HIGH:
+                av_dict_set_int(&options, "qp", 32 * qp_multiply, 0);
+                break;
+            case VideoQuality::VERY_HIGH:
+                av_dict_set_int(&options, "qp", 28 * qp_multiply, 0);
+                break;
+            case VideoQuality::ULTRA:
+                av_dict_set_int(&options, "qp", 24 * qp_multiply, 0);
+                break;
+        }
+    }
+
+    av_dict_set(&options, "preset", "medium", 0);
+    if(hdr) {
+        av_dict_set(&options, "profile", "high10", 0);
+    } else {
+        av_dict_set(&options, "profile", "high", 0);
+    }
+    // TODO: If streaming or piping output set this to zerolatency
+    av_dict_set(&options, "tune", "fastdecode", 0);
+
+    if(codec_context->codec_id == AV_CODEC_ID_H264) {
+        av_dict_set(&options, "coder", "cabac", 0); // TODO: cavlc is faster than cabac but worse compression. Which to use?
+    }
+
+    av_dict_set(&options, "strict", "experimental", 0);
+
+    int ret = avcodec_open2(codec_context, codec_context->codec, &options);
+    if (ret < 0) {
+        fprintf(stderr, "Error: Could not open video codec: %s\n", av_error_to_string(ret));
+        _exit(1);
+    }
+}
+
+static void open_video_hardware(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu, gsr_gpu_vendor vendor, PixelFormat pixel_format, bool hdr) {
     (void)very_old_gpu;
     AVDictionary *options = nullptr;
     // 8 bit / 10 bit = 80%
@@ -724,6 +804,8 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 
         av_dict_set(&options, "tune", "hq", 0);
         av_dict_set(&options, "rc", "constqp", 0);
+
+        // TODO: Enable multipass
 
         if(codec_context->codec_id == AV_CODEC_ID_H264) {
             switch(pixel_format) {
@@ -824,7 +906,7 @@ static void open_video(AVCodecContext *codec_context, VideoQuality video_quality
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-cr limited|full] [-mf yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-o <output_file>] [-v yes|no] [-h|--help]\n", program_name);
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-cr limited|full] [-mf yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [-h|--help]\n", program_name);
 }
 
 static void usage_full() {
@@ -863,7 +945,7 @@ static void usage_full() {
     fprintf(stderr, "        and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature.\n");
     fprintf(stderr, "        This option has be between 5 and 1200. Note that the replay buffer size will not always be precise, because of keyframes. Optional, disabled by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'hevc', 'av1', 'hevc_hdr' or 'av1_hdr'. Defaults to 'auto' which defaults to 'h264'.\n");
+    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'hevc', 'av1', 'hevc_hdr' or 'av1_hdr'. Optional, defaults to 'auto' which defaults to 'h264'.\n");
     fprintf(stderr, "        Forcefully set to 'h264' if the file container type is 'flv'.\n");
     fprintf(stderr, "        'hevc_hdr' and 'av1_hdr' option is not available on X11.\n");
     fprintf(stderr, "        Note: hdr metadata is not included in the video when recording with 'hevc_hdr'/'av1_hdr' because of bugs in AMD, Intel and NVIDIA drivers (amazin', they are all bugged).\n");
@@ -872,8 +954,8 @@ static void usage_full() {
     fprintf(stderr, "        'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
     fprintf(stderr, "        Flac audio codec is option is disable at the moment because of a temporary issue.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -ab   Audio bitrate to use. Optional, by default the bitrate is 128000 for opus and flac and 160000 for aac.\n");
-    fprintf(stderr, "        If this is set to 0 then it's the same as if it's absent, in which case the bitrate is determined automatically depending on the audio codec.\n");
+    fprintf(stderr, "  -ab   Audio bitrate to use. If this is set to 0 then it's the same as if it's absent, in which case the bitrate is determined automatically depending on the audio codec.\n");
+    fprintf(stderr, "        Optional, by default the bitrate is 128000 for opus and flac and 160000 for aac.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -oc   Overclock memory transfer rate to the maximum performance level. This only applies to NVIDIA on X11 and exists to overcome a bug in NVIDIA driver where performance level\n");
     fprintf(stderr, "        is dropped when you record a game. Only needed if you are recording a game that is bottlenecked by GPU. The same issue exists on Wayland but overclocking is not possible on Wayland.\n");
@@ -899,6 +981,9 @@ static void usage_full() {
     fprintf(stderr, "        This also affects seeking in the video and may affect how the replay video is cut. If this is set to 10 for example then you can only seek in 10-second chunks in the video.\n");
     fprintf(stderr, "        Setting this to a higher value reduces the video file size if you are ok with the previously described downside. This option is expected to be a floating point number.\n");
     fprintf(stderr, "        By default this value is set to 2.0.\n");
+    fprintf(stderr, "  -encoder\n");
+    fprintf(stderr, "        Which device should be used for video encoding. Should either be 'gpu' or 'cpu'. Does currently only work with h264 codec option (-k).\n");
+    fprintf(stderr, "        Optional, set to 'gpu' by default.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  --list-supported-video-codecs\n");
     fprintf(stderr, "        List supported video codecs and exits. Prints h264, hevc, hevc_hdr, av1 and av1_hdr (if supported).\n");
@@ -1479,7 +1564,7 @@ static void list_supported_video_codecs() {
         XCloseDisplay(dpy);
 }
 
-static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl &egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range, bool record_cursor, bool track_damage) {
+static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl &egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range, bool record_cursor, bool track_damage, bool use_software_video_encoder) {
     vec2i region_size = { 0, 0 };
     Window src_window_id = None;
     bool follow_focused = false;
@@ -1545,57 +1630,70 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
             }
         }
 
-        if(egl.gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA) {
-            if(wayland) {
-                gsr_capture_kms_cuda_params kms_params;
-                kms_params.egl = &egl;
-                kms_params.display_to_capture = window_str;
-                kms_params.hdr = video_codec_is_hdr(video_codec);
-                kms_params.color_range = color_range;
-                kms_params.record_cursor = record_cursor;
-                capture = gsr_capture_kms_cuda_create(&kms_params);
-                if(!capture)
-                    _exit(1);
-            } else {
-                const char *capture_target = window_str;
-                bool direct_capture = strcmp(window_str, "screen-direct") == 0;
-                if(direct_capture) {
-                    capture_target = "screen";
-                    // TODO: Temporary disable direct capture because push model causes stuttering when it's direct capturing. This might be a nvfbc bug. This does not happen when using a compositor.
-                    direct_capture = false;
-                    fprintf(stderr, "Warning: screen-direct has temporary been disabled as it causes stuttering. This is likely a NvFBC bug. Falling back to \"screen\".\n");
-                }
-
-                if(strcmp(window_str, "screen-direct-force") == 0) {
-                    direct_capture = true;
-                    capture_target = "screen";
-                }
-
-                gsr_capture_nvfbc_params nvfbc_params;
-                nvfbc_params.egl = &egl;
-                nvfbc_params.display_to_capture = capture_target;
-                nvfbc_params.fps = fps;
-                nvfbc_params.pos = { 0, 0 };
-                nvfbc_params.size = { 0, 0 };
-                nvfbc_params.direct_capture = direct_capture;
-                nvfbc_params.overclock = overclock;
-                nvfbc_params.hdr = video_codec_is_hdr(video_codec);
-                nvfbc_params.color_range = color_range;
-                nvfbc_params.record_cursor = record_cursor;
-                capture = gsr_capture_nvfbc_create(&nvfbc_params);
-                if(!capture)
-                    _exit(1);
-            }
-        } else {
-            gsr_capture_kms_vaapi_params kms_params;
+        if(use_software_video_encoder && (wayland || egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA)) {
+            gsr_capture_kms_software_params kms_params;
             kms_params.egl = &egl;
             kms_params.display_to_capture = window_str;
             kms_params.hdr = video_codec_is_hdr(video_codec);
             kms_params.color_range = color_range;
             kms_params.record_cursor = record_cursor;
-            capture = gsr_capture_kms_vaapi_create(&kms_params);
+            capture = gsr_capture_kms_software_create(&kms_params);
             if(!capture)
                 _exit(1);
+        } else {
+            if(egl.gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA) {
+                if(wayland) {
+                    gsr_capture_kms_cuda_params kms_params;
+                    kms_params.egl = &egl;
+                    kms_params.display_to_capture = window_str;
+                    kms_params.hdr = video_codec_is_hdr(video_codec);
+                    kms_params.color_range = color_range;
+                    kms_params.record_cursor = record_cursor;
+                    capture = gsr_capture_kms_cuda_create(&kms_params);
+                    if(!capture)
+                        _exit(1);
+                } else {
+                    const char *capture_target = window_str;
+                    bool direct_capture = strcmp(window_str, "screen-direct") == 0;
+                    if(direct_capture) {
+                        capture_target = "screen";
+                        // TODO: Temporary disable direct capture because push model causes stuttering when it's direct capturing. This might be a nvfbc bug. This does not happen when using a compositor.
+                        direct_capture = false;
+                        fprintf(stderr, "Warning: screen-direct has temporary been disabled as it causes stuttering. This is likely a NvFBC bug. Falling back to \"screen\".\n");
+                    }
+
+                    if(strcmp(window_str, "screen-direct-force") == 0) {
+                        direct_capture = true;
+                        capture_target = "screen";
+                    }
+
+                    gsr_capture_nvfbc_params nvfbc_params;
+                    nvfbc_params.egl = &egl;
+                    nvfbc_params.display_to_capture = capture_target;
+                    nvfbc_params.fps = fps;
+                    nvfbc_params.pos = { 0, 0 };
+                    nvfbc_params.size = { 0, 0 };
+                    nvfbc_params.direct_capture = direct_capture;
+                    nvfbc_params.overclock = overclock;
+                    nvfbc_params.hdr = video_codec_is_hdr(video_codec);
+                    nvfbc_params.color_range = color_range;
+                    nvfbc_params.record_cursor = record_cursor;
+                    nvfbc_params.use_software_video_encoder = use_software_video_encoder;
+                    capture = gsr_capture_nvfbc_create(&nvfbc_params);
+                    if(!capture)
+                        _exit(1);
+                }
+            } else {
+                gsr_capture_kms_vaapi_params kms_params;
+                kms_params.egl = &egl;
+                kms_params.display_to_capture = window_str;
+                kms_params.hdr = video_codec_is_hdr(video_codec);
+                kms_params.color_range = color_range;
+                kms_params.record_cursor = record_cursor;
+                capture = gsr_capture_kms_vaapi_create(&kms_params);
+                if(!capture)
+                    _exit(1);
+            }
         }
     } else {
         if(wayland) {
@@ -1612,41 +1710,63 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
     }
 
     if(!capture) {
-        switch(egl.gpu_info.vendor) {
-            case GSR_GPU_VENDOR_AMD:
-            case GSR_GPU_VENDOR_INTEL: {
-                gsr_capture_xcomposite_vaapi_params xcomposite_params;
-                xcomposite_params.base.egl = &egl;
-                xcomposite_params.base.window = src_window_id;
-                xcomposite_params.base.follow_focused = follow_focused;
-                xcomposite_params.base.region_size = region_size;
-                xcomposite_params.base.color_range = color_range;
-                xcomposite_params.base.record_cursor = record_cursor;
-                xcomposite_params.base.track_damage = track_damage;
-                capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
-                if(!capture)
-                    _exit(1);
-                break;
-            }
-            case GSR_GPU_VENDOR_NVIDIA: {
-                gsr_capture_xcomposite_cuda_params xcomposite_params;
-                xcomposite_params.base.egl = &egl;
-                xcomposite_params.base.window = src_window_id;
-                xcomposite_params.base.follow_focused = follow_focused;
-                xcomposite_params.base.region_size = region_size;
-                xcomposite_params.base.color_range = color_range;
-                xcomposite_params.base.record_cursor = record_cursor;
-                xcomposite_params.base.track_damage = track_damage;
-                xcomposite_params.overclock = overclock;
-                capture = gsr_capture_xcomposite_cuda_create(&xcomposite_params);
-                if(!capture)
-                    _exit(1);
-                break;
+        if(use_software_video_encoder) {
+            gsr_capture_xcomposite_software_params xcomposite_params;
+            xcomposite_params.base.egl = &egl;
+            xcomposite_params.base.window = src_window_id;
+            xcomposite_params.base.follow_focused = follow_focused;
+            xcomposite_params.base.region_size = region_size;
+            xcomposite_params.base.color_range = color_range;
+            xcomposite_params.base.record_cursor = record_cursor;
+            xcomposite_params.base.track_damage = track_damage;
+            capture = gsr_capture_xcomposite_software_create(&xcomposite_params);
+            if(!capture)
+                _exit(1);
+        } else {
+            switch(egl.gpu_info.vendor) {
+                case GSR_GPU_VENDOR_AMD:
+                case GSR_GPU_VENDOR_INTEL: {
+                    gsr_capture_xcomposite_vaapi_params xcomposite_params;
+                    xcomposite_params.base.egl = &egl;
+                    xcomposite_params.base.window = src_window_id;
+                    xcomposite_params.base.follow_focused = follow_focused;
+                    xcomposite_params.base.region_size = region_size;
+                    xcomposite_params.base.color_range = color_range;
+                    xcomposite_params.base.record_cursor = record_cursor;
+                    xcomposite_params.base.track_damage = track_damage;
+                    capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
+                    if(!capture)
+                        _exit(1);
+                    break;
+                }
+                case GSR_GPU_VENDOR_NVIDIA: {
+                    gsr_capture_xcomposite_cuda_params xcomposite_params;
+                    xcomposite_params.base.egl = &egl;
+                    xcomposite_params.base.window = src_window_id;
+                    xcomposite_params.base.follow_focused = follow_focused;
+                    xcomposite_params.base.region_size = region_size;
+                    xcomposite_params.base.color_range = color_range;
+                    xcomposite_params.base.record_cursor = record_cursor;
+                    xcomposite_params.base.track_damage = track_damage;
+                    xcomposite_params.overclock = overclock;
+                    capture = gsr_capture_xcomposite_cuda_create(&xcomposite_params);
+                    if(!capture)
+                        _exit(1);
+                    break;
+                }
             }
         }
     }
 
     return capture;
+}
+
+static AVPixelFormat get_pixel_format(gsr_gpu_vendor vendor, bool use_software_video_encoder) {
+    if(use_software_video_encoder) {
+        return AV_PIX_FMT_NV12;
+    } else {
+        return vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_CUDA : AV_PIX_FMT_VAAPI;
+    }
 }
 
 struct Arg {
@@ -1715,6 +1835,7 @@ int main(int argc, char **argv) {
         { "-cursor", Arg { {}, true, false } },
         { "-gopm", Arg { {}, true, false } }, // deprecated, used keyint instead
         { "-keyint", Arg { {}, true, false } },
+        { "-encoder", Arg { {}, true, false } },
     };
 
     for(int i = 1; i < argc; i += 2) {
@@ -1796,7 +1917,6 @@ int main(int argc, char **argv) {
     }
 
     float keyint = 2.0;
-    const char *gopm_str = args["-gopm"].value();
     const char *keyint_str = args["-keyint"].value();
     if(keyint_str) {
         if(sscanf(keyint_str, "%f", &keyint) != 1) {
@@ -1808,18 +1928,19 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Error: -keyint is expected to be 0 or larger\n");
             usage();
         }
-    } else if(gopm_str) {
-        if(sscanf(gopm_str, "%f", &keyint) != 1) {
-            fprintf(stderr, "Error: -gopm argument \"%s\" is not a floating point number\n", gopm_str);
+    }
+
+    bool use_software_video_encoder = false;
+    const char *encoder_str = args["-encoder"].value();
+    if(encoder_str) {
+        if(strcmp(encoder_str, "gpu") == 0) {
+            use_software_video_encoder = false;
+        } else if(strcmp(encoder_str, "cpu") == 0) {
+            use_software_video_encoder = true;
+        } else {
+            fprintf(stderr, "Error: -encoder is expected to be 'gpu' or 'cpu', was '%s'\n", encoder_str);
             usage();
         }
-
-        if(keyint < 0) {
-            fprintf(stderr, "Error: -gopm is expected to be 0 or larger\n");
-            usage();
-        }
-
-        fprintf(stderr, "Warning: -gopm argument is deprecated, use -keyint instead\n");
     }
 
     bool overclock = false;
@@ -2198,16 +2319,9 @@ int main(int argc, char **argv) {
 
     const bool video_codec_auto = strcmp(video_codec_to_use, "auto") == 0;
     if(video_codec_auto) {
-        const AVCodec *h264_codec = find_h264_encoder(egl.gpu_info.vendor, egl.card_path);
-        if(!h264_codec) {
-            fprintf(stderr, "Info: using hevc encoder because a codec was not specified and your gpu does not support h264\n");
-            video_codec_to_use = "hevc";
-            video_codec = VideoCodec::HEVC;
-        } else {
-            fprintf(stderr, "Info: using h264 encoder because a codec was not specified\n");
-            video_codec_to_use = "h264";
-            video_codec = VideoCodec::H264;
-        }
+        fprintf(stderr, "Info: using h264 encoder because a codec was not specified\n");
+        video_codec_to_use = "h264";
+        video_codec = VideoCodec::H264;
     }
 
     // TODO: Allow hevc, vp9 and av1 in (enhanced) flv (supported since ffmpeg 6.1)
@@ -2241,17 +2355,29 @@ int main(int argc, char **argv) {
         }
     }
 
+    if(use_software_video_encoder && video_codec != VideoCodec::H264) {
+        fprintf(stderr, "Error: \"-encoder cpu\" option is currently only available when using h264 codec option (-k)\n");
+        usage();
+    }
+
     const AVCodec *video_codec_f = nullptr;
     switch(video_codec) {
-        case VideoCodec::H264:
-            video_codec_f = find_h264_encoder(egl.gpu_info.vendor, egl.card_path);
+        case VideoCodec::H264: {
+            if(use_software_video_encoder) {
+                video_codec_f = find_h264_software_encoder();
+            } else {
+                video_codec_f = find_h264_encoder(egl.gpu_info.vendor, egl.card_path);
+            }
             break;
+        }
         case VideoCodec::HEVC:
         case VideoCodec::HEVC_HDR:
+            // TODO: software encoder
             video_codec_f = find_hevc_encoder(egl.gpu_info.vendor, egl.card_path);
             break;
         case VideoCodec::AV1:
         case VideoCodec::AV1_HDR:
+            // TODO: software encoder
             video_codec_f = find_av1_encoder(egl.gpu_info.vendor, egl.card_path);
             break;
     }
@@ -2315,7 +2441,7 @@ int main(int argc, char **argv) {
         _exit(2);
     }
 
-    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, egl, fps, overclock, video_codec, color_range, record_cursor, framerate_mode == FramerateMode::CONTENT);
+    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, egl, fps, overclock, video_codec, color_range, record_cursor, framerate_mode == FramerateMode::CONTENT, use_software_video_encoder);
 
     // (Some?) livestreaming services require at least one audio track to work.
     // If not audio is provided then create one silent audio track.
@@ -2336,7 +2462,7 @@ int main(int argc, char **argv) {
     const bool hdr = video_codec_is_hdr(video_codec);
     const bool low_latency_recording = is_livestream || is_output_piped;
 
-    AVCodecContext *video_codec_context = create_video_codec_context(egl.gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_CUDA : AV_PIX_FMT_VAAPI, quality, fps, video_codec_f, low_latency_recording, egl.gpu_info.vendor, framerate_mode, hdr, color_range, keyint);
+    AVCodecContext *video_codec_context = create_video_codec_context(get_pixel_format(egl.gpu_info.vendor, use_software_video_encoder), quality, fps, video_codec_f, low_latency_recording, egl.gpu_info.vendor, framerate_mode, hdr, color_range, keyint);
     if(replay_buffer_size_secs == -1)
         video_stream = create_stream(av_format_context, video_codec_context);
 
@@ -2360,7 +2486,11 @@ int main(int argc, char **argv) {
         _exit(capture_result);
     }
 
-    open_video(video_codec_context, quality, very_old_gpu, egl.gpu_info.vendor, pixel_format, hdr);
+    if(use_software_video_encoder) {
+        open_video_software(video_codec_context, quality, pixel_format, hdr);
+    } else {
+        open_video_hardware(video_codec_context, quality, very_old_gpu, egl.gpu_info.vendor, pixel_format, hdr);
+    }
     if(video_stream)
         avcodec_parameters_from_context(video_stream->codecpar, video_codec_context);
 

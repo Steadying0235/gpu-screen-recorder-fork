@@ -281,6 +281,73 @@ bool gsr_capture_base_setup_cuda_textures(gsr_capture_base *self, AVFrame *frame
     return true;
 }
 
+bool gsr_capture_base_setup_textures(gsr_capture_base *self, AVFrame *frame, gsr_color_range color_range, gsr_source_color source_color, bool hdr, bool cursor_texture_is_external) {
+    int res = av_frame_get_buffer(frame, 1); // TODO: Align?
+    if(res < 0) {
+        fprintf(stderr, "gsr error: gsr_capture_base_setup_textures: av_frame_get_buffer failed: %d\n", res);
+        return false;
+    }
+
+    res = av_frame_make_writable(frame);
+    if(res < 0) {
+        fprintf(stderr, "gsr error: gsr_capture_base_setup_textures: av_frame_make_writable failed: %d\n", res);
+        return false;
+    }
+
+    self->egl->glGenTextures(1, &self->input_texture);
+    self->egl->glBindTexture(GL_TEXTURE_2D, self->input_texture);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    self->egl->glBindTexture(GL_TEXTURE_2D, 0);
+
+    const int target = cursor_texture_is_external ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
+    self->egl->glGenTextures(1, &self->cursor_texture);
+    self->egl->glBindTexture(target, self->cursor_texture);
+    self->egl->glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    self->egl->glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    self->egl->glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    self->egl->glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    self->egl->glBindTexture(target, 0);
+
+    const unsigned int internal_formats_nv12[2] = { GL_R8, GL_RG8 };
+    const unsigned int internal_formats_p010[2] = { GL_R16, GL_RG16 };
+    const unsigned int formats[2] = { GL_RED, GL_RG };
+    const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
+
+    for(int i = 0; i < 2; ++i) {
+        self->target_textures[i] = gl_create_texture(self->egl, self->video_codec_context->width / div[i], self->video_codec_context->height / div[i], !hdr ? internal_formats_nv12[i] : internal_formats_p010[i], formats[i]);
+        if(self->target_textures[i] == 0) {
+            fprintf(stderr, "gsr error: gsr_capture_kms_setup_cuda_textures: failed to create opengl texture\n");
+            return false;
+        }
+    }
+
+    gsr_color_conversion_params color_conversion_params = {0};
+    color_conversion_params.color_range = color_range;
+    color_conversion_params.egl = self->egl;
+    color_conversion_params.source_color = source_color;
+    if(!hdr)
+        color_conversion_params.destination_color = GSR_DESTINATION_COLOR_NV12;
+    else
+        color_conversion_params.destination_color = GSR_DESTINATION_COLOR_P010;
+
+    color_conversion_params.destination_textures[0] = self->target_textures[0];
+    color_conversion_params.destination_textures[1] = self->target_textures[1];
+    color_conversion_params.num_destination_textures = 2;
+    color_conversion_params.load_external_image_shader = true;
+
+    if(gsr_color_conversion_init(&self->color_conversion, &color_conversion_params) != 0) {
+        fprintf(stderr, "gsr error: gsr_capture_kms_setup_cuda_textures: failed to create color conversion\n");
+        return false;
+    }
+
+    gsr_color_conversion_clear(&self->color_conversion);
+
+    return true;
+}
+
 void gsr_capture_base_stop(gsr_capture_base *self) {
     gsr_color_conversion_deinit(&self->color_conversion);
 
@@ -306,7 +373,7 @@ void gsr_capture_base_stop(gsr_capture_base *self) {
         av_buffer_unref(&self->video_codec_context->hw_frames_ctx);
 }
 
-bool drm_create_codec_context(const char *card_path, AVCodecContext *video_codec_context, int width, int height, bool hdr, VADisplay *va_dpy) {
+bool vaapi_create_codec_context(const char *card_path, AVCodecContext *video_codec_context, int width, int height, bool hdr, VADisplay *va_dpy) {
     char render_path[128];
     if(!gsr_card_path_get_render_path(card_path, render_path)) {
         fprintf(stderr, "gsr error: failed to get /dev/dri/renderDXXX file from %s\n", card_path);

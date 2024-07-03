@@ -343,7 +343,6 @@ int gsr_capture_xcomposite_capture(gsr_capture_xcomposite *self, AVFrame *frame)
         }
     }
 
-    self->params.egl->eglSwapBuffers(self->params.egl->egl_display, self->params.egl->egl_surface);
     //self->params.egl->glFlush();
     //self->params.egl->glFinish();
 

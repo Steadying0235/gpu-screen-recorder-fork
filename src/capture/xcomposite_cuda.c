@@ -96,6 +96,8 @@ static int gsr_capture_xcomposite_cuda_capture(gsr_capture *cap, AVFrame *frame)
 
     gsr_capture_xcomposite_capture(&cap_xcomp->xcomposite, frame);
 
+    cap_xcomp->xcomposite.params.egl->eglSwapBuffers(cap_xcomp->xcomposite.params.egl->egl_display, cap_xcomp->xcomposite.params.egl->egl_surface);
+
     const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
     for(int i = 0; i < 2; ++i) {
         CUDA_MEMCPY2D memcpy_struct;

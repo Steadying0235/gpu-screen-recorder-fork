@@ -85,7 +85,9 @@ static void gsr_capture_kms_unload_cuda_graphics(gsr_capture_kms_cuda *cap_kms) 
 static int gsr_capture_kms_cuda_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_kms_cuda *cap_kms = cap->priv;
 
+    cap_kms->kms.base.egl->glClear(0);
     gsr_capture_kms_capture(&cap_kms->kms, frame, cap_kms->params.hdr, true, true, cap_kms->params.record_cursor);
+    cap_kms->kms.base.egl->eglSwapBuffers(cap_kms->kms.base.egl->egl_display, cap_kms->kms.base.egl->egl_surface);
 
     const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
     for(int i = 0; i < 2; ++i) {

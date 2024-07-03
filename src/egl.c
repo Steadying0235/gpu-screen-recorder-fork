@@ -418,6 +418,7 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
         { (void**)&self->glGetTexLevelParameteriv, "glGetTexLevelParameteriv" },
         { (void**)&self->glTexImage2D, "glTexImage2D" },
         { (void**)&self->glCopyImageSubData, "glCopyImageSubData" },
+        { (void**)&self->glGetTexImage, "glGetTexImage" },
         { (void**)&self->glClearTexImage, "glClearTexImage" },
         { (void**)&self->glGenFramebuffers, "glGenFramebuffers" },
         { (void**)&self->glBindFramebuffer, "glBindFramebuffer" },

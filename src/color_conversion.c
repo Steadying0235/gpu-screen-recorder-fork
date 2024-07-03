@@ -234,7 +234,7 @@ static int create_vertices(gsr_color_conversion *self) {
 
     self->params.egl->glGenBuffers(1, &self->vertex_buffer_object_id);
     self->params.egl->glBindBuffer(GL_ARRAY_BUFFER, self->vertex_buffer_object_id);
-    self->params.egl->glBufferData(GL_ARRAY_BUFFER, 24 * sizeof(float), NULL, GL_STREAM_DRAW);
+    self->params.egl->glBufferData(GL_ARRAY_BUFFER, 24 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
 
     self->params.egl->glEnableVertexAttribArray(0);
     self->params.egl->glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);

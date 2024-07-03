@@ -25,7 +25,7 @@ static int gsr_capture_xcomposite_vaapi_start(gsr_capture *cap, AVCodecContext *
         return res;
     }
 
-    if(!drm_create_codec_context(cap_xcomp->xcomposite.params.egl->card_path, video_codec_context, video_codec_context->width, video_codec_context->height, false, &cap_xcomp->va_dpy)) {
+    if(!vaapi_create_codec_context(cap_xcomp->xcomposite.params.egl->card_path, video_codec_context, video_codec_context->width, video_codec_context->height, false, &cap_xcomp->va_dpy)) {
         gsr_capture_xcomposite_vaapi_stop(cap, video_codec_context);
         return -1;
     }
@@ -60,7 +60,9 @@ static bool gsr_capture_xcomposite_vaapi_should_stop(gsr_capture *cap, bool *err
 
 static int gsr_capture_xcomposite_vaapi_capture(gsr_capture *cap, AVFrame *frame) {
     gsr_capture_xcomposite_vaapi *cap_xcomp = cap->priv;
-    return gsr_capture_xcomposite_capture(&cap_xcomp->xcomposite, frame);
+    gsr_capture_xcomposite_capture(&cap_xcomp->xcomposite, frame);
+    cap_xcomp->xcomposite.params.egl->eglSwapBuffers(cap_xcomp->xcomposite.params.egl->egl_display, cap_xcomp->xcomposite.params.egl->egl_surface);
+    return 0;
 }
 
 static void gsr_capture_xcomposite_vaapi_stop(gsr_capture *cap, AVCodecContext *video_codec_context) {

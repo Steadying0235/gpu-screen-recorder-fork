@@ -1,17 +1,91 @@
 #include "../../include/capture/kms.h"
-#include "../../include/capture/capture.h"
 #include "../../include/utils.h"
+#include "../../include/color_conversion.h"
+#include "../../kms/client/kms_client.h"
+
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+
 #include <libavcodec/avcodec.h>
 #include <libavutil/mastering_display_metadata.h>
 
 #define HDMI_STATIC_METADATA_TYPE1 0
 #define HDMI_EOTF_SMPTE_ST2084 2
 
+#define MAX_CONNECTOR_IDS 32
+
+typedef struct {
+    uint32_t connector_ids[MAX_CONNECTOR_IDS];
+    int num_connector_ids;
+} MonitorId;
+
+typedef struct {
+    gsr_capture_kms_params params;
+
+    bool should_stop;
+    bool stop_is_error;
+    
+    gsr_kms_client kms_client;
+    gsr_kms_response kms_response;
+
+    vec2i capture_pos;
+    vec2i capture_size;
+    MonitorId monitor_id;
+
+    AVMasteringDisplayMetadata *mastering_display_metadata;
+    AVContentLightMetadata *light_metadata;
+
+    gsr_monitor_rotation monitor_rotation;
+
+    unsigned int input_texture;
+    unsigned int cursor_texture;
+} gsr_capture_kms;
+
+static void gsr_capture_kms_cleanup_kms_fds(gsr_capture_kms *self) {
+    for(int i = 0; i < self->kms_response.num_fds; ++i) {
+        if(self->kms_response.fds[i].fd > 0)
+            close(self->kms_response.fds[i].fd);
+        self->kms_response.fds[i].fd = 0;
+    }
+    self->kms_response.num_fds = 0;
+}
+
+static void gsr_capture_kms_stop(gsr_capture_kms *self) {
+    if(self->input_texture) {
+        self->params.egl->glDeleteTextures(1, &self->input_texture);
+        self->input_texture = 0;
+    }
+
+    if(self->cursor_texture) {
+        self->params.egl->glDeleteTextures(1, &self->cursor_texture);
+        self->cursor_texture = 0;
+    }
+
+    gsr_capture_kms_cleanup_kms_fds(self);
+    gsr_kms_client_deinit(&self->kms_client);
+}
+
 static int max_int(int a, int b) {
     return a > b ? a : b;
+}
+
+static void gsr_capture_kms_create_input_textures(gsr_capture_kms *self) {
+    self->params.egl->glGenTextures(1, &self->input_texture);
+    self->params.egl->glBindTexture(GL_TEXTURE_2D, self->input_texture);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
+
+    self->params.egl->glGenTextures(1, &self->cursor_texture);
+    self->params.egl->glBindTexture(GL_TEXTURE_2D, self->cursor_texture);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 /* TODO: On monitor reconfiguration, find monitor x, y, width and height again. Do the same for nvfbc. */
@@ -39,32 +113,33 @@ static void monitor_callback(const gsr_monitor *monitor, void *userdata) {
         fprintf(stderr, "gsr warning: reached max connector ids\n");
 }
 
-int gsr_capture_kms_start(gsr_capture_kms *self, const char *display_to_capture, gsr_egl *egl, AVCodecContext *video_codec_context, AVFrame *frame) {
-    memset(self, 0, sizeof(*self));
-    self->base.video_codec_context = video_codec_context;
-    self->base.egl = egl;
+static int gsr_capture_kms_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
+    gsr_capture_kms *self = cap->priv;
+
+    gsr_capture_kms_create_input_textures(self);
 
     gsr_monitor monitor;
     self->monitor_id.num_connector_ids = 0;
 
-    int kms_init_res = gsr_kms_client_init(&self->kms_client, egl->card_path);
+    int kms_init_res = gsr_kms_client_init(&self->kms_client, self->params.egl->card_path);
     if(kms_init_res != 0)
         return kms_init_res;
 
     MonitorCallbackUserdata monitor_callback_userdata = {
         &self->monitor_id,
-        display_to_capture, strlen(display_to_capture),
+        self->params.display_to_capture, strlen(self->params.display_to_capture),
         0,
     };
-    for_each_active_monitor_output(egl, GSR_CONNECTION_DRM, monitor_callback, &monitor_callback_userdata);
+    for_each_active_monitor_output(self->params.egl, GSR_CONNECTION_DRM, monitor_callback, &monitor_callback_userdata);
 
-    if(!get_monitor_by_name(egl, GSR_CONNECTION_DRM, display_to_capture, &monitor)) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_start: failed to find monitor by name \"%s\"\n", display_to_capture);
+    if(!get_monitor_by_name(self->params.egl, GSR_CONNECTION_DRM, self->params.display_to_capture, &monitor)) {
+        fprintf(stderr, "gsr error: gsr_capture_kms_start: failed to find monitor by name \"%s\"\n", self->params.display_to_capture);
+        gsr_capture_kms_stop(self);
         return -1;
     }
 
-    monitor.name = display_to_capture;
-    self->monitor_rotation = drm_monitor_get_display_server_rotation(egl, &monitor);
+    monitor.name = self->params.display_to_capture;
+    self->monitor_rotation = drm_monitor_get_display_server_rotation(self->params.egl, &monitor);
 
     self->capture_pos = monitor.pos;
     if(self->monitor_rotation == GSR_MONITOR_ROT_90 || self->monitor_rotation == GSR_MONITOR_ROT_270) {
@@ -75,37 +150,31 @@ int gsr_capture_kms_start(gsr_capture_kms *self, const char *display_to_capture,
     }
 
     /* Disable vsync */
-    egl->eglSwapInterval(egl->egl_display, 0);
+    self->params.egl->eglSwapInterval(self->params.egl->egl_display, 0);
 
     // TODO: Move this and xcomposite equivalent to a common section unrelated to capture method
-    if(egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_HEVC) {
+    if(self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_HEVC) {
         // TODO: dont do this if using ffmpeg reports that this is not needed (AMD driver bug that was fixed recently)
-        self->base.video_codec_context->width = FFALIGN(self->capture_size.x, 64);
-        self->base.video_codec_context->height = FFALIGN(self->capture_size.y, 16);
-    } else if(egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_AV1) {
+        video_codec_context->width = FFALIGN(self->capture_size.x, 64);
+        video_codec_context->height = FFALIGN(self->capture_size.y, 16);
+    } else if(self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_AV1) {
         // TODO: Dont do this for VCN 5 and forward which should fix this hardware bug
-        self->base.video_codec_context->width = FFALIGN(self->capture_size.x, 64);
+        video_codec_context->width = FFALIGN(self->capture_size.x, 64);
         // AMD driver has special case handling for 1080 height to set it to 1082 instead of 1088 (1080 aligned to 16).
         // TODO: Set height to 1082 in this case, but it wont work because it will be aligned to 1088.
         if(self->capture_size.y == 1080) {
-            self->base.video_codec_context->height = 1080;
+            video_codec_context->height = 1080;
         } else {
-            self->base.video_codec_context->height = FFALIGN(self->capture_size.y, 16);
+            video_codec_context->height = FFALIGN(self->capture_size.y, 16);
         }
     } else {
-        self->base.video_codec_context->width = FFALIGN(self->capture_size.x, 2);
-        self->base.video_codec_context->height = FFALIGN(self->capture_size.y, 2);
+        video_codec_context->width = FFALIGN(self->capture_size.x, 2);
+        video_codec_context->height = FFALIGN(self->capture_size.y, 2);
     }
 
-    frame->width = self->base.video_codec_context->width;
-    frame->height = self->base.video_codec_context->height;
+    frame->width = video_codec_context->width;
+    frame->height = video_codec_context->height;
     return 0;
-}
-
-void gsr_capture_kms_stop(gsr_capture_kms *self) {
-    gsr_capture_kms_cleanup_kms_fds(self);
-    gsr_kms_client_deinit(&self->kms_client);
-    gsr_capture_base_stop(&self->base);
 }
 
 static float monitor_rotation_to_radians(gsr_monitor_rotation rot) {
@@ -210,8 +279,13 @@ static vec2i swap_vec2i(vec2i value) {
     return value;
 }
 
-bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bool screen_plane_use_modifiers, bool cursor_texture_is_external, bool record_cursor) {
+static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
+    gsr_capture_kms *self = cap->priv;
+    const bool screen_plane_use_modifiers = self->params.egl->gpu_info.vendor != GSR_GPU_VENDOR_AMD;
+    const bool cursor_texture_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
+
     //egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    self->params.egl->glClear(0);
 
     gsr_capture_kms_cleanup_kms_fds(self);
 
@@ -221,7 +295,7 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bo
 
     if(gsr_kms_client_get_kms(&self->kms_client, &self->kms_response) != 0) {
         fprintf(stderr, "gsr error: gsr_capture_kms_capture: failed to get kms, error: %d (%s)\n", self->kms_response.result, self->kms_response.err_msg);
-        return false;
+        return -1;
     }
 
     if(self->kms_response.num_fds == 0) {
@@ -230,7 +304,7 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bo
             error_shown = true;
             fprintf(stderr, "gsr error: no drm found, capture will fail\n");
         }
-        return false;
+        return -1;
     }
 
     for(int i = 0; i < self->monitor_id.num_connector_ids; ++i) {
@@ -250,12 +324,12 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bo
     cursor_drm_fd = find_cursor_drm(&self->kms_response);
 
     if(!drm_fd)
-        return false;
+        return -1;
 
     if(!capture_is_combined_plane && cursor_drm_fd && cursor_drm_fd->connector_id != drm_fd->connector_id)
         cursor_drm_fd = NULL;
 
-    if(drm_fd->has_hdr_metadata && hdr && hdr_metadata_is_supported_format(&drm_fd->hdr_metadata))
+    if(drm_fd->has_hdr_metadata && self->params.hdr && hdr_metadata_is_supported_format(&drm_fd->hdr_metadata))
         gsr_kms_set_hdr_metadata(self, frame, drm_fd);
 
     // TODO: This causes a crash sometimes on steam deck, why? is it a driver bug? a vaapi pure version doesn't cause a crash.
@@ -299,11 +373,11 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bo
         img_attr[13] = EGL_NONE;
     }
 
-    EGLImage image = self->base.egl->eglCreateImage(self->base.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
-    self->base.egl->glBindTexture(GL_TEXTURE_2D, self->base.input_texture);
-    self->base.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
-    self->base.egl->eglDestroyImage(self->base.egl->egl_display, image);
-    self->base.egl->glBindTexture(GL_TEXTURE_2D, 0);
+    EGLImage image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+    self->params.egl->glBindTexture(GL_TEXTURE_2D, self->input_texture);
+    self->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+    self->params.egl->eglDestroyImage(self->params.egl->egl_display, image);
+    self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
     vec2i capture_pos = self->capture_pos;
     if(!capture_is_combined_plane)
@@ -314,12 +388,12 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bo
     const int target_x = max_int(0, frame->width / 2 - self->capture_size.x / 2);
     const int target_y = max_int(0, frame->height / 2 - self->capture_size.y / 2);
 
-    gsr_color_conversion_draw(&self->base.color_conversion, self->base.input_texture,
+    gsr_color_conversion_draw(color_conversion, self->input_texture,
         (vec2i){target_x, target_y}, self->capture_size,
         capture_pos, self->capture_size,
         texture_rotation, false);
 
-    if(record_cursor && cursor_drm_fd) {
+    if(self->params.record_cursor && cursor_drm_fd) {
         const vec2i cursor_size = {cursor_drm_fd->width, cursor_drm_fd->height};
         vec2i cursor_pos = {cursor_drm_fd->x, cursor_drm_fd->y};
         switch(self->monitor_rotation) {
@@ -361,35 +435,112 @@ bool gsr_capture_kms_capture(gsr_capture_kms *self, AVFrame *frame, bool hdr, bo
             EGL_NONE
         };
 
-        EGLImage cursor_image = self->base.egl->eglCreateImage(self->base.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr_cursor);
+        EGLImage cursor_image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr_cursor);
         const int target = cursor_texture_is_external ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
-        self->base.egl->glBindTexture(target, self->base.cursor_texture);
-        self->base.egl->glEGLImageTargetTexture2DOES(target, cursor_image);
-        self->base.egl->eglDestroyImage(self->base.egl->egl_display, cursor_image);
-        self->base.egl->glBindTexture(target, 0);
+        self->params.egl->glBindTexture(target, self->cursor_texture);
+        self->params.egl->glEGLImageTargetTexture2DOES(target, cursor_image);
+        self->params.egl->eglDestroyImage(self->params.egl->egl_display, cursor_image);
+        self->params.egl->glBindTexture(target, 0);
 
-        self->base.egl->glEnable(GL_SCISSOR_TEST);
-        self->base.egl->glScissor(target_x, target_y, self->capture_size.x, self->capture_size.y);
+        self->params.egl->glEnable(GL_SCISSOR_TEST);
+        self->params.egl->glScissor(target_x, target_y, self->capture_size.x, self->capture_size.y);
 
-        gsr_color_conversion_draw(&self->base.color_conversion, self->base.cursor_texture,
+        gsr_color_conversion_draw(color_conversion, self->cursor_texture,
             cursor_pos, cursor_size,
             (vec2i){0, 0}, cursor_size,
             texture_rotation, cursor_texture_is_external);
 
-        self->base.egl->glDisable(GL_SCISSOR_TEST);
+        self->params.egl->glDisable(GL_SCISSOR_TEST);
     }
 
-    //self->base.egl->glFlush();
-    //self->base.egl->glFinish();
+    self->params.egl->eglSwapBuffers(self->params.egl->egl_display, self->params.egl->egl_surface);
+    
+    // TODO: Do software specific video encoder conversion here
 
-    return true;
+    //self->params.egl->glFlush();
+    //self->params.egl->glFinish();
+
+    return 0;
 }
 
-void gsr_capture_kms_cleanup_kms_fds(gsr_capture_kms *self) {
-    for(int i = 0; i < self->kms_response.num_fds; ++i) {
-        if(self->kms_response.fds[i].fd > 0)
-            close(self->kms_response.fds[i].fd);
-        self->kms_response.fds[i].fd = 0;
+static bool gsr_capture_kms_should_stop(gsr_capture *cap, bool *err) {
+    gsr_capture_kms *cap_kms = cap->priv;
+    if(cap_kms->should_stop) {
+        if(err)
+            *err = cap_kms->stop_is_error;
+        return true;
     }
-    self->kms_response.num_fds = 0;
+
+    if(err)
+        *err = false;
+    return false;
+}
+
+static void gsr_capture_kms_capture_end(gsr_capture *cap, AVFrame *frame) {
+    (void)frame;
+    gsr_capture_kms_cleanup_kms_fds(cap->priv);
+}
+
+static gsr_source_color gsr_capture_kms_get_source_color(gsr_capture *cap) {
+    (void)cap;
+    return GSR_SOURCE_COLOR_RGB;
+}
+
+static bool gsr_capture_kms_uses_external_image(gsr_capture *cap) {
+    gsr_capture_kms *cap_kms = cap->priv;
+    return cap_kms->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
+}
+
+static void gsr_capture_kms_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
+    (void)video_codec_context;
+    gsr_capture_kms *cap_kms = cap->priv;
+    if(cap->priv) {
+        gsr_capture_kms_stop(cap_kms);
+        free((void*)cap_kms->params.display_to_capture);
+        cap_kms->params.display_to_capture = NULL;
+        free(cap->priv);
+        cap->priv = NULL;
+    }
+    free(cap);
+}
+
+gsr_capture* gsr_capture_kms_create(const gsr_capture_kms_params *params) {
+    if(!params) {
+        fprintf(stderr, "gsr error: gsr_capture_kms_create params is NULL\n");
+        return NULL;
+    }
+
+    gsr_capture *cap = calloc(1, sizeof(gsr_capture));
+    if(!cap)
+        return NULL;
+
+    gsr_capture_kms *cap_kms = calloc(1, sizeof(gsr_capture_kms));
+    if(!cap_kms) {
+        free(cap);
+        return NULL;
+    }
+
+    const char *display_to_capture = strdup(params->display_to_capture);
+    if(!display_to_capture) {
+        free(cap);
+        free(cap_kms);
+        return NULL;
+    }
+
+    cap_kms->params = *params;
+    cap_kms->params.display_to_capture = display_to_capture;
+    
+    *cap = (gsr_capture) {
+        .start = gsr_capture_kms_start,
+        .tick = NULL,
+        .should_stop = gsr_capture_kms_should_stop,
+        .capture = gsr_capture_kms_capture,
+        .capture_end = gsr_capture_kms_capture_end,
+        .get_source_color = gsr_capture_kms_get_source_color,
+        .uses_external_image = gsr_capture_kms_uses_external_image,
+        .destroy = gsr_capture_kms_destroy,
+        .priv = cap_kms
+    };
+
+    return cap;
 }

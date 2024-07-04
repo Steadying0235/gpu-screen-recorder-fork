@@ -357,6 +357,7 @@ void gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_
 
     vec2i source_texture_size = {0, 0};
     if(external_texture) {
+        assert(self->params.load_external_image_shader);
         source_texture_size = source_size;
     } else {
         /* TODO: Do not call this every frame? */

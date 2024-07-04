@@ -1,11 +1,10 @@
 extern "C" {
 #include "../include/capture/nvfbc.h"
-#include "../include/capture/xcomposite_cuda.h"
-#include "../include/capture/xcomposite_vaapi.h"
-#include "../include/capture/xcomposite_software.h"
-#include "../include/capture/kms_vaapi.h"
-#include "../include/capture/kms_cuda.h"
-#include "../include/capture/kms_software.h"
+#include "../include/capture/xcomposite.h"
+#include "../include/capture/kms.h"
+#include "../include/encoder/video/cuda.h"
+#include "../include/encoder/video/vaapi.h"
+#include "../include/encoder/video/software.h"
 #include "../include/egl.h"
 #include "../include/utils.h"
 #include "../include/color_conversion.h"
@@ -1564,7 +1563,7 @@ static void list_supported_video_codecs() {
         XCloseDisplay(dpy);
 }
 
-static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl &egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range, bool record_cursor, bool track_damage, bool use_software_video_encoder) {
+static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl *egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range, bool record_cursor, bool track_damage, bool use_software_video_encoder) {
     vec2i region_size = { 0, 0 };
     Window src_window_id = None;
     bool follow_focused = false;
@@ -1593,11 +1592,11 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
 
         follow_focused = true;
     } else if(contains_non_hex_number(window_str)) {
-        if(wayland || egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA) {
+        if(wayland || egl->gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA) {
             if(strcmp(window_str, "screen") == 0) {
                 FirstOutputCallback first_output;
                 first_output.output_name = NULL;
-                for_each_active_monitor_output(&egl, GSR_CONNECTION_DRM, get_first_output, &first_output);
+                for_each_active_monitor_output(egl, GSR_CONNECTION_DRM, get_first_output, &first_output);
 
                 if(first_output.output_name) {
                     window_str = first_output.output_name;
@@ -1608,48 +1607,48 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
             }
 
             gsr_monitor gmon;
-            if(!get_monitor_by_name(&egl, GSR_CONNECTION_DRM, window_str, &gmon)) {
+            if(!get_monitor_by_name(egl, GSR_CONNECTION_DRM, window_str, &gmon)) {
                 fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
                 fprintf(stderr, "    \"screen\"\n");
-                for_each_active_monitor_output(&egl, GSR_CONNECTION_DRM, monitor_output_callback_print, NULL);
+                for_each_active_monitor_output(egl, GSR_CONNECTION_DRM, monitor_output_callback_print, NULL);
                 _exit(1);
             }
         } else {
             if(strcmp(window_str, "screen") != 0 && strcmp(window_str, "screen-direct") != 0 && strcmp(window_str, "screen-direct-force") != 0) {
                 gsr_monitor gmon;
-                if(!get_monitor_by_name(&egl, GSR_CONNECTION_X11, window_str, &gmon)) {
-                    const int screens_width = XWidthOfScreen(DefaultScreenOfDisplay(egl.x11.dpy));
-                    const int screens_height = XWidthOfScreen(DefaultScreenOfDisplay(egl.x11.dpy));
+                if(!get_monitor_by_name(egl, GSR_CONNECTION_X11, window_str, &gmon)) {
+                    const int screens_width = XWidthOfScreen(DefaultScreenOfDisplay(egl->x11.dpy));
+                    const int screens_height = XWidthOfScreen(DefaultScreenOfDisplay(egl->x11.dpy));
                     fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
                     fprintf(stderr, "    \"screen\"    (%dx%d+%d+%d)\n", screens_width, screens_height, 0, 0);
                     fprintf(stderr, "    \"screen-direct\"    (%dx%d+%d+%d)\n", screens_width, screens_height, 0, 0);
                     fprintf(stderr, "    \"screen-direct-force\"    (%dx%d+%d+%d)\n", screens_width, screens_height, 0, 0);
-                    for_each_active_monitor_output(&egl, GSR_CONNECTION_X11, monitor_output_callback_print, NULL);
+                    for_each_active_monitor_output(egl, GSR_CONNECTION_X11, monitor_output_callback_print, NULL);
                     _exit(1);
                 }
             }
         }
 
-        if(use_software_video_encoder && (wayland || egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA)) {
-            gsr_capture_kms_software_params kms_params;
-            kms_params.egl = &egl;
+        if(use_software_video_encoder && (wayland || egl->gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA)) {
+            gsr_capture_kms_params kms_params;
+            kms_params.egl = egl;
             kms_params.display_to_capture = window_str;
             kms_params.hdr = video_codec_is_hdr(video_codec);
             kms_params.color_range = color_range;
             kms_params.record_cursor = record_cursor;
-            capture = gsr_capture_kms_software_create(&kms_params);
+            capture = gsr_capture_kms_create(&kms_params);
             if(!capture)
                 _exit(1);
         } else {
-            if(egl.gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA) {
+            if(egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA) {
                 if(wayland) {
-                    gsr_capture_kms_cuda_params kms_params;
-                    kms_params.egl = &egl;
+                    gsr_capture_kms_params kms_params;
+                    kms_params.egl = egl;
                     kms_params.display_to_capture = window_str;
                     kms_params.hdr = video_codec_is_hdr(video_codec);
                     kms_params.color_range = color_range;
                     kms_params.record_cursor = record_cursor;
-                    capture = gsr_capture_kms_cuda_create(&kms_params);
+                    capture = gsr_capture_kms_create(&kms_params);
                     if(!capture)
                         _exit(1);
                 } else {
@@ -1668,7 +1667,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                     }
 
                     gsr_capture_nvfbc_params nvfbc_params;
-                    nvfbc_params.egl = &egl;
+                    nvfbc_params.egl = egl;
                     nvfbc_params.display_to_capture = capture_target;
                     nvfbc_params.fps = fps;
                     nvfbc_params.pos = { 0, 0 };
@@ -1684,13 +1683,13 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                         _exit(1);
                 }
             } else {
-                gsr_capture_kms_vaapi_params kms_params;
-                kms_params.egl = &egl;
+                gsr_capture_kms_params kms_params;
+                kms_params.egl = egl;
                 kms_params.display_to_capture = window_str;
                 kms_params.hdr = video_codec_is_hdr(video_codec);
                 kms_params.color_range = color_range;
                 kms_params.record_cursor = record_cursor;
-                capture = gsr_capture_kms_vaapi_create(&kms_params);
+                capture = gsr_capture_kms_create(&kms_params);
                 if(!capture)
                     _exit(1);
             }
@@ -1710,55 +1709,53 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
     }
 
     if(!capture) {
-        if(use_software_video_encoder) {
-            gsr_capture_xcomposite_software_params xcomposite_params;
-            xcomposite_params.base.egl = &egl;
-            xcomposite_params.base.window = src_window_id;
-            xcomposite_params.base.follow_focused = follow_focused;
-            xcomposite_params.base.region_size = region_size;
-            xcomposite_params.base.color_range = color_range;
-            xcomposite_params.base.record_cursor = record_cursor;
-            xcomposite_params.base.track_damage = track_damage;
-            capture = gsr_capture_xcomposite_software_create(&xcomposite_params);
-            if(!capture)
-                _exit(1);
-        } else {
-            switch(egl.gpu_info.vendor) {
-                case GSR_GPU_VENDOR_AMD:
-                case GSR_GPU_VENDOR_INTEL: {
-                    gsr_capture_xcomposite_vaapi_params xcomposite_params;
-                    xcomposite_params.base.egl = &egl;
-                    xcomposite_params.base.window = src_window_id;
-                    xcomposite_params.base.follow_focused = follow_focused;
-                    xcomposite_params.base.region_size = region_size;
-                    xcomposite_params.base.color_range = color_range;
-                    xcomposite_params.base.record_cursor = record_cursor;
-                    xcomposite_params.base.track_damage = track_damage;
-                    capture = gsr_capture_xcomposite_vaapi_create(&xcomposite_params);
-                    if(!capture)
-                        _exit(1);
-                    break;
-                }
-                case GSR_GPU_VENDOR_NVIDIA: {
-                    gsr_capture_xcomposite_cuda_params xcomposite_params;
-                    xcomposite_params.base.egl = &egl;
-                    xcomposite_params.base.window = src_window_id;
-                    xcomposite_params.base.follow_focused = follow_focused;
-                    xcomposite_params.base.region_size = region_size;
-                    xcomposite_params.base.color_range = color_range;
-                    xcomposite_params.base.record_cursor = record_cursor;
-                    xcomposite_params.base.track_damage = track_damage;
-                    xcomposite_params.overclock = overclock;
-                    capture = gsr_capture_xcomposite_cuda_create(&xcomposite_params);
-                    if(!capture)
-                        _exit(1);
-                    break;
-                }
-            }
-        }
+        gsr_capture_xcomposite_params xcomposite_params;
+        xcomposite_params.egl = egl;
+        xcomposite_params.window = src_window_id;
+        xcomposite_params.follow_focused = follow_focused;
+        xcomposite_params.region_size = region_size;
+        xcomposite_params.color_range = color_range;
+        xcomposite_params.record_cursor = record_cursor;
+        xcomposite_params.track_damage = track_damage;
+        capture = gsr_capture_xcomposite_create(&xcomposite_params);
+        if(!capture)
+            _exit(1);
     }
 
     return capture;
+}
+
+static gsr_video_encoder* create_video_encoder(gsr_egl *egl, bool overclock, bool hdr, bool use_software_video_encoder) {
+    gsr_video_encoder *video_encoder = nullptr;
+
+    if(use_software_video_encoder) {
+        gsr_video_encoder_software_params params;
+        params.egl = egl;
+        params.hdr = hdr;
+        video_encoder = gsr_video_encoder_software_create(&params);
+        return video_encoder;
+    }
+
+    switch(egl->gpu_info.vendor) {
+        case GSR_GPU_VENDOR_AMD:
+        case GSR_GPU_VENDOR_INTEL: {
+            gsr_video_encoder_vaapi_params params;
+            params.egl = egl;
+            params.hdr = hdr;
+            video_encoder = gsr_video_encoder_vaapi_create(&params);
+            break;
+        }
+        case GSR_GPU_VENDOR_NVIDIA: {
+            gsr_video_encoder_cuda_params params;
+            params.egl = egl;
+            params.overclock = overclock;
+            params.hdr = hdr;
+            video_encoder = gsr_video_encoder_cuda_create(&params);
+            break;
+        }
+    }
+
+    return video_encoder;
 }
 
 static AVPixelFormat get_pixel_format(gsr_gpu_vendor vendor, bool use_software_video_encoder) {
@@ -2144,10 +2141,12 @@ int main(int argc, char **argv) {
 
     if(egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA && overclock) {
         fprintf(stderr, "Info: overclock option has no effect on amd/intel, ignoring option\n");
+        overclock = false;
     }
 
     if(egl.gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA && overclock && wayland) {
         fprintf(stderr, "Info: overclocking is not possible on nvidia on wayland, ignoring option\n");
+        overclock = false;
     }
 
     egl.card_path[0] = '\0';
@@ -2441,7 +2440,7 @@ int main(int argc, char **argv) {
         _exit(2);
     }
 
-    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, egl, fps, overclock, video_codec, color_range, record_cursor, framerate_mode == FramerateMode::CONTENT, use_software_video_encoder);
+    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, &egl, fps, overclock, video_codec, color_range, record_cursor, framerate_mode == FramerateMode::CONTENT, use_software_video_encoder);
 
     // (Some?) livestreaming services require at least one audio track to work.
     // If not audio is provided then create one silent audio track.
@@ -2485,6 +2484,33 @@ int main(int argc, char **argv) {
         fprintf(stderr, "gsr error: gsr_capture_start failed\n");
         _exit(capture_result);
     }
+
+    gsr_video_encoder *video_encoder = create_video_encoder(&egl, overclock, hdr, use_software_video_encoder);
+    if(!video_encoder) {
+        fprintf(stderr, "Error: failed to create video encoder\n");
+        _exit(1);
+    }
+
+    if(!gsr_video_encoder_start(video_encoder, video_codec_context, video_frame)) {
+        fprintf(stderr, "Error: failed to start video encoder\n");
+        _exit(1);
+    }
+
+    gsr_color_conversion_params color_conversion_params;
+    memset(&color_conversion_params, 0, sizeof(color_conversion_params));
+    color_conversion_params.color_range = color_range;
+    color_conversion_params.egl = &egl;
+    color_conversion_params.source_color = gsr_capture_get_source_color(capture);
+    color_conversion_params.load_external_image_shader = gsr_capture_uses_external_image(capture);
+    gsr_video_encoder_get_textures(video_encoder, color_conversion_params.destination_textures, &color_conversion_params.num_destination_textures, &color_conversion_params.destination_color);
+
+    gsr_color_conversion color_conversion;
+    if(gsr_color_conversion_init(&color_conversion, &color_conversion_params) != 0) {
+        fprintf(stderr, "gsr error: gsr_capture_kms_setup_vaapi_textures: failed to create color conversion\n");
+        _exit(1);
+    }
+
+    gsr_color_conversion_clear(&color_conversion);
 
     if(use_software_video_encoder) {
         open_video_software(video_codec_context, quality, pixel_format, hdr);
@@ -2852,7 +2878,8 @@ int main(int argc, char **argv) {
             const int num_frames = framerate_mode == FramerateMode::CONSTANT ? std::max((int64_t)0LL, expected_frames - video_pts_counter) : 1;
 
             if(num_frames > 0 && !paused) {
-                gsr_capture_capture(capture, video_frame);
+                gsr_capture_capture(capture, video_frame, &color_conversion);
+                gsr_video_encoder_copy_textures_to_frame(video_encoder, video_frame);
 
                 // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
                 for(int i = 0; i < num_frames; ++i) {
@@ -2876,7 +2903,7 @@ int main(int argc, char **argv) {
                     }
                 }
 
-                gsr_capture_end(capture, video_frame);
+                gsr_capture_capture_end(capture, video_frame);
                 video_pts_counter += num_frames;
             }
         }
@@ -2945,6 +2972,8 @@ int main(int argc, char **argv) {
     if(replay_buffer_size_secs == -1 && !(output_format->flags & AVFMT_NOFILE))
         avio_close(av_format_context->pb);
 
+    gsr_color_conversion_deinit(&color_conversion);
+    gsr_video_encoder_destroy(video_encoder, video_codec_context);
     gsr_capture_destroy(capture, video_codec_context);
 
     if(replay_buffer_size_secs == -1 && recording_saved_script)

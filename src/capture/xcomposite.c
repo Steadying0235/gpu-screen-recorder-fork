@@ -1,26 +1,60 @@
 #include "../../include/capture/xcomposite.h"
 #include "../../include/window_texture.h"
 #include "../../include/utils.h"
+#include "../../include/cursor.h"
+#include "../../include/color_conversion.h"
+
 #include <stdlib.h>
 #include <stdio.h>
-#include <unistd.h>
+#include <string.h>
 #include <assert.h>
+
 #include <X11/Xlib.h>
 #include <X11/extensions/Xdamage.h>
-#include <libavutil/hwcontext.h>
-#include <libavutil/hwcontext.h>
+
 #include <libavutil/frame.h>
 #include <libavcodec/avcodec.h>
-#include <va/va.h>
-#include <va/va_drmcommon.h>
+
+typedef struct {
+    gsr_capture_xcomposite_params params;
+    XEvent xev;
+
+    bool should_stop;
+    bool stop_is_error;
+    bool window_resized;
+    bool follow_focused_initialized;
+
+    Window window;
+    vec2i window_size;
+    vec2i texture_size;
+    double window_resize_timer;
+    
+    WindowTexture window_texture;
+
+    Atom net_active_window_atom;
+
+    gsr_cursor cursor;
+
+    int damage_event;
+    int damage_error;
+    XID damage;
+    bool damaged;
+
+    bool clear_background;
+} gsr_capture_xcomposite;
+
+static void gsr_capture_xcomposite_stop(gsr_capture_xcomposite *self) {
+    if(self->damage) {
+        XDamageDestroy(self->params.egl->x11.dpy, self->damage);
+        self->damage = None;
+    }
+
+    window_texture_deinit(&self->window_texture);
+    gsr_cursor_deinit(&self->cursor);
+}
 
 static int max_int(int a, int b) {
     return a > b ? a : b;
-}
-
-void gsr_capture_xcomposite_init(gsr_capture_xcomposite *self, const gsr_capture_xcomposite_params *params) {
-    memset(self, 0, sizeof(*self));
-    self->params = *params;
 }
 
 static Window get_focused_window(Display *display, Atom net_active_window_atom) {
@@ -54,9 +88,8 @@ static void gsr_capture_xcomposite_setup_damage(gsr_capture_xcomposite *self, Wi
     }
 }
 
-int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context, AVFrame *frame) {
-    self->base.video_codec_context = video_codec_context;
-    self->base.egl = self->params.egl;
+static int gsr_capture_xcomposite_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
+    gsr_capture_xcomposite *self = cap->priv;
 
     if(self->params.follow_focused) {
         self->net_active_window_atom = XInternAtom(self->params.egl->x11.dpy, "_NET_ACTIVE_WINDOW", False);
@@ -161,21 +194,9 @@ int gsr_capture_xcomposite_start(gsr_capture_xcomposite *self, AVCodecContext *v
     return 0;
 }
 
-void gsr_capture_xcomposite_stop(gsr_capture_xcomposite *self) {
-    if(self->damage) {
-        XDamageDestroy(self->params.egl->x11.dpy, self->damage);
-        self->damage = None;
-    }
-
-    window_texture_deinit(&self->window_texture);
-    gsr_cursor_deinit(&self->cursor);
-    gsr_capture_base_stop(&self->base);
-}
-
-void gsr_capture_xcomposite_tick(gsr_capture_xcomposite *self, AVCodecContext *video_codec_context) {
+static void gsr_capture_xcomposite_tick(gsr_capture *cap, AVCodecContext *video_codec_context) {
     (void)video_codec_context;
-    //self->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    self->params.egl->glClear(0);
+    gsr_capture_xcomposite *self = cap->priv;
 
     bool init_new_window = false;
     while(XPending(self->params.egl->x11.dpy)) {
@@ -280,20 +301,23 @@ void gsr_capture_xcomposite_tick(gsr_capture_xcomposite *self, AVCodecContext *v
         self->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &self->texture_size.y);
         self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
-        gsr_color_conversion_clear(&self->base.color_conversion);
+        self->clear_background = true;
         gsr_capture_xcomposite_setup_damage(self, self->window);
     }
 }
 
-bool gsr_capture_xcomposite_is_damaged(gsr_capture_xcomposite *self) {
+static bool gsr_capture_xcomposite_is_damaged(gsr_capture *cap) {
+    gsr_capture_xcomposite *self = cap->priv;
     return self->damage_event ? self->damaged : true;
 }
 
-void gsr_capture_xcomposite_clear_damage(gsr_capture_xcomposite *self) {
+static void gsr_capture_xcomposite_clear_damage(gsr_capture *cap) {
+    gsr_capture_xcomposite *self = cap->priv;
     self->damaged = false;
 }
 
-bool gsr_capture_xcomposite_should_stop(gsr_capture_xcomposite *self, bool *err) {
+static bool gsr_capture_xcomposite_should_stop(gsr_capture *cap, bool *err) {
+    gsr_capture_xcomposite *self = cap->priv;
     if(self->should_stop) {
         if(err)
             *err = self->stop_is_error;
@@ -305,8 +329,17 @@ bool gsr_capture_xcomposite_should_stop(gsr_capture_xcomposite *self, bool *err)
     return false;
 }
 
-int gsr_capture_xcomposite_capture(gsr_capture_xcomposite *self, AVFrame *frame) {
+static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
+    gsr_capture_xcomposite *self = cap->priv;
     (void)frame;
+
+    //self->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    self->params.egl->glClear(0);
+
+    if(self->clear_background) {
+        self->clear_background = false;
+        gsr_color_conversion_clear(color_conversion);
+    }
 
     const int target_x = max_int(0, frame->width / 2 - self->texture_size.x / 2);
     const int target_y = max_int(0, frame->height / 2 - self->texture_size.y / 2);
@@ -316,7 +349,7 @@ int gsr_capture_xcomposite_capture(gsr_capture_xcomposite *self, AVFrame *frame)
         target_y + self->cursor.position.y - self->cursor.hotspot.y
     };
 
-    gsr_color_conversion_draw(&self->base.color_conversion, window_texture_get_opengl_texture_id(&self->window_texture),
+    gsr_color_conversion_draw(color_conversion, window_texture_get_opengl_texture_id(&self->window_texture),
         (vec2i){target_x, target_y}, self->texture_size,
         (vec2i){0, 0}, self->texture_size,
         0.0f, false);
@@ -331,20 +364,74 @@ int gsr_capture_xcomposite_capture(gsr_capture_xcomposite *self, AVFrame *frame)
             cursor_pos.y <= target_y + self->texture_size.y;
 
         if(cursor_inside_window) {
-            self->base.egl->glEnable(GL_SCISSOR_TEST);
-            self->base.egl->glScissor(target_x, target_y, self->texture_size.x, self->texture_size.y);
+            self->params.egl->glEnable(GL_SCISSOR_TEST);
+            self->params.egl->glScissor(target_x, target_y, self->texture_size.x, self->texture_size.y);
 
-            gsr_color_conversion_draw(&self->base.color_conversion, self->cursor.texture_id,
+            gsr_color_conversion_draw(color_conversion, self->cursor.texture_id,
                 cursor_pos, self->cursor.size,
                 (vec2i){0, 0}, self->cursor.size,
                 0.0f, false);
 
-            self->base.egl->glDisable(GL_SCISSOR_TEST);
+            self->params.egl->glDisable(GL_SCISSOR_TEST);
         }
     }
+
+    self->params.egl->eglSwapBuffers(self->params.egl->egl_display, self->params.egl->egl_surface);
+
+    // TODO: Do video encoder specific conversion here
 
     //self->params.egl->glFlush();
     //self->params.egl->glFinish();
 
     return 0;
+}
+
+static gsr_source_color gsr_capture_xcomposite_get_source_color(gsr_capture *cap) {
+    (void)cap;
+    return GSR_SOURCE_COLOR_RGB;
+}
+
+static void gsr_capture_xcomposite_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
+    (void)video_codec_context;
+    if(cap->priv) {
+        gsr_capture_xcomposite_stop(cap->priv);
+        free(cap->priv);
+        cap->priv = NULL;
+    }
+    free(cap);
+}
+
+gsr_capture* gsr_capture_xcomposite_create(const gsr_capture_xcomposite_params *params) {
+    if(!params) {
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_create params is NULL\n");
+        return NULL;
+    }
+
+    gsr_capture *cap = calloc(1, sizeof(gsr_capture));
+    if(!cap)
+        return NULL;
+
+    gsr_capture_xcomposite *cap_xcomp = calloc(1, sizeof(gsr_capture_xcomposite));
+    if(!cap_xcomp) {
+        free(cap);
+        return NULL;
+    }
+
+    cap_xcomp->params = *params;
+    
+    *cap = (gsr_capture) {
+        .start = gsr_capture_xcomposite_start,
+        .tick = gsr_capture_xcomposite_tick,
+        .is_damaged = gsr_capture_xcomposite_is_damaged,
+        .clear_damage = gsr_capture_xcomposite_clear_damage,
+        .should_stop = gsr_capture_xcomposite_should_stop,
+        .capture = gsr_capture_xcomposite_capture,
+        .capture_end = NULL,
+        .get_source_color = gsr_capture_xcomposite_get_source_color,
+        .uses_external_image = NULL,
+        .destroy = gsr_capture_xcomposite_destroy,
+        .priv = cap_xcomp
+    };
+
+    return cap;
 }

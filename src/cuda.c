@@ -19,7 +19,7 @@ bool gsr_cuda_load(gsr_cuda *self, Display *display, bool do_overclock) {
         }
     }
 
-    dlsym_assign required_dlsym[] = {
+    const dlsym_assign required_dlsym[] = {
         { (void**)&self->cuInit, "cuInit" },
         { (void**)&self->cuDeviceGetCount, "cuDeviceGetCount" },
         { (void**)&self->cuDeviceGet, "cuDeviceGet" },
@@ -82,12 +82,13 @@ bool gsr_cuda_load(gsr_cuda *self, Display *display, bool do_overclock) {
         goto fail;
     }
 
-    if(self->do_overclock) {
-        assert(display);
+    if(self->do_overclock && display) {
         if(gsr_overclock_load(&self->overclock, display))
             gsr_overclock_start(&self->overclock);
         else
             fprintf(stderr, "gsr warning: gsr_cuda_load: failed to load xnvctrl, failed to overclock memory transfer rate\n");
+    } else if(self->do_overclock && !display) {
+        fprintf(stderr, "gsr warning: gsr_cuda_load: overclocking enabled but no X server is running. Overclocking has been disabled\n");
     }
 
     self->library = lib;

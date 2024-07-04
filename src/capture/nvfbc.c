@@ -3,20 +3,18 @@
 #include "../../include/cuda.h"
 #include "../../include/egl.h"
 #include "../../include/utils.h"
+#include "../../include/color_conversion.h"
+
 #include <dlfcn.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+
 #include <X11/Xlib.h>
-#include <libavutil/hwcontext.h>
-#include <libavutil/hwcontext_cuda.h>
-#include <libavutil/frame.h>
-#include <libavutil/version.h>
 #include <libavcodec/avcodec.h>
 
 typedef struct {
-    gsr_capture_base base;
     gsr_capture_nvfbc_params params;
     void *library;
 
@@ -296,7 +294,6 @@ static int gsr_capture_nvfbc_setup_session(gsr_capture_nvfbc *cap_nvfbc) {
 
 static void gsr_capture_nvfbc_stop(gsr_capture_nvfbc *cap_nvfbc) {
     gsr_capture_nvfbc_destroy_session_and_handle(cap_nvfbc);
-    gsr_capture_base_stop(&cap_nvfbc->base);
     gsr_cuda_unload(&cap_nvfbc->cuda);
     if(cap_nvfbc->library) {
         dlclose(cap_nvfbc->library);
@@ -310,9 +307,6 @@ static void gsr_capture_nvfbc_stop(gsr_capture_nvfbc *cap_nvfbc) {
 
 static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_capture_nvfbc *cap_nvfbc = cap->priv;
-
-    cap_nvfbc->base.video_codec_context = video_codec_context;
-    cap_nvfbc->base.egl = cap_nvfbc->params.egl;
 
     if(!cap_nvfbc->params.use_software_video_encoder) {
         if(!gsr_cuda_load(&cap_nvfbc->cuda, cap_nvfbc->params.egl->x11.dpy, cap_nvfbc->params.overclock))
@@ -375,27 +369,6 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
 
-    if(cap_nvfbc->params.use_software_video_encoder) {
-        if(!gsr_capture_base_setup_textures(&cap_nvfbc->base, frame, cap_nvfbc->params.color_range, GSR_SOURCE_COLOR_BGR, cap_nvfbc->params.hdr, true)) {
-            goto error_cleanup;
-        }
-    } else {
-        if(!cap_nvfbc->params.use_software_video_encoder) {
-            if(!cuda_create_codec_context(cap_nvfbc->cuda.cu_ctx, video_codec_context, video_codec_context->width, video_codec_context->height, false, &cap_nvfbc->cuda_stream))
-                goto error_cleanup;
-        }
-
-        gsr_cuda_context cuda_context = {
-            .cuda = &cap_nvfbc->cuda,
-            .cuda_graphics_resources = cap_nvfbc->cuda_graphics_resources,
-            .mapped_arrays = cap_nvfbc->mapped_arrays
-        };
-
-        // TODO: Remove this, it creates shit we dont need
-        if(!gsr_capture_base_setup_cuda_textures(&cap_nvfbc->base, frame, &cuda_context, cap_nvfbc->params.color_range, GSR_SOURCE_COLOR_BGR, cap_nvfbc->params.hdr)) {
-            goto error_cleanup;
-        }
-    }
     /* Disable vsync */
     set_vertical_sync_enabled(cap_nvfbc->params.egl, 0);
 
@@ -406,7 +379,7 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     return -1;
 }
 
-static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame) {
+static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
     gsr_capture_nvfbc *cap_nvfbc = cap->priv;
 
     const double nvfbc_recreate_retry_time_seconds = 1.0;
@@ -453,51 +426,19 @@ static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame) {
     //cap_nvfbc->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     cap_nvfbc->params.egl->glClear(0);
 
-    gsr_color_conversion_draw(&cap_nvfbc->base.color_conversion, cap_nvfbc->setup_params.dwTextures[grab_params.dwTextureIndex],
+    gsr_color_conversion_draw(color_conversion, cap_nvfbc->setup_params.dwTextures[grab_params.dwTextureIndex],
         (vec2i){0, 0}, (vec2i){frame->width, frame->height},
         (vec2i){0, 0}, (vec2i){frame->width, frame->height},
         0.0f, false);
 
-    if(cap_nvfbc->params.use_software_video_encoder) {
-        // TODO: Hdr?
-        const unsigned int formats[2] = { GL_RED, GL_RG };
-        for(int i = 0; i < 2; ++i) {
-            cap_nvfbc->params.egl->glBindTexture(GL_TEXTURE_2D, cap_nvfbc->base.target_textures[i]);
-            cap_nvfbc->params.egl->glGetTexImage(GL_TEXTURE_2D, 0, formats[i], GL_UNSIGNED_BYTE, frame->data[i]);
-        }
-        cap_nvfbc->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
-
-        cap_nvfbc->params.egl->glXSwapBuffers(cap_nvfbc->params.egl->x11.dpy, cap_nvfbc->params.egl->x11.window);
-    } else {
-        cap_nvfbc->params.egl->glXSwapBuffers(cap_nvfbc->params.egl->x11.dpy, cap_nvfbc->params.egl->x11.window);
-
-        // TODO: HDR is broken
-        const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
-        for(int i = 0; i < 2; ++i) {
-            CUDA_MEMCPY2D memcpy_struct;
-            memcpy_struct.srcXInBytes = 0;
-            memcpy_struct.srcY = 0;
-            memcpy_struct.srcMemoryType = CU_MEMORYTYPE_ARRAY;
-
-            memcpy_struct.dstXInBytes = 0;
-            memcpy_struct.dstY = 0;
-            memcpy_struct.dstMemoryType = CU_MEMORYTYPE_DEVICE;
-
-            memcpy_struct.srcArray = cap_nvfbc->mapped_arrays[i];
-            memcpy_struct.srcPitch = frame->width / div[i];
-            memcpy_struct.dstDevice = (CUdeviceptr)frame->data[i];
-            memcpy_struct.dstPitch = frame->linesize[i];
-            memcpy_struct.WidthInBytes = frame->width * (cap_nvfbc->params.hdr ? 2 : 1);
-            memcpy_struct.Height = frame->height / div[i];
-            // TODO: Remove this copy if possible
-            cap_nvfbc->cuda.cuMemcpy2DAsync_v2(&memcpy_struct, cap_nvfbc->cuda_stream);
-        }
-
-        // TODO: needed?
-        cap_nvfbc->cuda.cuStreamSynchronize(cap_nvfbc->cuda_stream);
-    }
+    cap_nvfbc->params.egl->glXSwapBuffers(cap_nvfbc->params.egl->x11.dpy, cap_nvfbc->params.egl->x11.window);
 
     return 0;
+}
+
+static gsr_source_color gsr_capture_nvfbc_get_source_color(gsr_capture *cap) {
+    (void)cap;
+    return GSR_SOURCE_COLOR_BGR;
 }
 
 static void gsr_capture_nvfbc_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
@@ -545,6 +486,8 @@ gsr_capture* gsr_capture_nvfbc_create(const gsr_capture_nvfbc_params *params) {
         .should_stop = NULL,
         .capture = gsr_capture_nvfbc_capture,
         .capture_end = NULL,
+        .get_source_color = gsr_capture_nvfbc_get_source_color,
+        .uses_external_image = NULL,
         .destroy = gsr_capture_nvfbc_destroy,
         .priv = cap_nvfbc
     };

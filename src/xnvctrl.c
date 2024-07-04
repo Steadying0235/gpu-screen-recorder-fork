@@ -15,7 +15,7 @@ bool gsr_xnvctrl_load(gsr_xnvctrl *self, Display *display) {
         return false;
     }
 
-    dlsym_assign required_dlsym[] = {
+    const dlsym_assign required_dlsym[] = {
         { (void**)&self->XNVCTRLQueryExtension, "XNVCTRLQueryExtension" },
         { (void**)&self->XNVCTRLSetTargetAttributeAndGetStatus, "XNVCTRLSetTargetAttributeAndGetStatus" },
         { (void**)&self->XNVCTRLQueryValidTargetAttributeValues, "XNVCTRLQueryValidTargetAttributeValues" },

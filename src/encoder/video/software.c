@@ -6,6 +6,8 @@
 
 #include <stdlib.h>
 
+#define LINESIZE_ALIGNMENT 4
+
 typedef struct {
     gsr_video_encoder_software_params params;
 
@@ -28,7 +30,7 @@ static unsigned int gl_create_texture(gsr_egl *egl, int width, int height, int i
 }
 
 static bool gsr_video_encoder_software_setup_textures(gsr_video_encoder_software *self, AVCodecContext *video_codec_context, AVFrame *frame) {
-    int res = av_frame_get_buffer(frame, 1); // TODO: Align?
+    int res = av_frame_get_buffer(frame, LINESIZE_ALIGNMENT);
     if(res < 0) {
         fprintf(stderr, "gsr error: gsr_video_encoder_software_setup_textures: av_frame_get_buffer failed: %d\n", res);
         return false;
@@ -60,6 +62,12 @@ static void gsr_video_encoder_software_stop(gsr_video_encoder_software *self, AV
 
 static bool gsr_video_encoder_software_start(gsr_video_encoder *encoder, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_video_encoder_software *encoder_software = encoder->priv;
+
+    video_codec_context->width = FFALIGN(video_codec_context->width, LINESIZE_ALIGNMENT);
+    video_codec_context->height = FFALIGN(video_codec_context->height, 2);
+
+    frame->width = video_codec_context->width;
+    frame->height = video_codec_context->height;
 
     if(!gsr_video_encoder_software_setup_textures(encoder_software, video_codec_context, frame)) {
         gsr_video_encoder_software_stop(encoder_software, video_codec_context);

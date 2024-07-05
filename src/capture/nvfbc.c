@@ -359,11 +359,11 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     }
 
     if(cap_nvfbc->capture_region) {
-        video_codec_context->width = cap_nvfbc->width & ~1;
-        video_codec_context->height = cap_nvfbc->height & ~1;
+        video_codec_context->width = FFALIGN(cap_nvfbc->width, 2);
+        video_codec_context->height = FFALIGN(cap_nvfbc->height, 2);
     } else {
-        video_codec_context->width = cap_nvfbc->tracking_width & ~1;
-        video_codec_context->height = cap_nvfbc->tracking_height & ~1;
+        video_codec_context->width = FFALIGN(cap_nvfbc->tracking_width, 2);
+        video_codec_context->height = FFALIGN(cap_nvfbc->tracking_height, 2);
     }
 
     frame->width = video_codec_context->width;

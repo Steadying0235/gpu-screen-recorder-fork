@@ -151,6 +151,22 @@ static void gsr_video_encoder_vaapi_stop(gsr_video_encoder_vaapi *self, AVCodecC
 static bool gsr_video_encoder_vaapi_start(gsr_video_encoder *encoder, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_video_encoder_vaapi *encoder_vaapi = encoder->priv;
 
+    if(encoder_vaapi->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_HEVC) {
+        // TODO: dont do this if using ffmpeg reports that this is not needed (AMD driver bug that was fixed recently)
+        video_codec_context->width = FFALIGN(video_codec_context->width, 64);
+        video_codec_context->height = FFALIGN(video_codec_context->height, 16);
+    } else if(encoder_vaapi->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_AV1) {
+        // TODO: Dont do this for VCN 5 and forward which should fix this hardware bug
+        video_codec_context->width = FFALIGN(video_codec_context->width, 64);
+        // AMD driver has special case handling for 1080 height to set it to 1082 instead of 1088 (1080 aligned to 16).
+        // TODO: Set height to 1082 in this case, but it wont work because it will be aligned to 1088.
+        if(video_codec_context->height == 1080) {
+            video_codec_context->height = 1080;
+        } else {
+            video_codec_context->height = FFALIGN(video_codec_context->height, 16);
+        }
+    }
+
     if(!gsr_video_encoder_vaapi_setup_context(encoder_vaapi, video_codec_context)) {
         gsr_video_encoder_vaapi_stop(encoder_vaapi, video_codec_context);
         return false;

@@ -86,7 +86,9 @@ enum class VideoCodec {
     HEVC,
     HEVC_HDR,
     AV1,
-    AV1_HDR
+    AV1_HDR,
+    VP8,
+    VP9
 };
 
 enum class AudioCodec {
@@ -420,7 +422,7 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
 
     // 8 bit / 10 bit = 80%, and increase it even more
     const float quality_multiply = hdr ? (8.0f/10.0f * 0.7f) : 1.0f;
-    if(vendor != GSR_GPU_VENDOR_NVIDIA) {
+    if(codec_context->codec_id == AV_CODEC_ID_AV1) {
         switch(video_quality) {
             case VideoQuality::MEDIUM:
                 codec_context->global_quality = 180 * quality_multiply;
@@ -433,6 +435,36 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
                 break;
             case VideoQuality::ULTRA:
                 codec_context->global_quality = 100 * quality_multiply;
+                break;
+        }
+    } else if(codec_context->codec_id == AV_CODEC_ID_VP8) {
+        switch(video_quality) {
+            case VideoQuality::MEDIUM:
+                codec_context->global_quality = 35 * quality_multiply;
+                break;
+            case VideoQuality::HIGH:
+                codec_context->global_quality = 30 * quality_multiply;
+                break;
+            case VideoQuality::VERY_HIGH:
+                codec_context->global_quality = 20 * quality_multiply;
+                break;
+            case VideoQuality::ULTRA:
+                codec_context->global_quality = 10 * quality_multiply;
+                break;
+        }
+    } else if(codec_context->codec_id == AV_CODEC_ID_VP9) {
+        switch(video_quality) {
+            case VideoQuality::MEDIUM:
+                codec_context->global_quality = 35 * quality_multiply;
+                break;
+            case VideoQuality::HIGH:
+                codec_context->global_quality = 30 * quality_multiply;
+                break;
+            case VideoQuality::VERY_HIGH:
+                codec_context->global_quality = 20 * quality_multiply;
+                break;
+            case VideoQuality::ULTRA:
+                codec_context->global_quality = 10 * quality_multiply;
                 break;
         }
     }
@@ -582,6 +614,36 @@ static const AVCodec* find_av1_encoder(gsr_gpu_vendor vendor, const char *card_p
     if(!codec)
         codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "nvenc_av1" : "vaapi_av1");
 
+    if(!codec)
+        return nullptr;
+
+    static bool checked = false;
+    static bool checked_success = true;
+    if(!checked) {
+        checked = true;
+        if(!check_if_codec_valid_for_hardware(codec, vendor, card_path))
+            checked_success = false;
+    }
+    return checked_success ? codec : nullptr;
+}
+
+static const AVCodec* find_vp8_encoder(gsr_gpu_vendor vendor, const char *card_path) {
+    const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "vp8_nvenc" : "vp8_vaapi");
+    if(!codec)
+        return nullptr;
+
+    static bool checked = false;
+    static bool checked_success = true;
+    if(!checked) {
+        checked = true;
+        if(!check_if_codec_valid_for_hardware(codec, vendor, card_path))
+            checked_success = false;
+    }
+    return checked_success ? codec : nullptr;
+}
+
+static const AVCodec* find_vp9_encoder(gsr_gpu_vendor vendor, const char *card_path) {
+    const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "vp9_nvenc" : "vp9_vaapi");
     if(!codec)
         return nullptr;
 
@@ -759,7 +821,22 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
                     av_dict_set_int(&options, "qp", 22 * qp_multiply, 0);
                     break;
             }
-        } else {
+        } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
+            switch(video_quality) {
+                case VideoQuality::MEDIUM:
+                    av_dict_set_int(&options, "qp", 37 * qp_multiply, 0);
+                    break;
+                case VideoQuality::HIGH:
+                    av_dict_set_int(&options, "qp", 32 * qp_multiply, 0);
+                    break;
+                case VideoQuality::VERY_HIGH:
+                    av_dict_set_int(&options, "qp", 28 * qp_multiply, 0);
+                    break;
+                case VideoQuality::ULTRA:
+                    av_dict_set_int(&options, "qp", 24 * qp_multiply, 0);
+                    break;
+            }
+        } else if(codec_context->codec_id == AV_CODEC_ID_VP8 || codec_context->codec_id == AV_CODEC_ID_VP9) {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
                     av_dict_set_int(&options, "qp", 37 * qp_multiply, 0);
@@ -824,7 +901,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
                     av_dict_set(&options, "rgb_mode", "yuv444", 0);
                     break;
             }
-        } else {
+        } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
             //av_dict_set(&options, "profile", "main10", 0);
             //av_dict_set(&options, "pix_fmt", "yuv420p16le", 0);
             if(hdr) {
@@ -851,7 +928,22 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
                     av_dict_set_int(&options, "qp", 22 * qp_multiply, 0);
                     break;
             }
-        } else {
+        } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
+            switch(video_quality) {
+                case VideoQuality::MEDIUM:
+                    av_dict_set_int(&options, "qp", 37 * qp_multiply, 0);
+                    break;
+                case VideoQuality::HIGH:
+                    av_dict_set_int(&options, "qp", 32 * qp_multiply, 0);
+                    break;
+                case VideoQuality::VERY_HIGH:
+                    av_dict_set_int(&options, "qp", 28 * qp_multiply, 0);
+                    break;
+                case VideoQuality::ULTRA:
+                    av_dict_set_int(&options, "qp", 24 * qp_multiply, 0);
+                    break;
+            }
+        } else if(codec_context->codec_id == AV_CODEC_ID_VP8 || codec_context->codec_id == AV_CODEC_ID_VP9) {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
                     av_dict_set_int(&options, "qp", 37 * qp_multiply, 0);
@@ -879,7 +971,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
         } else if(codec_context->codec_id == AV_CODEC_ID_AV1) {
             av_dict_set(&options, "profile", "main", 0); // TODO: use professional instead?
             av_dict_set(&options, "tier", "main", 0);
-        } else {
+        } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
             if(hdr) {
                 av_dict_set(&options, "profile", "main10", 0);
                 av_dict_set(&options, "sei", "hdr", 0);
@@ -905,7 +997,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-cr limited|full] [-mf yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [-h|--help]\n", program_name);
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr|vp8|vp9] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-cr limited|full] [-mf yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [-h|--help]\n", program_name);
 }
 
 static void usage_full() {
@@ -921,8 +1013,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -c    Container format for output file, for example mp4, or flv. Only required if no output file is specified or if recording in replay buffer mode.\n");
     fprintf(stderr, "        If an output file is specified and -c is not used then the container format is determined from the output filename extension.\n");
-    fprintf(stderr, "        Only containers that support h264, hevc or av1 are supported, which means that only mp4, mkv, flv (and some others) are supported.\n");
-    fprintf(stderr, "        WebM is not supported yet (most hardware doesn't support WebM video encoding).\n");
+    fprintf(stderr, "        Only containers that support h264, hevc, av1, vp8 or vp9 are supported, which means that only mp4, mkv, flv, webm (and some others) are supported.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -s    The size (area) to record at in the format WxH, for example 1920x1080. This option is only supported (and required) when -w is \"focused\".\n");
     fprintf(stderr, "\n");
@@ -944,7 +1035,7 @@ static void usage_full() {
     fprintf(stderr, "        and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature.\n");
     fprintf(stderr, "        This option has be between 5 and 1200. Note that the replay buffer size will not always be precise, because of keyframes. Optional, disabled by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'hevc', 'av1', 'hevc_hdr' or 'av1_hdr'. Optional, defaults to 'auto' which defaults to 'h264'.\n");
+    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'hevc', 'av1', 'hevc_hdr', 'av1_hdr', 'vp8' or 'vp9'. Optional, defaults to 'auto' which defaults to 'h264'.\n");
     fprintf(stderr, "        Forcefully set to 'h264' if the file container type is 'flv'.\n");
     fprintf(stderr, "        'hevc_hdr' and 'av1_hdr' option is not available on X11.\n");
     fprintf(stderr, "        Note: hdr metadata is not included in the video when recording with 'hevc_hdr'/'av1_hdr' because of bugs in AMD, Intel and NVIDIA drivers (amazin', they are all bugged).\n");
@@ -1877,8 +1968,12 @@ int main(int argc, char **argv) {
         video_codec = VideoCodec::AV1;
     } else if(strcmp(video_codec_to_use, "av1_hdr") == 0) {
         video_codec = VideoCodec::AV1_HDR;
+    } else if(strcmp(video_codec_to_use, "vp8") == 0) {
+        video_codec = VideoCodec::VP8;
+    } else if(strcmp(video_codec_to_use, "vp9") == 0) {
+        video_codec = VideoCodec::VP9;
     } else if(strcmp(video_codec_to_use, "auto") != 0) {
-        fprintf(stderr, "Error: -k should either be either 'auto', 'h264', 'hevc', 'hevc_hdr', 'av1' or 'av1_hdr', got: '%s'\n", video_codec_to_use);
+        fprintf(stderr, "Error: -k should either be either 'auto', 'h264', 'hevc', 'hevc_hdr', 'av1', 'av1_hdr', 'vp8' or 'vp9', got: '%s'\n", video_codec_to_use);
         usage();
     }
 
@@ -2318,9 +2413,15 @@ int main(int argc, char **argv) {
 
     const bool video_codec_auto = strcmp(video_codec_to_use, "auto") == 0;
     if(video_codec_auto) {
-        fprintf(stderr, "Info: using h264 encoder because a codec was not specified\n");
-        video_codec_to_use = "h264";
-        video_codec = VideoCodec::H264;
+        if(strcmp(file_extension.c_str(), "webm") == 0) {
+            fprintf(stderr, "Info: using vp8 encoder because a codec was not specified and the file extension is .webm\n");
+            video_codec_to_use = "vp8";
+            video_codec = VideoCodec::VP8;
+        } else {
+            fprintf(stderr, "Info: using h264 encoder because a codec was not specified\n");
+            video_codec_to_use = "h264";
+            video_codec = VideoCodec::H264;
+        }
     }
 
     // TODO: Allow hevc, vp9 and av1 in (enhanced) flv (supported since ffmpeg 6.1)
@@ -2379,6 +2480,14 @@ int main(int argc, char **argv) {
             // TODO: software encoder
             video_codec_f = find_av1_encoder(egl.gpu_info.vendor, egl.card_path);
             break;
+        case VideoCodec::VP8:
+            // TODO: software encoder
+            video_codec_f = find_vp8_encoder(egl.gpu_info.vendor, egl.card_path);
+            break;
+        case VideoCodec::VP9:
+            // TODO: software encoder
+            video_codec_f = find_vp9_encoder(egl.gpu_info.vendor, egl.card_path);
+            break;
     }
 
     if(!video_codec_auto && !video_codec_f && !is_flv) {
@@ -2406,6 +2515,10 @@ int main(int argc, char **argv) {
                 video_codec_f = find_h264_encoder(egl.gpu_info.vendor, egl.card_path);
                 break;
             }
+            case VideoCodec::VP8:
+            case VideoCodec::VP9:
+                // TODO:
+                break;
         }
     }
 
@@ -2424,6 +2537,14 @@ int main(int argc, char **argv) {
             case VideoCodec::AV1:
             case VideoCodec::AV1_HDR: {
                 video_codec_name = "av1";
+                break;
+            }
+            case VideoCodec::VP8: {
+                video_codec_name = "vp8";
+                break;
+            }
+            case VideoCodec::VP9: {
+                video_codec_name = "vp9";
                 break;
             }
         }

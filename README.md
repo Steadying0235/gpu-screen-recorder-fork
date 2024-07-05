@@ -9,8 +9,10 @@ where only the last few minutes are saved.
 
 Supported video codecs:
 * H264 (default)
-* HEVC
-* AV1 (not currently supported on NVIDIA if you use GPU Screen Recorder flatpak)
+* HEVC (Optionally with HDR)
+* AV1 (Optionally with HDR. Not currently supported on NVIDIA if you use GPU Screen Recorder flatpak)
+* VP8
+* VP9
 
 Supported audio codecs:
 * Opus (default)

@@ -258,10 +258,20 @@ static void gsr_capture_xcomposite_tick(gsr_capture *cap, AVCodecContext *video_
 
             self->window_size.x = max_int(attr.width, 0);
             self->window_size.y = max_int(attr.height, 0);
-            self->window_resized = true;
 
             window_texture_deinit(&self->window_texture);
             window_texture_init(&self->window_texture, self->params.egl->x11.dpy, self->window, self->params.egl); // TODO: Do not do the below window_texture_on_resize after this
+
+            self->texture_size.x = 0;
+            self->texture_size.y = 0;
+
+            self->params.egl->glBindTexture(GL_TEXTURE_2D, window_texture_get_opengl_texture_id(&self->window_texture));
+            self->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &self->texture_size.x);
+            self->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &self->texture_size.y);
+            self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
+
+            self->window_resized = false;
+            self->clear_background = true;
             gsr_capture_xcomposite_setup_damage(self, self->window);
         }
     }

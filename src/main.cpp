@@ -1646,6 +1646,10 @@ static void list_supported_video_codecs() {
         puts("hevc");
     if(find_av1_encoder(egl.gpu_info.vendor, card_path))
         puts("av1");
+    if(find_vp8_encoder(egl.gpu_info.vendor, card_path))
+        puts("vp8");
+    if(find_vp9_encoder(egl.gpu_info.vendor, card_path))
+        puts("vp9");
 
     fflush(stdout);
 

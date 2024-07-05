@@ -79,13 +79,16 @@ static void gsr_capture_kms_create_input_textures(gsr_capture_kms *self) {
     self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
+    const bool cursor_texture_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
+    const int cursor_texture_target = cursor_texture_is_external ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
+
     self->params.egl->glGenTextures(1, &self->cursor_texture);
-    self->params.egl->glBindTexture(GL_TEXTURE_2D, self->cursor_texture);
-    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
+    self->params.egl->glBindTexture(cursor_texture_target, self->cursor_texture);
+    self->params.egl->glTexParameteri(cursor_texture_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    self->params.egl->glTexParameteri(cursor_texture_target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    self->params.egl->glTexParameteri(cursor_texture_target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    self->params.egl->glTexParameteri(cursor_texture_target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    self->params.egl->glBindTexture(cursor_texture_target, 0);
 }
 
 /* TODO: On monitor reconfiguration, find monitor x, y, width and height again. Do the same for nvfbc. */

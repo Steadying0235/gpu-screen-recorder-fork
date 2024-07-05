@@ -90,6 +90,8 @@ static void gsr_video_encoder_software_copy_textures_to_frame(gsr_video_encoder 
     const unsigned int formats[2] = { GL_RED, GL_RG };
     for(int i = 0; i < 2; ++i) {
         encoder_software->params.egl->glBindTexture(GL_TEXTURE_2D, encoder_software->target_textures[i]);
+        // We could use glGetTexSubImage and then we wouldn't have to use a specific linesize (LINESIZE_ALIGNMENT) that adds padding,
+        // but glGetTexSubImage is only available starting from opengl 4.5.
         encoder_software->params.egl->glGetTexImage(GL_TEXTURE_2D, 0, formats[i], GL_UNSIGNED_BYTE, frame->data[i]);
     }
     encoder_software->params.egl->glBindTexture(GL_TEXTURE_2D, 0);

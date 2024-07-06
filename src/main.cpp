@@ -332,7 +332,7 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
 static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
                             VideoQuality video_quality,
                             int fps, const AVCodec *codec, bool low_latency, gsr_gpu_vendor vendor, FramerateMode framerate_mode,
-                            bool hdr, gsr_color_range color_range, float keyint) {
+                            bool hdr, gsr_color_range color_range, float keyint, bool use_software_video_encoder) {
 
     AVCodecContext *codec_context = avcodec_alloc_context3(codec);
 
@@ -422,50 +422,52 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
 
     // 8 bit / 10 bit = 80%, and increase it even more
     const float quality_multiply = hdr ? (8.0f/10.0f * 0.7f) : 1.0f;
-    if(codec_context->codec_id == AV_CODEC_ID_AV1 || codec_context->codec_id == AV_CODEC_ID_H264 || codec_context->codec_id == AV_CODEC_ID_HEVC) {
-        switch(video_quality) {
-            case VideoQuality::MEDIUM:
-                codec_context->global_quality = 180 * quality_multiply;
-                break;
-            case VideoQuality::HIGH:
-                codec_context->global_quality = 140 * quality_multiply;
-                break;
-            case VideoQuality::VERY_HIGH:
-                codec_context->global_quality = 120 * quality_multiply;
-                break;
-            case VideoQuality::ULTRA:
-                codec_context->global_quality = 100 * quality_multiply;
-                break;
-        }
-    } else if(codec_context->codec_id == AV_CODEC_ID_VP8) {
-        switch(video_quality) {
-            case VideoQuality::MEDIUM:
-                codec_context->global_quality = 35 * quality_multiply;
-                break;
-            case VideoQuality::HIGH:
-                codec_context->global_quality = 30 * quality_multiply;
-                break;
-            case VideoQuality::VERY_HIGH:
-                codec_context->global_quality = 20 * quality_multiply;
-                break;
-            case VideoQuality::ULTRA:
-                codec_context->global_quality = 10 * quality_multiply;
-                break;
-        }
-    } else if(codec_context->codec_id == AV_CODEC_ID_VP9) {
-        switch(video_quality) {
-            case VideoQuality::MEDIUM:
-                codec_context->global_quality = 35 * quality_multiply;
-                break;
-            case VideoQuality::HIGH:
-                codec_context->global_quality = 30 * quality_multiply;
-                break;
-            case VideoQuality::VERY_HIGH:
-                codec_context->global_quality = 20 * quality_multiply;
-                break;
-            case VideoQuality::ULTRA:
-                codec_context->global_quality = 10 * quality_multiply;
-                break;
+    if(!use_software_video_encoder && vendor != GSR_GPU_VENDOR_NVIDIA) {
+        if(codec_context->codec_id == AV_CODEC_ID_AV1 || codec_context->codec_id == AV_CODEC_ID_H264 || codec_context->codec_id == AV_CODEC_ID_HEVC) {
+            switch(video_quality) {
+                case VideoQuality::MEDIUM:
+                    codec_context->global_quality = 180 * quality_multiply;
+                    break;
+                case VideoQuality::HIGH:
+                    codec_context->global_quality = 140 * quality_multiply;
+                    break;
+                case VideoQuality::VERY_HIGH:
+                    codec_context->global_quality = 120 * quality_multiply;
+                    break;
+                case VideoQuality::ULTRA:
+                    codec_context->global_quality = 100 * quality_multiply;
+                    break;
+            }
+        } else if(codec_context->codec_id == AV_CODEC_ID_VP8) {
+            switch(video_quality) {
+                case VideoQuality::MEDIUM:
+                    codec_context->global_quality = 35 * quality_multiply;
+                    break;
+                case VideoQuality::HIGH:
+                    codec_context->global_quality = 30 * quality_multiply;
+                    break;
+                case VideoQuality::VERY_HIGH:
+                    codec_context->global_quality = 20 * quality_multiply;
+                    break;
+                case VideoQuality::ULTRA:
+                    codec_context->global_quality = 10 * quality_multiply;
+                    break;
+            }
+        } else if(codec_context->codec_id == AV_CODEC_ID_VP9) {
+            switch(video_quality) {
+                case VideoQuality::MEDIUM:
+                    codec_context->global_quality = 35 * quality_multiply;
+                    break;
+                case VideoQuality::HIGH:
+                    codec_context->global_quality = 30 * quality_multiply;
+                    break;
+                case VideoQuality::VERY_HIGH:
+                    codec_context->global_quality = 20 * quality_multiply;
+                    break;
+                case VideoQuality::ULTRA:
+                    codec_context->global_quality = 10 * quality_multiply;
+                    break;
+            }
         }
     }
 
@@ -539,7 +541,7 @@ static bool vaapi_create_codec_context(AVCodecContext *video_codec_context, cons
 
 static bool check_if_codec_valid_for_hardware(const AVCodec *codec, gsr_gpu_vendor vendor, const char *card_path) {
     // Do not use AV_PIX_FMT_CUDA because we dont want to do full check with hardware context
-    AVCodecContext *codec_context = create_video_codec_context(vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_YUV420P : AV_PIX_FMT_VAAPI, VideoQuality::VERY_HIGH, 60, codec, false, vendor, FramerateMode::CONSTANT, false, GSR_COLOR_RANGE_LIMITED, 2);
+    AVCodecContext *codec_context = create_video_codec_context(vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_YUV420P : AV_PIX_FMT_VAAPI, VideoQuality::VERY_HIGH, 60, codec, false, vendor, FramerateMode::CONSTANT, false, GSR_COLOR_RANGE_LIMITED, 2, false);
     if(!codec_context)
         return false;
 
@@ -2563,7 +2565,7 @@ int main(int argc, char **argv) {
     const bool hdr = video_codec_is_hdr(video_codec);
     const bool low_latency_recording = is_livestream || is_output_piped;
 
-    AVCodecContext *video_codec_context = create_video_codec_context(get_pixel_format(egl.gpu_info.vendor, use_software_video_encoder), quality, fps, video_codec_f, low_latency_recording, egl.gpu_info.vendor, framerate_mode, hdr, color_range, keyint);
+    AVCodecContext *video_codec_context = create_video_codec_context(get_pixel_format(egl.gpu_info.vendor, use_software_video_encoder), quality, fps, video_codec_f, low_latency_recording, egl.gpu_info.vendor, framerate_mode, hdr, color_range, keyint, use_software_video_encoder);
     if(replay_buffer_size_secs == -1)
         video_stream = create_stream(av_format_context, video_codec_context);
 

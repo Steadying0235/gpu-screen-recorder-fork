@@ -1724,60 +1724,8 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
             }
         }
 
-        if(use_software_video_encoder && (wayland || egl->gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA)) {
-            gsr_capture_kms_params kms_params;
-            kms_params.egl = egl;
-            kms_params.display_to_capture = window_str;
-            kms_params.hdr = video_codec_is_hdr(video_codec);
-            kms_params.color_range = color_range;
-            kms_params.record_cursor = record_cursor;
-            capture = gsr_capture_kms_create(&kms_params);
-            if(!capture)
-                _exit(1);
-        } else {
-            if(egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA) {
-                if(wayland) {
-                    gsr_capture_kms_params kms_params;
-                    kms_params.egl = egl;
-                    kms_params.display_to_capture = window_str;
-                    kms_params.hdr = video_codec_is_hdr(video_codec);
-                    kms_params.color_range = color_range;
-                    kms_params.record_cursor = record_cursor;
-                    capture = gsr_capture_kms_create(&kms_params);
-                    if(!capture)
-                        _exit(1);
-                } else {
-                    const char *capture_target = window_str;
-                    bool direct_capture = strcmp(window_str, "screen-direct") == 0;
-                    if(direct_capture) {
-                        capture_target = "screen";
-                        // TODO: Temporary disable direct capture because push model causes stuttering when it's direct capturing. This might be a nvfbc bug. This does not happen when using a compositor.
-                        direct_capture = false;
-                        fprintf(stderr, "Warning: screen-direct has temporary been disabled as it causes stuttering. This is likely a NvFBC bug. Falling back to \"screen\".\n");
-                    }
-
-                    if(strcmp(window_str, "screen-direct-force") == 0) {
-                        direct_capture = true;
-                        capture_target = "screen";
-                    }
-
-                    gsr_capture_nvfbc_params nvfbc_params;
-                    nvfbc_params.egl = egl;
-                    nvfbc_params.display_to_capture = capture_target;
-                    nvfbc_params.fps = fps;
-                    nvfbc_params.pos = { 0, 0 };
-                    nvfbc_params.size = { 0, 0 };
-                    nvfbc_params.direct_capture = direct_capture;
-                    nvfbc_params.overclock = overclock;
-                    nvfbc_params.hdr = video_codec_is_hdr(video_codec);
-                    nvfbc_params.color_range = color_range;
-                    nvfbc_params.record_cursor = record_cursor;
-                    nvfbc_params.use_software_video_encoder = use_software_video_encoder;
-                    capture = gsr_capture_nvfbc_create(&nvfbc_params);
-                    if(!capture)
-                        _exit(1);
-                }
-            } else {
+        if(egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA) {
+            if(wayland) {
                 gsr_capture_kms_params kms_params;
                 kms_params.egl = egl;
                 kms_params.display_to_capture = window_str;
@@ -1787,7 +1735,47 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 capture = gsr_capture_kms_create(&kms_params);
                 if(!capture)
                     _exit(1);
+            } else {
+                const char *capture_target = window_str;
+                bool direct_capture = strcmp(window_str, "screen-direct") == 0;
+                if(direct_capture) {
+                    capture_target = "screen";
+                    // TODO: Temporary disable direct capture because push model causes stuttering when it's direct capturing. This might be a nvfbc bug. This does not happen when using a compositor.
+                    direct_capture = false;
+                    fprintf(stderr, "Warning: screen-direct has temporary been disabled as it causes stuttering. This is likely a NvFBC bug. Falling back to \"screen\".\n");
+                }
+
+                if(strcmp(window_str, "screen-direct-force") == 0) {
+                    direct_capture = true;
+                    capture_target = "screen";
+                }
+
+                gsr_capture_nvfbc_params nvfbc_params;
+                nvfbc_params.egl = egl;
+                nvfbc_params.display_to_capture = capture_target;
+                nvfbc_params.fps = fps;
+                nvfbc_params.pos = { 0, 0 };
+                nvfbc_params.size = { 0, 0 };
+                nvfbc_params.direct_capture = direct_capture;
+                nvfbc_params.overclock = overclock;
+                nvfbc_params.hdr = video_codec_is_hdr(video_codec);
+                nvfbc_params.color_range = color_range;
+                nvfbc_params.record_cursor = record_cursor;
+                nvfbc_params.use_software_video_encoder = use_software_video_encoder;
+                capture = gsr_capture_nvfbc_create(&nvfbc_params);
+                if(!capture)
+                    _exit(1);
             }
+        } else {
+            gsr_capture_kms_params kms_params;
+            kms_params.egl = egl;
+            kms_params.display_to_capture = window_str;
+            kms_params.hdr = video_codec_is_hdr(video_codec);
+            kms_params.color_range = color_range;
+            kms_params.record_cursor = record_cursor;
+            capture = gsr_capture_kms_create(&kms_params);
+            if(!capture)
+                _exit(1);
         }
     } else {
         if(wayland) {

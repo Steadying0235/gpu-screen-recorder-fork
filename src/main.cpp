@@ -422,7 +422,7 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
 
     // 8 bit / 10 bit = 80%, and increase it even more
     const float quality_multiply = hdr ? (8.0f/10.0f * 0.7f) : 1.0f;
-    if(codec_context->codec_id == AV_CODEC_ID_AV1) {
+    if(codec_context->codec_id == AV_CODEC_ID_AV1 || codec_context->codec_id == AV_CODEC_ID_H264 || codec_context->codec_id == AV_CODEC_ID_HEVC) {
         switch(video_quality) {
             case VideoQuality::MEDIUM:
                 codec_context->global_quality = 180 * quality_multiply;

@@ -326,15 +326,14 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     cap_nvfbc->capture_region = (cap_nvfbc->x > 0 || cap_nvfbc->y > 0 || cap_nvfbc->width > 0 || cap_nvfbc->height > 0);
 
     cap_nvfbc->supports_direct_cursor = false;
-    bool direct_capture = cap_nvfbc->params.direct_capture;
     int driver_major_version = 0;
     int driver_minor_version = 0;
-    if(direct_capture && get_driver_version(&driver_major_version, &driver_minor_version)) {
+    if(cap_nvfbc->params.direct_capture && get_driver_version(&driver_major_version, &driver_minor_version)) {
         fprintf(stderr, "Info: detected nvidia version: %d.%d\n", driver_major_version, driver_minor_version);
 
         // TODO:
         if(version_at_least(driver_major_version, driver_minor_version, 515, 57) && version_less_than(driver_major_version, driver_minor_version, 520, 56)) {
-            direct_capture = false;
+            cap_nvfbc->params.direct_capture = false;
             fprintf(stderr, "Warning: \"screen-direct\" has temporary been disabled as it causes stuttering with driver versions >= 515.57 and < 520.56. Please update your driver if possible. Capturing \"screen\" instead.\n");
         }
 
@@ -343,7 +342,7 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
         /*
         if(direct_capture) {
             if(version_at_least(driver_major_version, driver_minor_version, 515, 57))
-                supports_direct_cursor = true;
+                cap_nvfbc->supports_direct_cursor = true;
             else
                 fprintf(stderr, "Info: capturing \"screen-direct\" but driver version appears to be less than 515.57. Disabling capture of cursor. Please update your driver if you want to capture your cursor or record \"screen\" instead.\n");
         }

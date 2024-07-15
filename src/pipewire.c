@@ -11,7 +11,6 @@
 
 /* TODO: Make gsr_pipewire_init asynchronous */
 /* TODO: Support 10-bit capture (hdr) when pipewire supports it */
-/* TODO: Support video crop and cursor data (that is not embedded) */
 /* TODO: Test all of the image formats */
 
 #ifndef SPA_POD_PROP_FLAG_DONT_FIXATE

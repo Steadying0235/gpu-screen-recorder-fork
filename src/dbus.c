@@ -192,12 +192,12 @@ static bool gsr_dbus_desktop_portal_get_property(gsr_dbus *self, const char *int
         if(dbus_message_iter_get_arg_type(&variant_iter) == DBUS_TYPE_UINT32) {
             dbus_message_iter_get_basic(&variant_iter, result);
         } else {
-            fprintf(stderr, "gsr error: gsr_dbus_call_screencast_method: response message is not a variant with an uint32, %c\n", dbus_message_iter_get_arg_type(&variant_iter));
+            fprintf(stderr, "gsr error: gsr_dbus_desktop_portal_get_property: response message is not a variant with an uint32, %c\n", dbus_message_iter_get_arg_type(&variant_iter));
             dbus_message_unref(msg);
             return false;
         }
     } else {
-        fprintf(stderr, "gsr error: gsr_dbus_call_screencast_method: response message is not an uint32, %c\n", dbus_message_iter_get_arg_type(&resp_args));
+        fprintf(stderr, "gsr error: gsr_dbus_desktop_portal_get_property: response message is not an uint32, %c\n", dbus_message_iter_get_arg_type(&resp_args));
         dbus_message_unref(msg);
         return false;
         // TODO: Check dbus_error_is_set?
@@ -370,6 +370,14 @@ static bool gsr_dbus_call_screencast_method(gsr_dbus *self, const char *method_n
 
         if(resp_fd)
             *resp_fd = fd;
+    } else if(DBUS_TYPE_STRING == dbus_message_iter_get_arg_type(&resp_args)) {
+        char *err = NULL;
+        dbus_message_iter_get_basic(&resp_args, &err);
+        fprintf(stderr, "gsr error: gsr_dbus_call_screencast_method: failed with error: %s\n", err);
+
+        dbus_message_unref(msg);
+        return false;
+        // TODO: Check dbus_error_is_set?
     } else {
         fprintf(stderr, "gsr error: gsr_dbus_call_screencast_method: response message is not an object path or unix fd\n");
         dbus_message_unref(msg);
@@ -556,8 +564,10 @@ bool gsr_dbus_screencast_create_session(gsr_dbus *self, char **session_handle) {
     args[1].value_type = DICT_TYPE_STRING;
     args[1].str = session_handle_token;
 
-    if(!gsr_dbus_call_screencast_method(self, "CreateSession", NULL, NULL, args, 2, NULL))
+    if(!gsr_dbus_call_screencast_method(self, "CreateSession", NULL, NULL, args, 2, NULL)) {
+        fprintf(stderr, "gsr error: gsr_dbus_screencast_create_session: failed to setup ScreenCast session. Make sure you have a desktop portal running with support for the ScreenCast interface (usually only available on Wayland).\n");
         return false;
+    }
 
     DBusMessage *msg = NULL;
 

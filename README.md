@@ -164,15 +164,13 @@ edit the video with a video editor. Hevc allows for better video quality (especi
 ## I get a black bar/distorted colors on the right/bottom in the video
 This is mostly an issue on AMD. For av1 it's a hardware issue, see: https://gitlab.freedesktop.org/mesa/mesa/-/issues/9185. For hevc it's a software issue that has been fixed but not released yet, see: https://gitlab.freedesktop.org/mesa/mesa/-/issues/10985.
 If you get this issue then a workaround is to record with h264 video codec instead (using the -k h264 option).
-## The video is glitched, looks like checkerboard pattern
+## The video is glitched (looks like checkerboard pattern) or black
 This is an issue on some intel integrated gpus on wayland caused by power saving option. Right now the only way to fix this is to either record on X11 (maybe only with window capture option) or to record with the `-w portal` option (usually only available on Wayland).
+The video can also be black when using software such as prime-run. This is not supported.
 ## The video doesn't display or has a green/yellow overlay
 This can happen if your video player is missing the H264/HEVC video codecs. Either install the codecs or use mpv.
 ## I get stutter in the video
 Try recording to an SSD and make sure it's not using NTFS file system. Also record in variable framerate format.
-## I get a black screen when recording
-This can happen if you use software such as prime-run to run GPU Screen Recorder. Such software should not be used to run GPU Screen Recorder.
-GPU Screen Recorder needs to run on the same GPU that you use to display your monitors graphics to work.
 
 # Donations
 If you want to donate you can donate via bitcoin or monero.

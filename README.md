@@ -88,6 +88,9 @@ libcap\
 wayland-client\
 nvfbc (libnvidia-fbc1, when recording the screen on x11)\
 xnvctrl (libxnvctrl0, when using the `-oc` option)
+## Optional dependencies when compiling with portal support (default option)
+dbus\
+libpipewire (and libspa which is usually part of libpipewire)
 
 # How to use
 Run `gpu-screen-recorder --help` to see all options.

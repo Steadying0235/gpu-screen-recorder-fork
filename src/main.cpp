@@ -2201,7 +2201,7 @@ int main(int argc, char **argv) {
     const char *window_str = strdup(args["-w"].value());
 
     if(!restore_portal_session && strcmp(window_str, "portal") == 0) {
-        fprintf(stderr, "gsr info: '-w portal' option used without '-restore-portal-session yes'. The previous screencast session will be ignored\n");
+        fprintf(stderr, "gsr info: option '-w portal' was used without '-restore-portal-session yes'. The previous screencast session will be ignored\n");
     }
 
     bool wayland = false;

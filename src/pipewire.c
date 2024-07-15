@@ -551,7 +551,7 @@ void gsr_pipewire_deinit(gsr_pipewire *self) {
     }
 }
 
-/* TODO: Do this in the thread instead, otherwise this is not guaranteed to always work and may produce glitched output */
+/* TODO: Do this in the thread instead, otherwise this is not guaranteed to always work and may produce glitched output (happens now when resizing the captured window) */
 bool gsr_pipewire_map_texture(gsr_pipewire *self, unsigned int texture_id, unsigned int cursor_texture_id, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region) {
     pthread_mutex_lock(&self->mutex);
 

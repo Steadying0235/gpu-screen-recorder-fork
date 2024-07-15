@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#include <libdrm/drm_fourcc.h>
+
 #include <libavcodec/avcodec.h>
 #include <libavutil/mastering_display_metadata.h>
 
@@ -266,6 +268,24 @@ static vec2i swap_vec2i(vec2i value) {
     return value;
 }
 
+static bool is_plane_compressed(uint64_t modifier) {
+    switch(modifier) {
+        case I915_FORMAT_MOD_Y_TILED_CCS:
+        case I915_FORMAT_MOD_Yf_TILED_CCS:
+        case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS:
+        case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
+        case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
+        case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS:
+        case I915_FORMAT_MOD_4_TILED_DG2_MC_CCS:
+        case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
+        case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS:
+        case I915_FORMAT_MOD_4_TILED_MTL_MC_CCS:
+        case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS_CC:
+            return true;
+    }
+    return false;
+}
+
 static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
     gsr_capture_kms *self = cap->priv;
     const bool screen_plane_use_modifiers = self->params.egl->gpu_info.vendor != GSR_GPU_VENDOR_AMD;
@@ -345,6 +365,14 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         EGL_DMA_BUF_PLANE0_OFFSET_EXT, drm_fd->offset,
         EGL_DMA_BUF_PLANE0_PITCH_EXT,  drm_fd->pitch,
     };
+
+    if(is_plane_compressed(drm_fd->modifier)) {
+        static bool compressed_plane_warning_shown = false;
+        if(!compressed_plane_warning_shown) {
+            compressed_plane_warning_shown = true;
+            fprintf(stderr, "gsr warning: gsr_capture_kms_capture: the monitor plane is compressed. The video will likely be glitched/black. Try recording on X11 instead (maybe capturing a single window) or use the \"-w portal\" capture option on Wayland.\n");
+        }
+    }
 
     if(screen_plane_use_modifiers) {
         img_attr[12] = EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT;

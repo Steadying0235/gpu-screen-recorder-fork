@@ -153,3 +153,5 @@ To test vulkan encode on amd set the environment variable RADV_PERFTEST=video_en
 Support hevc/av1 for software encoder and hdr support at the same time. Need support for yuv420p shader for that. Use libx265 for hevc and libsvtav1 for av1 (libsvtav1 is the fastest software av1 video encoder). Also support vp8/vp9 since we are not limited by hardware.
 
 Cleanup pipewire code and add more error checks.
+
+Detect if recording monitor on intel and plane is compressed. In that case give an error and tell the user to use -w portal instead.

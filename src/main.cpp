@@ -2197,7 +2197,12 @@ int main(int argc, char **argv) {
         replay_buffer_size_secs += std::ceil(keyint); // Add a few seconds to account of lost packets because of non-keyframe packets skipped
     }
 
+    // TODO: Remove strdup
     const char *window_str = strdup(args["-w"].value());
+
+    if(!restore_portal_session && strcmp(window_str, "portal") == 0) {
+        fprintf(stderr, "gsr info: '-w portal' option used without '-restore-portal-session yes'. The previous screencast session will be ignored\n");
+    }
 
     bool wayland = false;
     Display *dpy = XOpenDisplay(nullptr);

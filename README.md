@@ -125,8 +125,6 @@ If you installed GPU Screen Recorder from AUR or from source and you are running
 It's configured with `$HOME/.config/gpu-screen-recorder.env` (create it if it doesn't exist). You can look at [extra/gpu-screen-recorder.env](https://git.dec05eba.com/gpu-screen-recorder/plain/extra/gpu-screen-recorder.env) to see an example.
 You can see which variables that you can use in the `gpu-screen-recorder.env` file by looking at the `extra/gpu-screen-recorder.service` file. Note that all of the variables are optional, you only have to set the ones that are you interested in.
 You can use the `scripts/save-replay.sh` script to save a replay and by default the systemd service saves videos in `$HOME/Videos`.\
-When using the `-w portal` your Wayland compositor will show a popup asking what you want to record and in some Wayland compositors you have the option to save the session (token) so that the next time you record it wont ask what you want to record.
-If you want to restore the session the next time you record (to remove the popup asking you what you want to record everytime) then run GPU Screen Recorder with the `-restore-portal-session yes` option.
 If you are using a NVIDIA GPU then it's recommended to set PreserveVideoMemoryAllocations=1 as mentioned in the section below.
 # Issues
 ## NVIDIA

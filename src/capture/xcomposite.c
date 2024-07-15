@@ -351,23 +351,15 @@ static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_
     if(self->params.record_cursor && self->cursor.visible) {
         gsr_cursor_tick(&self->cursor, self->window);
 
-        const bool cursor_inside_window =
-            cursor_pos.x + self->cursor.size.x >= target_x &&
-            cursor_pos.x <= target_x + self->texture_size.x &&
-            cursor_pos.y + self->cursor.size.y >= target_y &&
-            cursor_pos.y <= target_y + self->texture_size.y;
+        self->params.egl->glEnable(GL_SCISSOR_TEST);
+        self->params.egl->glScissor(target_x, target_y, self->texture_size.x, self->texture_size.y);
 
-        if(cursor_inside_window) {
-            self->params.egl->glEnable(GL_SCISSOR_TEST);
-            self->params.egl->glScissor(target_x, target_y, self->texture_size.x, self->texture_size.y);
+        gsr_color_conversion_draw(color_conversion, self->cursor.texture_id,
+            cursor_pos, self->cursor.size,
+            (vec2i){0, 0}, self->cursor.size,
+            0.0f, false);
 
-            gsr_color_conversion_draw(color_conversion, self->cursor.texture_id,
-                cursor_pos, self->cursor.size,
-                (vec2i){0, 0}, self->cursor.size,
-                0.0f, false);
-
-            self->params.egl->glDisable(GL_SCISSOR_TEST);
-        }
+        self->params.egl->glDisable(GL_SCISSOR_TEST);
     }
 
     self->params.egl->eglSwapBuffers(self->params.egl->egl_display, self->params.egl->egl_surface);

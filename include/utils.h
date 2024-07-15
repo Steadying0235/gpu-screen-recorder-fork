@@ -6,7 +6,8 @@
 #include "../include/defs.h"
 #include <stdbool.h>
 #include <stdint.h>
-#include <X11/extensions/Xrandr.h>
+
+typedef struct _XRRCrtcInfo XRRCrtcInfo;
 
 typedef struct {
     const char *name;
@@ -40,5 +41,7 @@ bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info);
 bool gsr_get_valid_card_path(gsr_egl *egl, char *output, bool is_monitor_capture);
 /* |render_path| should be at least 128 bytes in size */
 bool gsr_card_path_get_render_path(const char *card_path, char *render_path);
+
+int create_directory_recursive(char *path);
 
 #endif /* GSR_UTILS_H */

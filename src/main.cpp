@@ -2,6 +2,9 @@ extern "C" {
 #include "../include/capture/nvfbc.h"
 #include "../include/capture/xcomposite.h"
 #include "../include/capture/kms.h"
+#ifdef GSR_PORTAL
+#include "../include/capture/portal.h"
+#endif
 #include "../include/encoder/video/cuda.h"
 #include "../include/encoder/video/vaapi.h"
 #include "../include/encoder/video/software.h"
@@ -999,17 +1002,21 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr|vp8|vp9] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-cr limited|full] [-mf yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [-h|--help]\n", program_name);
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr|vp8|vp9] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-cr limited|full] [-mf yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [-h|--help]\n", program_name);
 }
 
+// TODO: Update with portal info
 static void usage_full() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
     usage_header();
     fprintf(stderr, "\n");
     fprintf(stderr, "OPTIONS:\n");
-    fprintf(stderr, "  -w    Window id to record, a display (monitor name), \"screen\", \"screen-direct-force\" or \"focused\".\n");
-    fprintf(stderr, "        If this is \"screen\" or \"screen-direct-force\" then all monitors are recorded.\n");
+    fprintf(stderr, "  -w    Window id to record, a display (monitor name), \"screen\", \"screen-direct-force\", \"focused\" or \"portal\".\n");
+    fprintf(stderr, "        If this is \"portal\" then xdg desktop screencast portal with pipewire will be used. This is in general only available on Wayland.\n");
+    fprintf(stderr, "        If you select to save the session (token) in the desktop portal capture popup then the session will be saved for the next time you use \"portal\",\n");
+    fprintf(stderr, "        but the session will be ignored unless you run GPU Screen Recorder with the '-restore-portal-session yes' option.\n");
+    fprintf(stderr, "        If this is \"screen\" or \"screen-direct-force\" then all monitors are recorded on Nvidia X11. On AMD/Intel or wayland \"screen\" will record the first monitor found.\n");
     fprintf(stderr, "        \"screen-direct-force\" is not recommended unless you use a VRR (G-SYNC) monitor on Nvidia X11 and you are aware that using this option can cause games to freeze/crash or other issues because of Nvidia driver issues.\n");
     fprintf(stderr, "        \"screen-direct-force\" option is only available on Nvidia X11. VRR works without this option on other systems.\n");
     fprintf(stderr, "\n");
@@ -1037,12 +1044,12 @@ static void usage_full() {
     fprintf(stderr, "        and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature.\n");
     fprintf(stderr, "        This option has be between 5 and 1200. Note that the replay buffer size will not always be precise, because of keyframes. Optional, disabled by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'hevc', 'av1', 'hevc_hdr', 'av1_hdr', 'vp8' or 'vp9'. Optional, defaults to 'auto' which defaults to 'h264'.\n");
+    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'hevc', 'av1', 'hevc_hdr', 'av1_hdr', 'vp8' or 'vp9'. Optional, set to 'auto' by default which defaults to 'h264'.\n");
     fprintf(stderr, "        Forcefully set to 'h264' if the file container type is 'flv'.\n");
     fprintf(stderr, "        'hevc_hdr' and 'av1_hdr' option is not available on X11.\n");
     fprintf(stderr, "        Note: hdr metadata is not included in the video when recording with 'hevc_hdr'/'av1_hdr' because of bugs in AMD, Intel and NVIDIA drivers (amazin', they are all bugged).\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Defaults to 'opus' for .mp4/.mkv files, otherwise defaults to 'aac'.\n");
+    fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Optional, set to 'opus' for .mp4/.mkv files, otherwise set to 'aac'.\n");
     fprintf(stderr, "        'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
     fprintf(stderr, "        Flac audio codec is option is disable at the moment because of a temporary issue.\n");
     fprintf(stderr, "\n");
@@ -1053,11 +1060,11 @@ static void usage_full() {
     fprintf(stderr, "        is dropped when you record a game. Only needed if you are recording a game that is bottlenecked by GPU. The same issue exists on Wayland but overclocking is not possible on Wayland.\n");
     fprintf(stderr, "        Works only if your have \"Coolbits\" set to \"12\" in NVIDIA X settings, see README for more information. Note! use at your own risk! Optional, disabled by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -fm   Framerate mode. Should be either 'cfr' (constant frame rate), 'vfr' (variable frame rate) or 'content'. Defaults to 'vfr'.\n");
+    fprintf(stderr, "  -fm   Framerate mode. Should be either 'cfr' (constant frame rate), 'vfr' (variable frame rate) or 'content'. Optional, set to 'vfr' by default.\n");
     fprintf(stderr, "        'vfr' is recommended for recording for less issue with very high system load but some applications such as video editors may not support it properly.\n");
     fprintf(stderr, "        'content' is currently only supported when recording a single window, on X11. The 'content' option matches the recording frame rate to the captured content.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -cr   Color range. Should be either 'limited' (aka mpeg) or 'full' (aka jpeg). Defaults to 'limited'.\n");
+    fprintf(stderr, "  -cr   Color range. Should be either 'limited' (aka mpeg) or 'full' (aka jpeg). Optional, set to 'limited' by default.\n");
     fprintf(stderr, "        Limited color range means that colors are in range 16-235 (4112-60395 for hdr) while full color range means that colors are in range 0-255 (0-65535 for hdr).\n");
     fprintf(stderr, "        Note that some buggy video players (such as vlc) are unable to correctly display videos in full color range.\n");
     fprintf(stderr, "\n");
@@ -1067,12 +1074,18 @@ static void usage_full() {
     fprintf(stderr, "        Not applicable for live streams.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -cursor\n");
-    fprintf(stderr, "        Record cursor. Defaults to 'yes'.\n");
+    fprintf(stderr, "        Record cursor. Optional, set to 'yes' by default.\n");
+    fprintf(stderr, "\n");
     fprintf(stderr, "  -keyint\n");
     fprintf(stderr, "        Specifies the keyframe interval in seconds, the max amount of time to wait to generate a keyframe. Keyframes can be generated more often than this.\n");
     fprintf(stderr, "        This also affects seeking in the video and may affect how the replay video is cut. If this is set to 10 for example then you can only seek in 10-second chunks in the video.\n");
     fprintf(stderr, "        Setting this to a higher value reduces the video file size if you are ok with the previously described downside. This option is expected to be a floating point number.\n");
     fprintf(stderr, "        By default this value is set to 2.0.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  -restore-portal-session\n");
+    fprintf(stderr, "        If GPU Screen Recorder should use the same capture option as the last time. Using this option removes the popup asking what you want to record the next time you record with '-w portal' if you selected the option to save session (token) in the desktop portal screencast popup.\n");
+    fprintf(stderr, "        This option may not have any effect on all Wayland compositors. Optional, set to 'no' by default.\n");
+    fprintf(stderr, "\n");
     fprintf(stderr, "  -encoder\n");
     fprintf(stderr, "        Which device should be used for video encoding. Should either be 'gpu' or 'cpu'. Does currently only work with h264 codec option (-k).\n");
     fprintf(stderr, "        Optional, set to 'gpu' by default.\n");
@@ -1080,7 +1093,7 @@ static void usage_full() {
     fprintf(stderr, "  --list-supported-video-codecs\n");
     fprintf(stderr, "        List supported video codecs and exits. Prints h264, hevc, hevc_hdr, av1 and av1_hdr (if supported).\n");
     fprintf(stderr, "\n");
-    //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, defaults to yuv420\n");
+    //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, set to 'yuv420' by default\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r).\n");
     fprintf(stderr, "        In replay mode this has to be a directory instead of a file.\n");
     fprintf(stderr, "        The directory to the file is created (recursively) if it doesn't already exist.\n");
@@ -1099,6 +1112,8 @@ static void usage_full() {
     fprintf(stderr, "  %s -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
     fprintf(stderr, "  %s -w screen -f 60 -a \"$(pactl get-default-sink).monitor|$(pactl get-default-source)\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
     fprintf(stderr, "  %s -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -c mkv -r 60 -o \"$HOME/Videos\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -c mkv -sc script.sh -r 60 -o \"$HOME/Videos\"\n", program_name);
+    fprintf(stderr, "  %s -w portal -f 60 -a \"$(pactl get-default-sink).monitor\" -restore-portal-session yes -o \"$HOME/Videos/video.mp4\"\n", program_name);
     //fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -q ultra -pixfmt yuv444 -o video.mp4\n");
     _exit(1);
 }
@@ -1272,38 +1287,6 @@ struct AudioTrack {
 static std::future<void> save_replay_thread;
 static std::vector<std::shared_ptr<PacketData>> save_replay_packets;
 static std::string save_replay_output_filepath;
-
-static int create_directory_recursive(char *path) {
-    int path_len = strlen(path);
-    char *p = path;
-    char *end = path + path_len;
-    for(;;) {
-        char *slash_p = strchr(p, '/');
-
-        // Skips first '/', we don't want to try and create the root directory
-        if(slash_p == path) {
-            ++p;
-            continue;
-        }
-
-        if(!slash_p)
-            slash_p = end;
-
-        char prev_char = *slash_p;
-        *slash_p = '\0';
-        int err = mkdir(path, S_IRWXU);
-        *slash_p = prev_char;
-
-        if(err == -1 && errno != EEXIST)
-            return err;
-
-        if(slash_p == end)
-            break;
-        else
-            p = slash_p + 1;
-    }
-    return 0;
-}
 
 static void save_replay_async(AVCodecContext *video_codec_context, int video_stream_index, std::vector<AudioTrack> &audio_tracks, std::deque<std::shared_ptr<PacketData>> &frame_data_queue, bool frames_erased, std::string output_dir, const char *container_format, const std::string &file_extension, std::mutex &write_output_mutex, bool make_folders) {
     if(save_replay_thread.valid())
@@ -1629,11 +1612,10 @@ static void list_supported_video_codecs() {
         _exit(1);
     }
 
-    char card_path[128];
-    card_path[0] = '\0';
+    egl.card_path[0] = '\0';
     if(wayland || egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA) {
         // TODO: Allow specifying another card, and in other places
-        if(!gsr_get_valid_card_path(&egl, card_path, false)) {
+        if(!gsr_get_valid_card_path(&egl, egl.card_path, false)) {
             fprintf(stderr, "Error: no /dev/dri/cardX device found. If you are running GPU Screen Recorder with prime-run then try running without it. Also make sure that you have at least one connected monitor or record a single window instead on X11\n");
             _exit(2);
         }
@@ -1642,15 +1624,15 @@ static void list_supported_video_codecs() {
     av_log_set_level(AV_LOG_FATAL);
 
     // TODO: Output hdr
-    if(find_h264_encoder(egl.gpu_info.vendor, card_path))
+    if(find_h264_encoder(egl.gpu_info.vendor, egl.card_path))
         puts("h264");
-    if(find_hevc_encoder(egl.gpu_info.vendor, card_path))
+    if(find_hevc_encoder(egl.gpu_info.vendor, egl.card_path))
         puts("hevc");
-    if(find_av1_encoder(egl.gpu_info.vendor, card_path))
+    if(find_av1_encoder(egl.gpu_info.vendor, egl.card_path))
         puts("av1");
-    if(find_vp8_encoder(egl.gpu_info.vendor, card_path))
+    if(find_vp8_encoder(egl.gpu_info.vendor, egl.card_path))
         puts("vp8");
-    if(find_vp9_encoder(egl.gpu_info.vendor, card_path))
+    if(find_vp9_encoder(egl.gpu_info.vendor, egl.card_path))
         puts("vp9");
 
     fflush(stdout);
@@ -1660,7 +1642,7 @@ static void list_supported_video_codecs() {
         XCloseDisplay(dpy);
 }
 
-static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl *egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range, bool record_cursor, bool track_damage, bool use_software_video_encoder) {
+static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl *egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range, bool record_cursor, bool track_damage, bool use_software_video_encoder, bool restore_portal_session) {
     vec2i region_size = { 0, 0 };
     Window src_window_id = None;
     bool follow_focused = false;
@@ -1688,6 +1670,25 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
         }
 
         follow_focused = true;
+    } else if(strcmp(window_str, "portal") == 0) {
+#ifdef GSR_PORTAL
+        if(video_codec_is_hdr(video_codec)) {
+            fprintf(stderr, "Warning: portal capture option doesn't support hdr yet (pipewire doesn't support hdr)\n");
+        }
+
+        gsr_capture_portal_params portal_params;
+        portal_params.egl = egl;
+        portal_params.hdr = video_codec_is_hdr(video_codec);
+        portal_params.color_range = color_range;
+        portal_params.record_cursor = record_cursor;
+        portal_params.restore_portal_session = restore_portal_session;
+        capture = gsr_capture_portal_create(&portal_params);
+        if(!capture)
+            _exit(1);
+#else
+        fprintf(stderr, "Error: option '-w portal' used but GPU Screen Recorder was compiled without desktop portal support\n");
+        _exit(2);
+#endif
     } else if(contains_non_hex_number(window_str)) {
         if(wayland || egl->gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA) {
             if(strcmp(window_str, "screen") == 0) {
@@ -1698,7 +1699,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 if(first_output.output_name) {
                     window_str = first_output.output_name;
                 } else {
-                    fprintf(stderr, "Error: no available output found\n");
+                    fprintf(stderr, "Error: no usable output found\n");
                     _exit(1);
                 }
             }
@@ -1903,8 +1904,8 @@ int main(int argc, char **argv) {
         { "-sc", Arg { {}, true, false } },
         { "-cr", Arg { {}, true, false } },
         { "-cursor", Arg { {}, true, false } },
-        { "-gopm", Arg { {}, true, false } }, // deprecated, used keyint instead
         { "-keyint", Arg { {}, true, false } },
+        { "-restore-portal-session", Arg { {}, true, false } },
         { "-encoder", Arg { {}, true, false } },
     };
 
@@ -2070,6 +2071,20 @@ int main(int argc, char **argv) {
         make_folders = false;
     } else {
         fprintf(stderr, "Error: -mf should either be either 'yes' or 'no', got: '%s'\n", make_folders_str);
+        usage();
+    }
+
+    bool restore_portal_session = false;
+    const char *restore_portal_session_str = args["-restore-portal-session"].value();
+    if(!restore_portal_session_str)
+        restore_portal_session_str = "no";
+
+    if(strcmp(restore_portal_session_str, "yes") == 0) {
+        restore_portal_session = true;
+    } else if(strcmp(restore_portal_session_str, "no") == 0) {
+        restore_portal_session = false;
+    } else {
+        fprintf(stderr, "Error: -restore-portal-session should either be either 'yes' or 'no', got: '%s'\n", make_folders_str);
         usage();
     }
 
@@ -2544,7 +2559,7 @@ int main(int argc, char **argv) {
         _exit(2);
     }
 
-    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, &egl, fps, overclock, video_codec, color_range, record_cursor, framerate_mode == FramerateMode::CONTENT, use_software_video_encoder);
+    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, &egl, fps, overclock, video_codec, color_range, record_cursor, framerate_mode == FramerateMode::CONTENT, use_software_video_encoder, restore_portal_session);
 
     // (Some?) livestreaming services require at least one audio track to work.
     // If not audio is provided then create one silent audio track.

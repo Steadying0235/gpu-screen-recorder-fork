@@ -100,12 +100,12 @@ static bool gsr_video_encoder_vaapi_setup_textures(gsr_video_encoder_vaapi *self
 
             const uint64_t modifier = self->prime.objects[self->prime.layers[layer].object_index[plane]].drm_format_modifier;
             const intptr_t img_attr[] = {
-                EGL_LINUX_DRM_FOURCC_EXT,       formats[i],
-                EGL_WIDTH,                      self->prime.width / div[i],
-                EGL_HEIGHT,                     self->prime.height / div[i],
-                EGL_DMA_BUF_PLANE0_FD_EXT,      self->prime.objects[self->prime.layers[layer].object_index[plane]].fd,
-                EGL_DMA_BUF_PLANE0_OFFSET_EXT,  self->prime.layers[layer].offset[plane],
-                EGL_DMA_BUF_PLANE0_PITCH_EXT,   self->prime.layers[layer].pitch[plane],
+                EGL_LINUX_DRM_FOURCC_EXT,           formats[i],
+                EGL_WIDTH,                          self->prime.width / div[i],
+                EGL_HEIGHT,                         self->prime.height / div[i],
+                EGL_DMA_BUF_PLANE0_FD_EXT,          self->prime.objects[self->prime.layers[layer].object_index[plane]].fd,
+                EGL_DMA_BUF_PLANE0_OFFSET_EXT,      self->prime.layers[layer].offset[plane],
+                EGL_DMA_BUF_PLANE0_PITCH_EXT,       self->prime.layers[layer].pitch[plane],
                 EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier & 0xFFFFFFFFULL,
                 EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, modifier >> 32ULL,
                 EGL_NONE

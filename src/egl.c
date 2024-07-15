@@ -134,21 +134,21 @@ static void reset_cap_nice(void) {
     cap_free(caps);
 }
 
-#define GLX_DRAWABLE_TYPE		0x8010
-#define GLX_RENDER_TYPE			0x8011
-#define GLX_RGBA_BIT			0x00000001
-#define GLX_WINDOW_BIT			0x00000001
-#define GLX_PIXMAP_BIT			0x00000002
+#define GLX_DRAWABLE_TYPE        0x8010
+#define GLX_RENDER_TYPE            0x8011
+#define GLX_RGBA_BIT            0x00000001
+#define GLX_WINDOW_BIT            0x00000001
+#define GLX_PIXMAP_BIT            0x00000002
 #define GLX_BIND_TO_TEXTURE_RGBA_EXT      0x20D1
 #define GLX_BIND_TO_TEXTURE_TARGETS_EXT   0x20D3
 #define GLX_TEXTURE_2D_BIT_EXT            0x00000002
-#define GLX_DOUBLEBUFFER	5
-#define GLX_RED_SIZE		8
-#define GLX_GREEN_SIZE		9
-#define GLX_BLUE_SIZE		10
-#define GLX_ALPHA_SIZE		11
-#define GLX_DEPTH_SIZE		12
-#define GLX_RGBA_TYPE			0x8014
+#define GLX_DOUBLEBUFFER    5
+#define GLX_RED_SIZE        8
+#define GLX_GREEN_SIZE        9
+#define GLX_BLUE_SIZE        10
+#define GLX_ALPHA_SIZE        11
+#define GLX_DEPTH_SIZE        12
+#define GLX_RGBA_TYPE            0x8014
 
 #define GLX_CONTEXT_PRIORITY_LEVEL_EXT    0x3100
 #define GLX_CONTEXT_PRIORITY_HIGH_EXT     0x3101
@@ -417,6 +417,7 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
         { (void**)&self->glTexParameteriv, "glTexParameteriv" },
         { (void**)&self->glGetTexLevelParameteriv, "glGetTexLevelParameteriv" },
         { (void**)&self->glTexImage2D, "glTexImage2D" },
+        { (void**)&self->glTexSubImage2D, "glTexSubImage2D" },
         { (void**)&self->glCopyImageSubData, "glCopyImageSubData" },
         { (void**)&self->glGetTexImage, "glGetTexImage" },
         { (void**)&self->glClearTexImage, "glClearTexImage" },

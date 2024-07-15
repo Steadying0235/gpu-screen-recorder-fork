@@ -12,6 +12,7 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/capability.h>
+#include <sys/random.h>
 
 #define GSR_SOCKET_PAIR_LOCAL  0
 #define GSR_SOCKET_PAIR_REMOTE 1
@@ -20,15 +21,9 @@ static void cleanup_socket(gsr_kms_client *self, bool kill_server);
 static int gsr_kms_client_replace_connection(gsr_kms_client *self);
 
 static bool generate_random_characters(char *buffer, int buffer_size, const char *alphabet, size_t alphabet_size) {
-    int fd = open("/dev/urandom", O_RDONLY);
-    if(fd == -1) {
-        perror("/dev/urandom");
-        return false;
-    }
-
-    if(read(fd, buffer, buffer_size) < buffer_size) {
-        fprintf(stderr, "Failed to read %d bytes from /dev/urandom\n", buffer_size);
-        close(fd);
+    /* TODO: Use other functions on other platforms than linux */
+    if(getrandom(buffer, buffer_size, 0) < buffer_size) {
+        fprintf(stderr, "Failed to get random bytes, error: %s\n", strerror(errno));
         return false;
     }
 
@@ -37,7 +32,6 @@ static bool generate_random_characters(char *buffer, int buffer_size, const char
         buffer[i] = alphabet[c % alphabet_size];
     }
 
-    close(fd);
     return true;
 }
 

@@ -32,6 +32,7 @@ src = [
 ]
 
 dep = [
+    dependency('threads'),
     dependency('libavcodec'),
     dependency('libavformat'),
     dependency('libavutil'),
@@ -50,6 +51,22 @@ dep = [
     dependency('wayland-egl'),
     dependency('wayland-client'),
 ]
+
+if get_option('portal') == true
+    src += [
+        'src/capture/portal.c',
+        'src/dbus.c',
+        'src/pipewire.c',
+    ]
+
+    dep += [
+        dependency('dbus-1'),
+        dependency('libpipewire-0.3'),
+        dependency('libspa-0.2'),
+    ]
+
+    add_project_arguments('-DGSR_PORTAL', language : ['c', 'cpp'])
+endif
 
 executable('gsr-kms-server', 'kms/server/kms_server.c', dependencies : dependency('libdrm'), c_args : '-fstack-protector-all', install : true)
 executable('gpu-screen-recorder', src, dependencies : dep, install : true)

@@ -78,9 +78,9 @@ typedef void(*__GLXextFuncPtr)(void);
 #define GL_TEXTURE_2D                           0x0DE1
 #define GL_TEXTURE_EXTERNAL_OES                 0x8D65
 #define GL_RED                                  0x1903
-#define GL_GREEN				                0x1904
-#define GL_BLUE					                0x1905
-#define GL_ALPHA				                0x1906
+#define GL_GREEN                                0x1904
+#define GL_BLUE                                    0x1905
+#define GL_ALPHA                                0x1906
 #define GL_TEXTURE_SWIZZLE_RGBA                 0x8E46
 #define GL_RG                                   0x8227
 #define GL_RGB                                  0x1907
@@ -236,6 +236,7 @@ struct gsr_egl {
     void (*glTexParameteriv)(unsigned int target, unsigned int pname, const int *params);
     void (*glGetTexLevelParameteriv)(unsigned int target, int level, unsigned int pname, int *params);
     void (*glTexImage2D)(unsigned int target, int level, int internalFormat, int width, int height, int border, unsigned int format, unsigned int type, const void *pixels);
+    void (*glTexSubImage2D)(unsigned int target, int level, int xoffset, int yoffset, int width, int height, unsigned int format, unsigned int type, const void *pixels);
     void (*glCopyImageSubData)(unsigned int srcName, unsigned int srcTarget, int srcLevel, int srcX, int srcY, int srcZ, unsigned int dstName, unsigned int dstTarget, int dstLevel, int dstX, int dstY, int dstZ, int srcWidth, int srcHeight, int srcDepth);
     void (*glClearTexImage)(unsigned int texture, unsigned int level, unsigned int format, unsigned int type, const void *data);
     void (*glGetTexImage)(unsigned int target, int level, unsigned int format, unsigned int type, void *pixels);

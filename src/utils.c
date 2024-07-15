@@ -1,13 +1,19 @@
 #include "../include/utils.h"
+
 #include <time.h>
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <errno.h>
+
 #include <xf86drmMode.h>
 #include <xf86drm.h>
-#include <stdlib.h>
+
 #include <X11/Xatom.h>
+#include <X11/extensions/Xrandr.h>
 
 double clock_get_monotonic_seconds(void) {
     struct timespec ts;
@@ -479,4 +485,36 @@ bool gsr_card_path_get_render_path(const char *card_path, char *render_path) {
 
     close(fd);
     return false;
+}
+
+int create_directory_recursive(char *path) {
+    int path_len = strlen(path);
+    char *p = path;
+    char *end = path + path_len;
+    for(;;) {
+        char *slash_p = strchr(p, '/');
+
+        // Skips first '/', we don't want to try and create the root directory
+        if(slash_p == path) {
+            ++p;
+            continue;
+        }
+
+        if(!slash_p)
+            slash_p = end;
+
+        char prev_char = *slash_p;
+        *slash_p = '\0';
+        int err = mkdir(path, S_IRWXU);
+        *slash_p = prev_char;
+
+        if(err == -1 && errno != EEXIST)
+            return err;
+
+        if(slash_p == end)
+            break;
+        else
+            p = slash_p + 1;
+    }
+    return 0;
 }

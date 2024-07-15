@@ -3,6 +3,7 @@
 #include "../../include/color_conversion.h"
 #include "../../kms/client/kms_client.h"
 
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -38,8 +39,8 @@ typedef struct {
 
     gsr_monitor_rotation monitor_rotation;
 
-    unsigned int input_texture;
-    unsigned int cursor_texture;
+    unsigned int input_texture_id;
+    unsigned int cursor_texture_id;
 } gsr_capture_kms;
 
 static void gsr_capture_kms_cleanup_kms_fds(gsr_capture_kms *self) {
@@ -52,14 +53,14 @@ static void gsr_capture_kms_cleanup_kms_fds(gsr_capture_kms *self) {
 }
 
 static void gsr_capture_kms_stop(gsr_capture_kms *self) {
-    if(self->input_texture) {
-        self->params.egl->glDeleteTextures(1, &self->input_texture);
-        self->input_texture = 0;
+    if(self->input_texture_id) {
+        self->params.egl->glDeleteTextures(1, &self->input_texture_id);
+        self->input_texture_id = 0;
     }
 
-    if(self->cursor_texture) {
-        self->params.egl->glDeleteTextures(1, &self->cursor_texture);
-        self->cursor_texture = 0;
+    if(self->cursor_texture_id) {
+        self->params.egl->glDeleteTextures(1, &self->cursor_texture_id);
+        self->cursor_texture_id = 0;
     }
 
     gsr_capture_kms_cleanup_kms_fds(self);
@@ -70,25 +71,25 @@ static int max_int(int a, int b) {
     return a > b ? a : b;
 }
 
-static void gsr_capture_kms_create_input_textures(gsr_capture_kms *self) {
-    self->params.egl->glGenTextures(1, &self->input_texture);
-    self->params.egl->glBindTexture(GL_TEXTURE_2D, self->input_texture);
+static void gsr_capture_kms_create_input_texture_ids(gsr_capture_kms *self) {
+    self->params.egl->glGenTextures(1, &self->input_texture_id);
+    self->params.egl->glBindTexture(GL_TEXTURE_2D, self->input_texture_id);
     self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
-    const bool cursor_texture_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
-    const int cursor_texture_target = cursor_texture_is_external ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
+    const bool cursor_texture_id_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
+    const int cursor_texture_id_target = cursor_texture_id_is_external ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
 
-    self->params.egl->glGenTextures(1, &self->cursor_texture);
-    self->params.egl->glBindTexture(cursor_texture_target, self->cursor_texture);
-    self->params.egl->glTexParameteri(cursor_texture_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    self->params.egl->glTexParameteri(cursor_texture_target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    self->params.egl->glTexParameteri(cursor_texture_target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    self->params.egl->glTexParameteri(cursor_texture_target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    self->params.egl->glBindTexture(cursor_texture_target, 0);
+    self->params.egl->glGenTextures(1, &self->cursor_texture_id);
+    self->params.egl->glBindTexture(cursor_texture_id_target, self->cursor_texture_id);
+    self->params.egl->glTexParameteri(cursor_texture_id_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    self->params.egl->glTexParameteri(cursor_texture_id_target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    self->params.egl->glTexParameteri(cursor_texture_id_target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    self->params.egl->glTexParameteri(cursor_texture_id_target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    self->params.egl->glBindTexture(cursor_texture_id_target, 0);
 }
 
 /* TODO: On monitor reconfiguration, find monitor x, y, width and height again. Do the same for nvfbc. */
@@ -119,7 +120,7 @@ static void monitor_callback(const gsr_monitor *monitor, void *userdata) {
 static int gsr_capture_kms_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_capture_kms *self = cap->priv;
 
-    gsr_capture_kms_create_input_textures(self);
+    gsr_capture_kms_create_input_texture_ids(self);
 
     gsr_monitor monitor;
     self->monitor_id.num_connector_ids = 0;
@@ -268,7 +269,7 @@ static vec2i swap_vec2i(vec2i value) {
 static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
     gsr_capture_kms *self = cap->priv;
     const bool screen_plane_use_modifiers = self->params.egl->gpu_info.vendor != GSR_GPU_VENDOR_AMD;
-    const bool cursor_texture_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
+    const bool cursor_texture_id_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
 
     //egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     self->params.egl->glClear(0);
@@ -337,12 +338,12 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     // Assertion pic->display_order == pic->encode_order failed at libavcodec/vaapi_encode_h265.c:765
     // kms server info: kms client shutdown, shutting down the server
     intptr_t img_attr[18] = {
-        EGL_LINUX_DRM_FOURCC_EXT,       drm_fd->pixel_format,
-        EGL_WIDTH,                      drm_fd->width,
-        EGL_HEIGHT,                     drm_fd->height,
-        EGL_DMA_BUF_PLANE0_FD_EXT,      drm_fd->fd,
-        EGL_DMA_BUF_PLANE0_OFFSET_EXT,  drm_fd->offset,
-        EGL_DMA_BUF_PLANE0_PITCH_EXT,   drm_fd->pitch,
+        EGL_LINUX_DRM_FOURCC_EXT,      drm_fd->pixel_format,
+        EGL_WIDTH,                     drm_fd->width,
+        EGL_HEIGHT,                    drm_fd->height,
+        EGL_DMA_BUF_PLANE0_FD_EXT,     drm_fd->fd,
+        EGL_DMA_BUF_PLANE0_OFFSET_EXT, drm_fd->offset,
+        EGL_DMA_BUF_PLANE0_PITCH_EXT,  drm_fd->pitch,
     };
 
     if(screen_plane_use_modifiers) {
@@ -360,7 +361,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     }
 
     EGLImage image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
-    self->params.egl->glBindTexture(GL_TEXTURE_2D, self->input_texture);
+    self->params.egl->glBindTexture(GL_TEXTURE_2D, self->input_texture_id);
     self->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
     self->params.egl->eglDestroyImage(self->params.egl->egl_display, image);
     self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
@@ -374,7 +375,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     const int target_x = max_int(0, frame->width / 2 - self->capture_size.x / 2);
     const int target_y = max_int(0, frame->height / 2 - self->capture_size.y / 2);
 
-    gsr_color_conversion_draw(color_conversion, self->input_texture,
+    gsr_color_conversion_draw(color_conversion, self->input_texture_id,
         (vec2i){target_x, target_y}, self->capture_size,
         capture_pos, self->capture_size,
         texture_rotation, false);
@@ -410,20 +411,20 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         cursor_pos.y += target_y;
 
         const intptr_t img_attr_cursor[] = {
-            EGL_LINUX_DRM_FOURCC_EXT,       cursor_drm_fd->pixel_format,
-            EGL_WIDTH,                      cursor_drm_fd->width,
-            EGL_HEIGHT,                     cursor_drm_fd->height,
-            EGL_DMA_BUF_PLANE0_FD_EXT,      cursor_drm_fd->fd,
-            EGL_DMA_BUF_PLANE0_OFFSET_EXT,  cursor_drm_fd->offset,
-            EGL_DMA_BUF_PLANE0_PITCH_EXT,   cursor_drm_fd->pitch,
+            EGL_LINUX_DRM_FOURCC_EXT,           cursor_drm_fd->pixel_format,
+            EGL_WIDTH,                          cursor_drm_fd->width,
+            EGL_HEIGHT,                         cursor_drm_fd->height,
+            EGL_DMA_BUF_PLANE0_FD_EXT,          cursor_drm_fd->fd,
+            EGL_DMA_BUF_PLANE0_OFFSET_EXT,      cursor_drm_fd->offset,
+            EGL_DMA_BUF_PLANE0_PITCH_EXT,       cursor_drm_fd->pitch,
             EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, cursor_drm_fd->modifier & 0xFFFFFFFFULL,
             EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, cursor_drm_fd->modifier >> 32ULL,
             EGL_NONE
         };
 
         EGLImage cursor_image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr_cursor);
-        const int target = cursor_texture_is_external ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
-        self->params.egl->glBindTexture(target, self->cursor_texture);
+        const int target = cursor_texture_id_is_external ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
+        self->params.egl->glBindTexture(target, self->cursor_texture_id);
         self->params.egl->glEGLImageTargetTexture2DOES(target, cursor_image);
         self->params.egl->eglDestroyImage(self->params.egl->egl_display, cursor_image);
         self->params.egl->glBindTexture(target, 0);
@@ -431,17 +432,15 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         self->params.egl->glEnable(GL_SCISSOR_TEST);
         self->params.egl->glScissor(target_x, target_y, self->capture_size.x, self->capture_size.y);
 
-        gsr_color_conversion_draw(color_conversion, self->cursor_texture,
+        gsr_color_conversion_draw(color_conversion, self->cursor_texture_id,
             cursor_pos, cursor_size,
             (vec2i){0, 0}, cursor_size,
-            texture_rotation, cursor_texture_is_external);
+            texture_rotation, cursor_texture_id_is_external);
 
         self->params.egl->glDisable(GL_SCISSOR_TEST);
     }
 
     self->params.egl->eglSwapBuffers(self->params.egl->egl_display, self->params.egl->egl_surface);
-    
-    // TODO: Do software specific video encoder conversion here
 
     //self->params.egl->glFlush();
     //self->params.egl->glFinish();

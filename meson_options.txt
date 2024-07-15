@@ -1,2 +1,3 @@
 option('systemd', type : 'boolean', value : false, description : 'Install systemd service file')
 option('capabilities', type : 'boolean', value : true, description : 'Set binary admin capability to remove password prompt and nice capability to allow gpu screen recorder to run at a higher framerate than the game you are recording')
+option('portal', type : 'boolean', value : true, description : 'If GPU Screen Recorder should be built with support for xdg desktop portal ScreenCast capture (wayland only)')

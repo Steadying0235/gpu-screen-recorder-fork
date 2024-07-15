@@ -52,6 +52,7 @@ static bool gsr_cursor_set_from_x11_cursor_image(gsr_cursor *self, XFixesCursorI
         }
     }
 
+    // TODO: glTextureSubImage2D if same size
     self->egl->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, self->size.x, self->size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, cursor_data);
     free(cursor_data);
 

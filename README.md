@@ -121,12 +121,14 @@ If you installed GPU Screen Recorder from AUR or from source and you are running
 It's configured with `$HOME/.config/gpu-screen-recorder.env` (create it if it doesn't exist). You can look at [extra/gpu-screen-recorder.env](https://git.dec05eba.com/gpu-screen-recorder/plain/extra/gpu-screen-recorder.env) to see an example.
 You can see which variables that you can use in the `gpu-screen-recorder.env` file by looking at the `extra/gpu-screen-recorder.service` file. Note that all of the variables are optional, you only have to set the ones that are you interested in.
 You can use the `scripts/save-replay.sh` script to save a replay and by default the systemd service saves videos in `$HOME/Videos`.\
+When using the `-w portal` your Wayland compositor will show a popup asking what you want to record and in some Wayland compositors you have the option to save the session (token) so that the next time you record it wont ask what you want to record.
+If you want to restore the session the next time you record (to remove the popup asking you what you want to record everytime) then run GPU Screen Recorder with the `-restore-portal-session yes` option.
 If you are using a NVIDIA GPU then it's recommended to set PreserveVideoMemoryAllocations=1 as mentioned in the section below.
-## Examples
-Look at the [scripts](https://git.dec05eba.com/gpu-screen-recorder/tree/scripts) directory for script examples. For example if you want to automatically save a recording/replay into a folder with the same name as the game you are recording.
 # Issues
 ## NVIDIA
 Nvidia drivers have an issue where CUDA breaks if CUDA is running when suspend/hibernation happens, and it remains broken until you reload the nvidia driver. To fix this, either disable suspend or tell the NVIDIA driver to preserve video memory on suspend/hibernate by using the `NVreg_PreserveVideoMemoryAllocations=1` option. You can run `sudo extra/install_preserve_video_memory.sh` to automatically add that option to your system.
+# Examples
+Look at the [scripts](https://git.dec05eba.com/gpu-screen-recorder/tree/scripts) directory for script examples. For example if you want to automatically save a recording/replay into a folder with the same name as the game you are recording.
 
 # Reporting bugs
 Issues are reported on this Github page: [https://github.com/dec05eba/gpu-screen-recorder-issues/issues](https://github.com/dec05eba/gpu-screen-recorder-issues/issues)
@@ -159,7 +161,7 @@ edit the video with a video editor. Hevc allows for better video quality (especi
 This is mostly an issue on AMD. For av1 it's a hardware issue, see: https://gitlab.freedesktop.org/mesa/mesa/-/issues/9185. For hevc it's a software issue that has been fixed but not released yet, see: https://gitlab.freedesktop.org/mesa/mesa/-/issues/10985.
 If you get this issue then a workaround is to record with h264 video codec instead (using the -k h264 option).
 ## The video is glitched, looks like checkerboard pattern
-This is an issue on some intel integrated gpus on wayland caused by power saving option. Right now the only way to fix this is to record on X11 instead.
+This is an issue on some intel integrated gpus on wayland caused by power saving option. Right now the only way to fix this is to either record on X11 (maybe only with window capture option) or to record with the `-w portal` option (usually only available on Wayland).
 ## The video doesn't display or has a green/yellow overlay
 This can happen if your video player is missing the H264/HEVC video codecs. Either install the codecs or use mpv.
 ## I get stutter in the video

@@ -420,9 +420,6 @@ static bool gsr_pipewire_setup_stream(gsr_pipewire *self) {
     }
     pw_stream_add_listener(self->stream, &self->stream_listener, &stream_events, self);
 
-    self->video_info.fps_num = 60;
-    self->video_info.fps_den = 1;
-
     if(!gsr_pipewire_build_format_params(self, &pod_builder, params)) {
         pw_thread_loop_unlock(self->thread_loop);
         fprintf(stderr, "gsr error: gsr_pipewire_setup_stream: failed to build format params\n");

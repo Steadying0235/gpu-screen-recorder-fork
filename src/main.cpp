@@ -1603,13 +1603,13 @@ static void list_system_info(bool wayland) {
 static void list_gpu_info(gsr_egl *egl) {
     switch(egl->gpu_info.vendor) {
         case GSR_GPU_VENDOR_AMD:
-            printf("gpu amd\n");
+            printf("vendor amd\n");
             break;
         case GSR_GPU_VENDOR_INTEL:
-            printf("gpu intel\n");
+            printf("vendor intel\n");
             break;
         case GSR_GPU_VENDOR_NVIDIA:
-            printf("gpu nvidia\n");
+            printf("vendor nvidia\n");
             break;
     }
 }

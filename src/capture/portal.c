@@ -24,10 +24,9 @@ typedef struct {
     gsr_dbus dbus;
     char *session_handle;
 
-    uint32_t pipewire_node;
-    int pipewire_fd;
     gsr_pipewire pipewire;
     vec2i capture_size;
+    int plane_fd;
 } gsr_capture_portal;
 
 static void gsr_capture_portal_stop(gsr_capture_portal *self) {
@@ -41,9 +40,9 @@ static void gsr_capture_portal_stop(gsr_capture_portal *self) {
         self->cursor_texture_id = 0;
     }
 
-    if(self->pipewire_fd > 0) {
-        close(self->pipewire_fd);
-        self->pipewire_fd = -1;
+    if(self->plane_fd > 0) {
+        close(self->plane_fd);
+        self->plane_fd = 0;
     }
 
     gsr_pipewire_deinit(&self->pipewire);
@@ -163,7 +162,10 @@ static void gsr_capture_portal_get_restore_token_from_cache(char *buffer, size_t
     fclose(f);
 }
 
-static bool gsr_capture_portal_setup_dbus(gsr_capture_portal *self) {
+static bool gsr_capture_portal_setup_dbus(gsr_capture_portal *self, int *pipewire_fd, uint32_t *pipewire_node) {
+    *pipewire_fd = 0;
+    *pipewire_node = 0;
+
     char restore_token[1024];
     restore_token[0] = '\0';
     if(self->params.restore_portal_session)
@@ -185,7 +187,7 @@ static bool gsr_capture_portal_setup_dbus(gsr_capture_portal *self) {
     }
 
     fprintf(stderr, "gsr info: gsr_capture_portal_setup_dbus: Start\n");
-    if(!gsr_dbus_screencast_start(&self->dbus, self->session_handle, &self->pipewire_node)) {
+    if(!gsr_dbus_screencast_start(&self->dbus, self->session_handle, pipewire_node)) {
         fprintf(stderr, "gsr error: gsr_capture_portal_setup_dbus: Start failed\n");
         return false;
     }
@@ -195,7 +197,7 @@ static bool gsr_capture_portal_setup_dbus(gsr_capture_portal *self) {
         gsr_capture_portal_save_restore_token(screencast_restore_token);
 
     fprintf(stderr, "gsr info: gsr_capture_portal_setup_dbus: OpenPipeWireRemote\n");
-    if(!gsr_dbus_screencast_open_pipewire_remote(&self->dbus, self->session_handle, &self->pipewire_fd)) {
+    if(!gsr_dbus_screencast_open_pipewire_remote(&self->dbus, self->session_handle, pipewire_fd)) {
         fprintf(stderr, "gsr error: gsr_capture_portal_setup_dbus: OpenPipeWireRemote failed\n");
         return false;
     }
@@ -211,7 +213,13 @@ static bool gsr_capture_portal_get_frame_dimensions(gsr_capture_portal *self) {
 
     const double start_time = clock_get_monotonic_seconds();
     while(clock_get_monotonic_seconds() - start_time < 5.0) {
-        if(gsr_pipewire_map_texture(&self->pipewire, self->input_texture_id, self->cursor_texture_id, &region, &cursor_region)) {
+        int plane_fd = 0;
+        if(gsr_pipewire_map_texture(&self->pipewire, self->input_texture_id, self->cursor_texture_id, &region, &cursor_region, &plane_fd)) {
+            if(plane_fd > 0) {
+                close(plane_fd);
+                plane_fd = 0;
+            }
+
             self->capture_size.x = region.width;
             self->capture_size.y = region.height;
             fprintf(stderr, "gsr info: gsr_capture_portal_start: pipewire negotiation finished\n");
@@ -229,19 +237,21 @@ static int gsr_capture_portal_start(gsr_capture *cap, AVCodecContext *video_code
 
     gsr_capture_portal_create_input_textures(self);
 
-    if(!gsr_capture_portal_setup_dbus(self)) {
+    int pipewire_fd = 0;
+    uint32_t pipewire_node = 0;
+    if(!gsr_capture_portal_setup_dbus(self, &pipewire_fd, &pipewire_node)) {
         gsr_capture_portal_stop(self);
         return -1;
     }
 
     fprintf(stderr, "gsr info: gsr_capture_portal_start: setting up pipewire\n");
     /* TODO: support hdr when pipewire supports it */
-    if(!gsr_pipewire_init(&self->pipewire, self->pipewire_fd, self->pipewire_node, video_codec_context->framerate.num, self->params.record_cursor, self->params.egl)) {
-        fprintf(stderr, "gsr error: gsr_capture_portal_start: failed to setup pipewire with fd: %d, node: %" PRIu32 "\n", self->pipewire_fd, self->pipewire_node);
+    /* gsr_pipewire closes the pipewire fd, even on failure */
+    if(!gsr_pipewire_init(&self->pipewire, pipewire_fd, pipewire_node, video_codec_context->framerate.num, self->params.record_cursor, self->params.egl)) {
+        fprintf(stderr, "gsr error: gsr_capture_portal_start: failed to setup pipewire with fd: %d, node: %" PRIu32 "\n", pipewire_fd, pipewire_node);
         gsr_capture_portal_stop(self);
         return -1;
     }
-    self->pipewire_fd = -1;
     fprintf(stderr, "gsr info: gsr_capture_portal_start: pipewire setup finished\n");
 
     if(!gsr_capture_portal_get_frame_dimensions(self)) {
@@ -269,25 +279,31 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
     (void)color_conversion;
     gsr_capture_portal *self = cap->priv;
 
+    if(self->plane_fd > 0) {
+        close(self->plane_fd);
+        self->plane_fd = 0;
+    }
+
     //egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     self->params.egl->glClear(0);
-
-    vec2i content_size = self->capture_size;
 
     /* TODO: Handle formats other than RGB(a) */
     gsr_pipewire_region region = {0, 0, 0, 0};
     gsr_pipewire_region cursor_region = {0, 0, 0, 0};
-    if(gsr_pipewire_map_texture(&self->pipewire, self->input_texture_id, self->cursor_texture_id, &region, &cursor_region)) {
-        content_size.x = region.width;
-        content_size.y = region.height;
+    if(gsr_pipewire_map_texture(&self->pipewire, self->input_texture_id, self->cursor_texture_id, &region, &cursor_region, &self->plane_fd)) {
+        if(region.width != self->capture_size.x || region.height != self->capture_size.y) {
+            gsr_color_conversion_clear(color_conversion);
+            self->capture_size.x = region.width;
+            self->capture_size.y = region.height;
+        }
     }
     
-    const int target_x = max_int(0, frame->width / 2 - content_size.x / 2);
-    const int target_y = max_int(0, frame->height / 2 - content_size.y / 2);
+    const int target_x = max_int(0, frame->width / 2 - self->capture_size.x / 2);
+    const int target_y = max_int(0, frame->height / 2 - self->capture_size.y / 2);
 
     gsr_color_conversion_draw(color_conversion, self->input_texture_id,
-        (vec2i){target_x, target_y}, content_size,
-        (vec2i){region.x, region.y}, content_size,
+        (vec2i){target_x, target_y}, self->capture_size,
+        (vec2i){region.x, region.y}, self->capture_size,
         0.0f, false);
 
     const vec2i cursor_pos = {
@@ -296,7 +312,7 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
     };
 
     self->params.egl->glEnable(GL_SCISSOR_TEST);
-    self->params.egl->glScissor(target_x, target_y, content_size.x, content_size.y);
+    self->params.egl->glScissor(target_x, target_y, self->capture_size.x, self->capture_size.y);
     gsr_color_conversion_draw(color_conversion, self->cursor_texture_id,
         (vec2i){cursor_pos.x, cursor_pos.y}, (vec2i){cursor_region.width, cursor_region.height},
         (vec2i){0, 0}, (vec2i){cursor_region.width, cursor_region.height},
@@ -325,8 +341,12 @@ static bool gsr_capture_portal_should_stop(gsr_capture *cap, bool *err) {
 }
 
 static void gsr_capture_portal_capture_end(gsr_capture *cap, AVFrame *frame) {
-    (void)cap;
     (void)frame;
+    gsr_capture_portal *self = cap->priv;
+    if(self->plane_fd > 0) {
+        close(self->plane_fd);
+        self->plane_fd = 0;
+    }
 }
 
 static gsr_source_color gsr_capture_portal_get_source_color(gsr_capture *cap) {

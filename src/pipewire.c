@@ -109,8 +109,13 @@ static void on_process_cb(void *user_data) {
     pthread_mutex_lock(&self->mutex);
 
     if(buffer->datas[0].type == SPA_DATA_DmaBuf) {
+        if(self->dmabuf_data.fd > 0) {
+            close(self->dmabuf_data.fd);
+            self->dmabuf_data.fd = -1;
+        }
+
         if(buffer->n_datas > 0) {
-            self->dmabuf_data.fd = buffer->datas[0].fd;
+            self->dmabuf_data.fd = dup(buffer->datas[0].fd);
             self->dmabuf_data.offset = buffer->datas[0].chunk->offset;
             self->dmabuf_data.stride = buffer->datas[0].chunk->stride;
         } else {
@@ -525,7 +530,12 @@ void gsr_pipewire_deinit(gsr_pipewire *self) {
 
     if(self->fd > 0) {
         close(self->fd);
-        self->fd = 0;
+        self->fd = -1;
+    }
+
+    if(self->dmabuf_data.fd > 0) {
+        close(self->dmabuf_data.fd);
+        self->dmabuf_data.fd = -1;
     }
 
     self->negotiated = false;
@@ -548,8 +558,8 @@ void gsr_pipewire_deinit(gsr_pipewire *self) {
     }
 }
 
-/* TODO: Do this in the thread instead, otherwise this is not guaranteed to always work and may produce glitched output (happens now when resizing the captured window) */
-bool gsr_pipewire_map_texture(gsr_pipewire *self, unsigned int texture_id, unsigned int cursor_texture_id, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region) {
+bool gsr_pipewire_map_texture(gsr_pipewire *self, unsigned int texture_id, unsigned int cursor_texture_id, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region, int *plane_fd) {
+    *plane_fd = -1;
     pthread_mutex_lock(&self->mutex);
 
     if(!self->negotiated || self->dmabuf_data.fd <= 0) {
@@ -557,12 +567,15 @@ bool gsr_pipewire_map_texture(gsr_pipewire *self, unsigned int texture_id, unsig
         return false;
     }
 
+    *plane_fd = self->dmabuf_data.fd;
+    self->dmabuf_data.fd = -1;
+
     /* TODO: Support multiple planes */
     const intptr_t img_attr[] = {
         EGL_LINUX_DRM_FOURCC_EXT,           spa_video_format_to_drm_format(self->format.info.raw.format),
         EGL_WIDTH,                          self->format.info.raw.size.width,
         EGL_HEIGHT,                         self->format.info.raw.size.height,
-        EGL_DMA_BUF_PLANE0_FD_EXT,          self->dmabuf_data.fd,
+        EGL_DMA_BUF_PLANE0_FD_EXT,          *plane_fd,
         EGL_DMA_BUF_PLANE0_OFFSET_EXT,      self->dmabuf_data.offset,
         EGL_DMA_BUF_PLANE0_PITCH_EXT,       self->dmabuf_data.stride,
         EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, self->format.info.raw.modifier & 0xFFFFFFFFULL,

@@ -329,12 +329,12 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
 }
 
 void cleanup_socket(gsr_kms_client *self, bool kill_server) {
-    if(self->initial_client_fd != -1) {
+    if(self->initial_client_fd > 0) {
         close(self->initial_client_fd);
         self->initial_client_fd = -1;
     }
 
-    if(self->initial_socket_fd != -1) {
+    if(self->initial_socket_fd > 0) {
         close(self->initial_socket_fd);
         self->initial_socket_fd = -1;
     }
@@ -348,7 +348,7 @@ void cleanup_socket(gsr_kms_client *self, bool kill_server) {
         }
     }
 
-    if(kill_server && self->kms_server_pid != -1) {
+    if(kill_server && self->kms_server_pid > 0) {
         kill(self->kms_server_pid, SIGKILL);
         //int status;
         //waitpid(self->kms_server_pid, &status, 0);

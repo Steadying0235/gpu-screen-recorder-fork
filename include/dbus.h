@@ -34,6 +34,7 @@ typedef enum {
 bool gsr_dbus_init(gsr_dbus *self, const char *screencast_restore_token);
 void gsr_dbus_deinit(gsr_dbus *self);
 
+/* The follow functions should be called in order to setup ScreenCast properly */
 bool gsr_dbus_screencast_create_session(gsr_dbus *self, char **session_handle);
 bool gsr_dbus_screencast_select_sources(gsr_dbus *self, const char *session_handle, gsr_portal_capture_type capture_type, gsr_portal_cursor_mode cursor_mode);
 bool gsr_dbus_screencast_start(gsr_dbus *self, const char *session_handle, uint32_t *pipewire_node);

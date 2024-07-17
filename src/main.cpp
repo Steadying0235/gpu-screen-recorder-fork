@@ -4,6 +4,7 @@ extern "C" {
 #include "../include/capture/kms.h"
 #ifdef GSR_PORTAL
 #include "../include/capture/portal.h"
+#include "../include/dbus.h"
 #endif
 #include "../include/encoder/video/cuda.h"
 #include "../include/encoder/video/vaapi.h"
@@ -1093,6 +1094,9 @@ static void usage_full() {
     fprintf(stderr, "  --list-supported-video-codecs\n");
     fprintf(stderr, "        List supported video codecs and exits. Prints h264, hevc, hevc_hdr, av1 and av1_hdr (if supported).\n");
     fprintf(stderr, "\n");
+    fprintf(stderr, "  --list-supported-capture-options\n");
+    fprintf(stderr, "        List supported capture options, which includes window, focused, monitors and portal, if supported by the system.\n");
+    fprintf(stderr, "\n");
     //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, set to 'yuv420' by default\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r).\n");
     fprintf(stderr, "        In replay mode this has to be a directory instead of a file.\n");
@@ -1592,7 +1596,73 @@ static bool is_xwayland(Display *display) {
     return xwayland_found;
 }
 
-static void list_supported_video_codecs() {
+static void list_supported_video_codecs(gsr_egl *egl) {
+    // TODO: Output hdr
+    if(find_h264_encoder(egl->gpu_info.vendor, egl->card_path))
+        puts("h264");
+    if(find_hevc_encoder(egl->gpu_info.vendor, egl->card_path))
+        puts("hevc");
+    if(find_av1_encoder(egl->gpu_info.vendor, egl->card_path))
+        puts("av1");
+    if(find_vp8_encoder(egl->gpu_info.vendor, egl->card_path))
+        puts("vp8");
+    if(find_vp9_encoder(egl->gpu_info.vendor, egl->card_path))
+        puts("vp9");
+}
+
+static bool monitor_capture_use_drm(gsr_egl *egl, bool wayland) {
+    return wayland || egl->gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA;
+}
+
+typedef struct {
+    bool wayland;
+    gsr_egl *egl;
+} capture_options_callback;
+
+static void output_monitor_info(const gsr_monitor *monitor, void *userdata) {
+    const capture_options_callback *options = (capture_options_callback*)userdata;
+    if(monitor_capture_use_drm(options->egl, options->wayland)) {
+        vec2i monitor_size = monitor->size;
+        const gsr_monitor_rotation rot = drm_monitor_get_display_server_rotation(options->egl, monitor);
+        if(rot == GSR_MONITOR_ROT_90 || rot == GSR_MONITOR_ROT_270)
+            std::swap(monitor_size.x, monitor_size.y);
+        printf("%.*s %dx%d\n", monitor->name_len, monitor->name, monitor_size.x, monitor_size.y);
+    } else {
+        printf("%.*s %dx%d\n", monitor->name_len, monitor->name, monitor->size.x, monitor->size.y);
+    }
+}
+
+static void list_supported_capture_options(gsr_egl *egl, bool wayland) {
+    if(!wayland) {
+        puts("window");
+        puts("focused");
+    }
+
+    capture_options_callback options;
+    options.wayland = wayland;
+    options.egl = egl;
+    if(monitor_capture_use_drm(egl, wayland)) {
+        for_each_active_monitor_output(egl, GSR_CONNECTION_DRM, output_monitor_info, &options);
+    } else {
+        puts("screen"); // All monitors in one, only available on Nvidia X11
+        for_each_active_monitor_output(egl, GSR_CONNECTION_X11, output_monitor_info, &options);
+    }
+
+#ifdef GSR_PORTAL
+    gsr_dbus dbus;
+    if(!gsr_dbus_init(&dbus, NULL))
+        return;
+
+    char *session_handle = NULL;
+    if(gsr_dbus_screencast_create_session(&dbus, &session_handle)) {
+        free(session_handle);
+        puts("portal");
+    }
+    gsr_dbus_deinit(&dbus);
+#endif
+}
+
+static void list_command(const char *command) {
     bool wayland = false;
     Display *dpy = XOpenDisplay(nullptr);
     if (!dpy) {
@@ -1613,7 +1683,7 @@ static void list_supported_video_codecs() {
     }
 
     egl.card_path[0] = '\0';
-    if(wayland || egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA) {
+    if(monitor_capture_use_drm(&egl, wayland)) {
         // TODO: Allow specifying another card, and in other places
         if(!gsr_get_valid_card_path(&egl, egl.card_path, false)) {
             fprintf(stderr, "Error: no /dev/dri/cardX device found. If you are running GPU Screen Recorder with prime-run then try running without it. Also make sure that you have at least one connected monitor or record a single window instead on X11\n");
@@ -1623,17 +1693,10 @@ static void list_supported_video_codecs() {
 
     av_log_set_level(AV_LOG_FATAL);
 
-    // TODO: Output hdr
-    if(find_h264_encoder(egl.gpu_info.vendor, egl.card_path))
-        puts("h264");
-    if(find_hevc_encoder(egl.gpu_info.vendor, egl.card_path))
-        puts("hevc");
-    if(find_av1_encoder(egl.gpu_info.vendor, egl.card_path))
-        puts("av1");
-    if(find_vp8_encoder(egl.gpu_info.vendor, egl.card_path))
-        puts("vp8");
-    if(find_vp9_encoder(egl.gpu_info.vendor, egl.card_path))
-        puts("vp9");
+    if(strcmp(command, "--list-supported-video-codecs") == 0)
+        list_supported_video_codecs(&egl);
+    else if(strcmp(command, "--list-supported-capture-options") == 0)
+        list_supported_capture_options(&egl, wayland);
 
     fflush(stdout);
 
@@ -1690,7 +1753,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
         _exit(2);
 #endif
     } else if(contains_non_hex_number(window_str)) {
-        if(wayland || egl->gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA) {
+        if(monitor_capture_use_drm(egl, wayland)) {
             if(strcmp(window_str, "screen") == 0) {
                 FirstOutputCallback first_output;
                 first_output.output_name = NULL;
@@ -1877,8 +1940,8 @@ int main(int argc, char **argv) {
     if(argc == 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0))
         usage_full();
 
-    if(argc == 2 && strcmp(argv[1], "--list-supported-video-codecs") == 0) {
-        list_supported_video_codecs();
+    if(argc == 2 && (strcmp(argv[1], "--list-supported-video-codecs") == 0 || strcmp(argv[1], "--list-supported-capture-options") == 0)) {
+        list_command(argv[1]);
         _exit(0);
     }
 
@@ -2247,7 +2310,7 @@ int main(int argc, char **argv) {
     }
 
     egl.card_path[0] = '\0';
-    if(wayland || egl.gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA) {
+    if(monitor_capture_use_drm(&egl, wayland)) {
         // TODO: Allow specifying another card, and in other places
         if(!gsr_get_valid_card_path(&egl, egl.card_path, is_monitor_capture)) {
             fprintf(stderr, "Error: no /dev/dri/cardX device found. If you are running GPU Screen Recorder with prime-run then try running without it. Also make sure that you have at least one connected monitor or record a single window instead on X11\n");

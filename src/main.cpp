@@ -1091,11 +1091,11 @@ static void usage_full() {
     fprintf(stderr, "        Which device should be used for video encoding. Should either be 'gpu' or 'cpu'. Does currently only work with h264 codec option (-k).\n");
     fprintf(stderr, "        Optional, set to 'gpu' by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  --list-supported-video-codecs\n");
-    fprintf(stderr, "        List supported video codecs and exits. Prints h264, hevc, hevc_hdr, av1 and av1_hdr (if supported).\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "  --list-supported-capture-options\n");
-    fprintf(stderr, "        List supported capture options, which includes window, focused, monitors and portal, if supported by the system.\n");
+    fprintf(stderr, "  --info\n");
+    fprintf(stderr, "        List info about the system (for use by GPU Screen Recorder UI). Lists the following information (prints them to stdout and exits):\n");
+    fprintf(stderr, "        Supported video codecs (h264, hevc, hevc_hdr, av1 and av1_hdr (if supported)).\n");
+    fprintf(stderr, "        Supported capture options (window, focused, screen, monitors and portal, if supported by the system).\n");
+    fprintf(stderr, "        If opengl initialization fails then the program exits with 22, if no usable drm device is found then it exits with 23. On success it exits with 0.\n");
     fprintf(stderr, "\n");
     //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, set to 'yuv420' by default\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r).\n");
@@ -1596,6 +1596,20 @@ static bool is_xwayland(Display *display) {
     return xwayland_found;
 }
 
+static void list_gpu_info(gsr_egl *egl) {
+    switch(egl->gpu_info.vendor) {
+        case GSR_GPU_VENDOR_AMD:
+            puts("amd");
+            break;
+        case GSR_GPU_VENDOR_INTEL:
+            puts("intel");
+            break;
+        case GSR_GPU_VENDOR_NVIDIA:
+            puts("nvidia");
+            break;
+    }
+}
+
 static void list_supported_video_codecs(gsr_egl *egl) {
     // TODO: Output hdr
     if(find_h264_encoder(egl->gpu_info.vendor, egl->card_path))
@@ -1662,7 +1676,7 @@ static void list_supported_capture_options(gsr_egl *egl, bool wayland) {
 #endif
 }
 
-static void list_command(const char *command) {
+static void list_command() {
     bool wayland = false;
     Display *dpy = XOpenDisplay(nullptr);
     if (!dpy) {
@@ -1679,7 +1693,7 @@ static void list_command(const char *command) {
     gsr_egl egl;
     if(!gsr_egl_load(&egl, dpy, wayland, false)) {
         fprintf(stderr, "gsr error: failed to load opengl\n");
-        _exit(1);
+        _exit(22);
     }
 
     egl.card_path[0] = '\0';
@@ -1687,22 +1701,26 @@ static void list_command(const char *command) {
         // TODO: Allow specifying another card, and in other places
         if(!gsr_get_valid_card_path(&egl, egl.card_path, false)) {
             fprintf(stderr, "Error: no /dev/dri/cardX device found. If you are running GPU Screen Recorder with prime-run then try running without it. Also make sure that you have at least one connected monitor or record a single window instead on X11\n");
-            _exit(2);
+            _exit(23);
         }
     }
 
     av_log_set_level(AV_LOG_FATAL);
 
-    if(strcmp(command, "--list-supported-video-codecs") == 0)
-        list_supported_video_codecs(&egl);
-    else if(strcmp(command, "--list-supported-capture-options") == 0)
-        list_supported_capture_options(&egl, wayland);
+    puts("section=gpu_info");
+    list_gpu_info(&egl);
+    puts("section=video_codecs");
+    list_supported_video_codecs(&egl);
+    puts("section=capture_options");
+    list_supported_capture_options(&egl, wayland);
 
     fflush(stdout);
 
     gsr_egl_unload(&egl);
     if(dpy)
         XCloseDisplay(dpy);
+
+    _exit(0);
 }
 
 static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl *egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range, bool record_cursor, bool track_damage, bool use_software_video_encoder, bool restore_portal_session) {
@@ -1940,8 +1958,8 @@ int main(int argc, char **argv) {
     if(argc == 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0))
         usage_full();
 
-    if(argc == 2 && (strcmp(argv[1], "--list-supported-video-codecs") == 0 || strcmp(argv[1], "--list-supported-capture-options") == 0)) {
-        list_command(argv[1]);
+    if(argc == 2 && strcmp(argv[1], "--info") == 0) {
+        list_command();
         _exit(0);
     }
 

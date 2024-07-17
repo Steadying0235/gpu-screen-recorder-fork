@@ -1596,6 +1596,10 @@ static bool is_xwayland(Display *display) {
     return xwayland_found;
 }
 
+static void list_system_info(bool wayland) {
+    printf("display_server %s\n", wayland ? "wayland" : "x11");
+}
+
 static void list_gpu_info(gsr_egl *egl) {
     switch(egl->gpu_info.vendor) {
         case GSR_GPU_VENDOR_AMD:
@@ -1707,6 +1711,8 @@ static void list_command() {
 
     av_log_set_level(AV_LOG_FATAL);
 
+    puts("section=system_info");
+    list_system_info(wayland);
     puts("section=gpu_info");
     list_gpu_info(&egl);
     puts("section=video_codecs");

@@ -7,7 +7,8 @@ cd "$script_dir"
 
 echo "Warning: this install.sh script is deprecated. Use meson directly instead if possible"
 
-test -d build || meson setup build
+rm -rf build
+meson setup build
 meson configure --prefix=/usr --buildtype=release -Dsystemd=true -Dstrip=true build
 ninja -C build install
 

@@ -590,7 +590,7 @@ bool gsr_dbus_screencast_create_session(gsr_dbus *self, char **session_handle) {
 
     DBusMessage *response_msg = NULL;
     if(!gsr_dbus_call_screencast_method(self, "CreateSession", NULL, NULL, args, 2, NULL, &response_msg)) {
-        fprintf(stderr, "gsr error: gsr_dbus_screencast_create_session: failed to setup ScreenCast session. Make sure you have a desktop portal running with support for the ScreenCast interface (usually only available on Wayland) and that the desktop portal matches the Wayland compositor you are running.\n");
+        fprintf(stderr, "gsr error: gsr_dbus_screencast_create_session: failed to setup ScreenCast session. Make sure you have a desktop portal running with support for the ScreenCast interface and that the desktop portal matches the Wayland compositor you are running.\n");
         return false;
     }
 
@@ -605,7 +605,7 @@ bool gsr_dbus_screencast_create_session(gsr_dbus *self, char **session_handle) {
     }
 
     if(!gsr_dbus_response_status_ok(&resp_args)) {
-        fprintf(stderr, "gsr error: gsr_dbus_screencast_create_session: failed to setup ScreenCast session. Make sure you have a desktop portal running with support for the ScreenCast interface (usually only available on Wayland) and that the desktop portal matches the Wayland compositor you are running.\n");
+        fprintf(stderr, "gsr error: gsr_dbus_screencast_create_session: failed to setup ScreenCast session. Make sure you have a desktop portal running with support for the ScreenCast interface and that the desktop portal matches the Wayland compositor you are running.\n");
         dbus_message_unref(response_msg);
         return false;
     }

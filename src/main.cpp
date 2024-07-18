@@ -1014,7 +1014,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "OPTIONS:\n");
     fprintf(stderr, "  -w    Window id to record, a display (monitor name), \"screen\", \"screen-direct-force\", \"focused\" or \"portal\".\n");
-    fprintf(stderr, "        If this is \"portal\" then xdg desktop screencast portal with pipewire will be used. This is in general only available on Wayland.\n");
+    fprintf(stderr, "        If this is \"portal\" then xdg desktop screencast portal with pipewire will be used. Portal option is only available on Wayland.\n");
     fprintf(stderr, "        If you select to save the session (token) in the desktop portal capture popup then the session will be saved for the next time you use \"portal\",\n");
     fprintf(stderr, "        but the session will be ignored unless you run GPU Screen Recorder with the '-restore-portal-session yes' option.\n");
     fprintf(stderr, "        If this is \"screen\" or \"screen-direct-force\" then all monitors are recorded on Nvidia X11. On AMD/Intel or wayland \"screen\" will record the first monitor found.\n");
@@ -1667,6 +1667,10 @@ static void list_supported_capture_options(gsr_egl *egl, bool wayland) {
     }
 
 #ifdef GSR_PORTAL
+    // Desktop portal capture on x11 doesn't seem to be hardware accelerated
+    if(!wayland)
+        return;
+
     gsr_dbus dbus;
     if(!gsr_dbus_init(&dbus, NULL))
         return;
@@ -1759,6 +1763,12 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
         follow_focused = true;
     } else if(strcmp(window_str, "portal") == 0) {
 #ifdef GSR_PORTAL
+        // Desktop portal capture on x11 doesn't seem to be hardware accelerated
+        if(!wayland) {
+            fprintf(stderr, "Error: desktop portal capture is not supported on X11\n");
+            _exit(1);
+        }
+
         if(video_codec_is_hdr(video_codec)) {
             fprintf(stderr, "Warning: portal capture option doesn't support hdr yet (pipewire doesn't support hdr)\n");
         }

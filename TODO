@@ -155,3 +155,5 @@ Support hevc/av1 for software encoder and hdr support at the same time. Need sup
 Cleanup pipewire code and add more error checks.
 
 Detect if recording monitor on intel and plane is compressed. In that case give an error and tell the user to use -w portal instead.
+
+Make dbus code and pipewire setup non blocking.

@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <assert.h>
-#include <unistd.h>
 #include <sys/random.h>
 
 /* TODO: Make non-blocking when GPU Screen Recorder is turned into a library */
@@ -288,9 +287,13 @@ static bool dbus_add_dict(DBusMessageIter *it, const dict_entry *entries, int nu
     return dbus_message_iter_close_container(it, &array_it);
 }
 
-static bool gsr_dbus_call_screencast_method(gsr_dbus *self, const char *method_name, const char *session_handle, const char *parent_window, const dict_entry *entries, int num_entries, int *resp_fd) {
+/* If |response_msg| is NULL then we dont wait for a response signal */
+static bool gsr_dbus_call_screencast_method(gsr_dbus *self, const char *method_name, const char *session_handle, const char *parent_window, const dict_entry *entries, int num_entries, int *resp_fd, DBusMessage **response_msg) {
     if(resp_fd)
         *resp_fd = -1;
+
+    if(response_msg)
+        *response_msg = NULL;
 
     if(!gsr_dbus_ensure_desktop_portal_rule_added(self))
         return false;
@@ -386,6 +389,27 @@ static bool gsr_dbus_call_screencast_method(gsr_dbus *self, const char *method_n
     }
 
     dbus_message_unref(msg);
+    if(!response_msg)
+        return true;
+
+    /* TODO: Add timeout, but take into consideration user interactive signals (such as selecting a monitor to capture for ScreenCast) */
+    for (;;) {
+        const int timeout_milliseconds = 10;
+        dbus_connection_read_write(self->con, timeout_milliseconds);
+        *response_msg = dbus_connection_pop_message(self->con);
+
+        if(!*response_msg)
+            continue;
+
+        if(!dbus_message_is_signal(*response_msg, "org.freedesktop.portal.Request", "Response")) {
+            dbus_message_unref(*response_msg);
+            *response_msg = NULL;
+            continue;
+        }
+
+        break;
+    }
+
     return true;
 }
 
@@ -564,44 +588,25 @@ bool gsr_dbus_screencast_create_session(gsr_dbus *self, char **session_handle) {
     args[1].value_type = DICT_TYPE_STRING;
     args[1].str = session_handle_token;
 
-    if(!gsr_dbus_call_screencast_method(self, "CreateSession", NULL, NULL, args, 2, NULL)) {
+    DBusMessage *response_msg = NULL;
+    if(!gsr_dbus_call_screencast_method(self, "CreateSession", NULL, NULL, args, 2, NULL, &response_msg)) {
         fprintf(stderr, "gsr error: gsr_dbus_screencast_create_session: failed to setup ScreenCast session. Make sure you have a desktop portal running with support for the ScreenCast interface (usually only available on Wayland) and that the desktop portal matches the Wayland compositor you are running.\n");
         return false;
-    }
-
-    DBusMessage *msg = NULL;
-
-    for (;;) {
-        const int timeout_milliseconds = 1;
-        dbus_connection_read_write(self->con, timeout_milliseconds);
-        msg = dbus_connection_pop_message(self->con);
-
-        if(!msg) {
-            usleep(10 * 1000); /* 10 milliseconds */
-            continue;
-        }
-
-        if(!dbus_message_is_signal(msg, "org.freedesktop.portal.Request", "Response")) {
-            dbus_message_unref(msg);
-            continue;
-        }
-
-        break;
     }
 
     // TODO: Verify signal path matches |res|, maybe check the below
     // DBUS_TYPE_ARRAY value?
     //fprintf(stderr, "signature: %s, sender: %s\n", dbus_message_get_signature(msg), dbus_message_get_sender(msg));
     DBusMessageIter resp_args;
-    if(!dbus_message_iter_init(msg, &resp_args)) {
+    if(!dbus_message_iter_init(response_msg, &resp_args)) {
         fprintf(stderr, "gsr error: gsr_dbus_screencast_create_session: missing response\n");
-        dbus_message_unref(msg);
+        dbus_message_unref(response_msg);
         return false;
     }
 
     if(!gsr_dbus_response_status_ok(&resp_args)) {
         fprintf(stderr, "gsr error: gsr_dbus_screencast_create_session: failed to setup ScreenCast session. Make sure you have a desktop portal running with support for the ScreenCast interface (usually only available on Wayland) and that the desktop portal matches the Wayland compositor you are running.\n");
-        dbus_message_unref(msg);
+        dbus_message_unref(response_msg);
         return false;
     }
 
@@ -610,13 +615,13 @@ bool gsr_dbus_screencast_create_session(gsr_dbus *self, char **session_handle) {
     entries[0].str = NULL;
     entries[0].value_type = DICT_TYPE_STRING;
     if(!gsr_dbus_get_map(&resp_args, entries, 1)) {
-        dbus_message_unref(msg);
+        dbus_message_unref(response_msg);
         return false;
     }
 
     if(!entries[0].str) {
         fprintf(stderr, "gsr error: gsr_dbus_screencast_create_session: missing \"session_handle\" in response\n");
-        dbus_message_unref(msg);
+        dbus_message_unref(response_msg);
         return false;
     }
 
@@ -624,7 +629,7 @@ bool gsr_dbus_screencast_create_session(gsr_dbus *self, char **session_handle) {
     //fprintf(stderr, "session handle: |%s|\n", entries[0].str);
     //free(entries[0].str);
 
-    dbus_message_unref(msg);
+    dbus_message_unref(response_msg);
     return true;
 }
 
@@ -670,53 +675,34 @@ bool gsr_dbus_screencast_select_sources(gsr_dbus *self, const char *session_hand
         fprintf(stderr, "gsr warning: gsr_dbus_screencast_select_sources: tried to use restore token but this option is only available in screencast version >= 4, your wayland compositors screencast version is %d\n", screencast_server_version);
     }
     
-    if(!gsr_dbus_call_screencast_method(self, "SelectSources", session_handle, NULL, args, num_arg_dict, NULL)) {
+    DBusMessage *response_msg = NULL;
+    if(!gsr_dbus_call_screencast_method(self, "SelectSources", session_handle, NULL, args, num_arg_dict, NULL, &response_msg)) {
         if(num_arg_dict == 6) {
             /* We dont know what the error exactly is but assume it may be because of invalid restore token. In that case try without restore token */
             fprintf(stderr, "gsr warning: gsr_dbus_screencast_select_sources: SelectSources failed, retrying without restore_token\n");
             num_arg_dict = 5;
-            if(!gsr_dbus_call_screencast_method(self, "SelectSources", session_handle, NULL, args, num_arg_dict, NULL))
+            if(!gsr_dbus_call_screencast_method(self, "SelectSources", session_handle, NULL, args, num_arg_dict, NULL, &response_msg))
                 return false;
         } else {
             return false;
         }
     }
 
-    DBusMessage *msg = NULL;
-
-    for (;;) {
-        const int timeout_milliseconds = 1;
-        dbus_connection_read_write(self->con, timeout_milliseconds);
-        msg = dbus_connection_pop_message(self->con);
-
-        if(!msg) {
-            usleep(10 * 1000); /* 10 milliseconds */
-            continue;
-        }
-
-        if(!dbus_message_is_signal(msg, "org.freedesktop.portal.Request", "Response")) {
-            dbus_message_unref(msg);
-            continue;
-        }
-
-        break;
-    }
-
     // TODO: Verify signal path matches |res|, maybe check the below
     //fprintf(stderr, "signature: %s, sender: %s\n", dbus_message_get_signature(msg), dbus_message_get_sender(msg));
     DBusMessageIter resp_args;
-    if(!dbus_message_iter_init(msg, &resp_args)) {
+    if(!dbus_message_iter_init(response_msg, &resp_args)) {
         fprintf(stderr, "gsr error: gsr_dbus_screencast_create_session: missing response\n");
-        dbus_message_unref(msg);
+        dbus_message_unref(response_msg);
         return false;
     }
 
     if(!gsr_dbus_response_status_ok(&resp_args)) {
-        dbus_message_unref(msg);
+        dbus_message_unref(response_msg);
         return false;
     }
 
-    dbus_message_unref(msg);
+    dbus_message_unref(response_msg);
     return true;
 }
 
@@ -750,46 +736,27 @@ bool gsr_dbus_screencast_start(gsr_dbus *self, const char *session_handle, uint3
     args[0].value_type = DICT_TYPE_STRING;
     args[0].str = handle_token;
     
-    if(!gsr_dbus_call_screencast_method(self, "Start", session_handle, "", args, 1, NULL))
+    DBusMessage *response_msg = NULL;
+    if(!gsr_dbus_call_screencast_method(self, "Start", session_handle, "", args, 1, NULL, &response_msg))
         return false;
-
-    DBusMessage *msg = NULL;
-
-    for (;;) {
-        const int timeout_milliseconds = 1;
-        dbus_connection_read_write(self->con, timeout_milliseconds);
-        msg = dbus_connection_pop_message(self->con);
-
-        if(!msg) {
-            usleep(10 * 1000); /* 10 milliseconds */
-            continue;
-        }
-
-        if(!dbus_message_is_signal(msg, "org.freedesktop.portal.Request", "Response")) {
-            dbus_message_unref(msg);
-            continue;
-        }
-
-        break;
-    }
 
     // TODO: Verify signal path matches |res|, maybe check the below
     //fprintf(stderr, "signature: %s, sender: %s\n", dbus_message_get_signature(msg), dbus_message_get_sender(msg));
     DBusMessageIter resp_args;
-    if(!dbus_message_iter_init(msg, &resp_args)) {
+    if(!dbus_message_iter_init(response_msg, &resp_args)) {
         fprintf(stderr, "gsr error: gsr_dbus_screencast_start: missing response\n");
-        dbus_message_unref(msg);
+        dbus_message_unref(response_msg);
         return false;
     }
 
     if(!gsr_dbus_response_status_ok(&resp_args)) {
-        dbus_message_unref(msg);
+        dbus_message_unref(response_msg);
         return false;
     }
 
     if(dbus_message_iter_get_arg_type(&resp_args) != DBUS_TYPE_ARRAY) {
         fprintf(stderr, "gsr error: gsr_dbus_screencast_start: missing array in response\n");
-        dbus_message_unref(msg);
+        dbus_message_unref(response_msg);
         return false;
     }
 
@@ -888,15 +855,14 @@ bool gsr_dbus_screencast_start(gsr_dbus *self, const char *session_handle, uint3
 
     if(*pipewire_node == 0) {
         fprintf(stderr, "gsr error: gsr_dbus_screencast_start: no pipewire node returned\n");
-        dbus_message_unref(msg);
-        return false;
+        goto error;
     }
 
-    dbus_message_unref(msg);
+    dbus_message_unref(response_msg);
     return true;
 
     error:
-    dbus_message_unref(msg);
+    dbus_message_unref(response_msg);
     return false;
 }
 
@@ -905,7 +871,7 @@ bool gsr_dbus_screencast_open_pipewire_remote(gsr_dbus *self, const char *sessio
     *pipewire_fd = -1;
 
     dict_entry args[1];
-    return gsr_dbus_call_screencast_method(self, "OpenPipeWireRemote", session_handle, NULL, args, 0, pipewire_fd);
+    return gsr_dbus_call_screencast_method(self, "OpenPipeWireRemote", session_handle, NULL, args, 0, pipewire_fd, NULL);
 }
 
 const char* gsr_dbus_screencast_get_restore_token(gsr_dbus *self) {

@@ -413,21 +413,17 @@ static bool gsr_dbus_call_screencast_method(gsr_dbus *self, const char *method_n
     return true;
 }
 
-static bool gsr_dbus_response_status_ok(DBusMessageIter *resp_args) {
+static int gsr_dbus_get_response_status(DBusMessageIter *resp_args) {
     if(dbus_message_iter_get_arg_type(resp_args) != DBUS_TYPE_UINT32) {
-        fprintf(stderr, "gsr error: gsr_dbus_extract_desktop_portal_response_is_ok: missing uint32 in response\n");
-        return false;
+        fprintf(stderr, "gsr error: gsr_dbus_get_response_status: missing uint32 in response\n");
+        return -1;
     }
 
     dbus_uint32_t response_status = 0;
     dbus_message_iter_get_basic(resp_args, &response_status);
-    if(response_status != 0) {
-        fprintf(stderr, "gsr error: gsr_dbus_extract_desktop_portal_response_is_ok: got status: %d, expected 0\n", response_status);
-        return false;
-    }
 
     dbus_message_iter_next(resp_args);
-    return true;
+    return (int)response_status;
 }
 
 static dict_entry* find_dict_entry_by_key(dict_entry *entries, int num_entries, const char *key) {
@@ -569,7 +565,7 @@ static bool gsr_dbus_get_map(DBusMessageIter *resp_args, dict_entry *entries, in
     return false;
 }
 
-bool gsr_dbus_screencast_create_session(gsr_dbus *self, char **session_handle) {
+int gsr_dbus_screencast_create_session(gsr_dbus *self, char **session_handle) {
     assert(session_handle);
     *session_handle = NULL;
 
@@ -591,7 +587,7 @@ bool gsr_dbus_screencast_create_session(gsr_dbus *self, char **session_handle) {
     DBusMessage *response_msg = NULL;
     if(!gsr_dbus_call_screencast_method(self, "CreateSession", NULL, NULL, args, 2, NULL, &response_msg)) {
         fprintf(stderr, "gsr error: gsr_dbus_screencast_create_session: failed to setup ScreenCast session. Make sure you have a desktop portal running with support for the ScreenCast interface and that the desktop portal matches the Wayland compositor you are running.\n");
-        return false;
+        return -1;
     }
 
     // TODO: Verify signal path matches |res|, maybe check the below
@@ -601,13 +597,13 @@ bool gsr_dbus_screencast_create_session(gsr_dbus *self, char **session_handle) {
     if(!dbus_message_iter_init(response_msg, &resp_args)) {
         fprintf(stderr, "gsr error: gsr_dbus_screencast_create_session: missing response\n");
         dbus_message_unref(response_msg);
-        return false;
+        return -1;
     }
 
-    if(!gsr_dbus_response_status_ok(&resp_args)) {
-        fprintf(stderr, "gsr error: gsr_dbus_screencast_create_session: failed to setup ScreenCast session. Make sure you have a desktop portal running with support for the ScreenCast interface and that the desktop portal matches the Wayland compositor you are running.\n");
+    const int response_status = gsr_dbus_get_response_status(&resp_args);
+    if(response_status != 0) {
         dbus_message_unref(response_msg);
-        return false;
+        return response_status;
     }
 
     dict_entry entries[1];
@@ -616,13 +612,13 @@ bool gsr_dbus_screencast_create_session(gsr_dbus *self, char **session_handle) {
     entries[0].value_type = DICT_TYPE_STRING;
     if(!gsr_dbus_get_map(&resp_args, entries, 1)) {
         dbus_message_unref(response_msg);
-        return false;
+        return -1;
     }
 
     if(!entries[0].str) {
         fprintf(stderr, "gsr error: gsr_dbus_screencast_create_session: missing \"session_handle\" in response\n");
         dbus_message_unref(response_msg);
-        return false;
+        return -1;
     }
 
     *session_handle = entries[0].str;
@@ -630,10 +626,10 @@ bool gsr_dbus_screencast_create_session(gsr_dbus *self, char **session_handle) {
     //free(entries[0].str);
 
     dbus_message_unref(response_msg);
-    return true;
+    return 0;
 }
 
-bool gsr_dbus_screencast_select_sources(gsr_dbus *self, const char *session_handle, gsr_portal_capture_type capture_type, gsr_portal_cursor_mode cursor_mode) {
+int gsr_dbus_screencast_select_sources(gsr_dbus *self, const char *session_handle, gsr_portal_capture_type capture_type, gsr_portal_cursor_mode cursor_mode) {
     assert(session_handle);
 
     char handle_token[64];
@@ -682,9 +678,9 @@ bool gsr_dbus_screencast_select_sources(gsr_dbus *self, const char *session_hand
             fprintf(stderr, "gsr warning: gsr_dbus_screencast_select_sources: SelectSources failed, retrying without restore_token\n");
             num_arg_dict = 5;
             if(!gsr_dbus_call_screencast_method(self, "SelectSources", session_handle, NULL, args, num_arg_dict, NULL, &response_msg))
-                return false;
+                return -1;
         } else {
-            return false;
+            return -1;
         }
     }
 
@@ -694,16 +690,18 @@ bool gsr_dbus_screencast_select_sources(gsr_dbus *self, const char *session_hand
     if(!dbus_message_iter_init(response_msg, &resp_args)) {
         fprintf(stderr, "gsr error: gsr_dbus_screencast_create_session: missing response\n");
         dbus_message_unref(response_msg);
-        return false;
+        return -1;
     }
 
-    if(!gsr_dbus_response_status_ok(&resp_args)) {
+    
+    const int response_status = gsr_dbus_get_response_status(&resp_args);
+    if(response_status != 0) {
         dbus_message_unref(response_msg);
-        return false;
+        return response_status;
     }
 
     dbus_message_unref(response_msg);
-    return true;
+    return 0;
 }
 
 static dbus_uint32_t screencast_stream_get_pipewire_node(DBusMessageIter *iter) {
@@ -724,7 +722,7 @@ static dbus_uint32_t screencast_stream_get_pipewire_node(DBusMessageIter *iter) 
     return 0;
 }
 
-bool gsr_dbus_screencast_start(gsr_dbus *self, const char *session_handle, uint32_t *pipewire_node) {
+int gsr_dbus_screencast_start(gsr_dbus *self, const char *session_handle, uint32_t *pipewire_node) {
     assert(session_handle);
     *pipewire_node = 0;
 
@@ -738,7 +736,7 @@ bool gsr_dbus_screencast_start(gsr_dbus *self, const char *session_handle, uint3
     
     DBusMessage *response_msg = NULL;
     if(!gsr_dbus_call_screencast_method(self, "Start", session_handle, "", args, 1, NULL, &response_msg))
-        return false;
+        return -1;
 
     // TODO: Verify signal path matches |res|, maybe check the below
     //fprintf(stderr, "signature: %s, sender: %s\n", dbus_message_get_signature(msg), dbus_message_get_sender(msg));
@@ -746,18 +744,19 @@ bool gsr_dbus_screencast_start(gsr_dbus *self, const char *session_handle, uint3
     if(!dbus_message_iter_init(response_msg, &resp_args)) {
         fprintf(stderr, "gsr error: gsr_dbus_screencast_start: missing response\n");
         dbus_message_unref(response_msg);
-        return false;
+        return -1;
     }
 
-    if(!gsr_dbus_response_status_ok(&resp_args)) {
+    const int response_status = gsr_dbus_get_response_status(&resp_args);
+    if(response_status != 0) {
         dbus_message_unref(response_msg);
-        return false;
+        return response_status;
     }
 
     if(dbus_message_iter_get_arg_type(&resp_args) != DBUS_TYPE_ARRAY) {
         fprintf(stderr, "gsr error: gsr_dbus_screencast_start: missing array in response\n");
         dbus_message_unref(response_msg);
-        return false;
+        return -1;
     }
 
     DBusMessageIter subiter;
@@ -859,11 +858,11 @@ bool gsr_dbus_screencast_start(gsr_dbus *self, const char *session_handle, uint3
     }
 
     dbus_message_unref(response_msg);
-    return true;
+    return 0;
 
     error:
     dbus_message_unref(response_msg);
-    return false;
+    return -1;
 }
 
 bool gsr_dbus_screencast_open_pipewire_remote(gsr_dbus *self, const char *session_handle, int *pipewire_fd) {

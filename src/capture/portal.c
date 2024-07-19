@@ -143,8 +143,6 @@ static void gsr_capture_portal_get_restore_token_from_cache(char *buffer, size_t
     long file_size = ftell(f);
     fseek(f, 0, SEEK_SET);
 
-    fprintf(stderr, "file size: %ld\n", file_size);
-
     if(file_size > 0 && file_size < 1024 && file_size < (long)buffer_size && (long)fread(buffer, 1, file_size, f) != file_size) {
         buffer[0] = '\0';
         fprintf(stderr, "gsr warning: gsr_capture_portal_get_restore_token_from_cache: failed to read restore token (%s)\n", restore_token_path);
@@ -159,9 +157,10 @@ static void gsr_capture_portal_get_restore_token_from_cache(char *buffer, size_t
     fclose(f);
 }
 
-static bool gsr_capture_portal_setup_dbus(gsr_capture_portal *self, int *pipewire_fd, uint32_t *pipewire_node) {
+static int gsr_capture_portal_setup_dbus(gsr_capture_portal *self, int *pipewire_fd, uint32_t *pipewire_node) {
     *pipewire_fd = 0;
     *pipewire_node = 0;
+    int response_status = 0;
 
     char restore_token[1024];
     restore_token[0] = '\0';
@@ -169,24 +168,27 @@ static bool gsr_capture_portal_setup_dbus(gsr_capture_portal *self, int *pipewir
         gsr_capture_portal_get_restore_token_from_cache(restore_token, sizeof(restore_token));
 
     if(!gsr_dbus_init(&self->dbus, restore_token))
-        return false;
+        return -1;
 
     fprintf(stderr, "gsr info: gsr_capture_portal_setup_dbus: CreateSession\n");
-    if(!gsr_dbus_screencast_create_session(&self->dbus, &self->session_handle)) {
+    response_status = gsr_dbus_screencast_create_session(&self->dbus, &self->session_handle);
+    if(response_status != 0) {
         fprintf(stderr, "gsr error: gsr_capture_portal_setup_dbus: CreateSession failed\n");
-        return false;
+        return response_status;
     }
 
     fprintf(stderr, "gsr info: gsr_capture_portal_setup_dbus: SelectSources\n");
-    if(!gsr_dbus_screencast_select_sources(&self->dbus, self->session_handle, GSR_PORTAL_CAPTURE_TYPE_ALL, self->params.record_cursor ? GSR_PORTAL_CURSOR_MODE_EMBEDDED : GSR_PORTAL_CURSOR_MODE_HIDDEN)) {
+    response_status = gsr_dbus_screencast_select_sources(&self->dbus, self->session_handle, GSR_PORTAL_CAPTURE_TYPE_ALL, self->params.record_cursor ? GSR_PORTAL_CURSOR_MODE_EMBEDDED : GSR_PORTAL_CURSOR_MODE_HIDDEN);
+    if(response_status != 0) {
         fprintf(stderr, "gsr error: gsr_capture_portal_setup_dbus: SelectSources failed\n");
-        return false;
+        return response_status;
     }
 
     fprintf(stderr, "gsr info: gsr_capture_portal_setup_dbus: Start\n");
-    if(!gsr_dbus_screencast_start(&self->dbus, self->session_handle, pipewire_node)) {
+    response_status = gsr_dbus_screencast_start(&self->dbus, self->session_handle, pipewire_node);
+    if(response_status != 0) {
         fprintf(stderr, "gsr error: gsr_capture_portal_setup_dbus: Start failed\n");
-        return false;
+        return response_status;
     }
 
     const char *screencast_restore_token = gsr_dbus_screencast_get_restore_token(&self->dbus);
@@ -196,11 +198,11 @@ static bool gsr_capture_portal_setup_dbus(gsr_capture_portal *self, int *pipewir
     fprintf(stderr, "gsr info: gsr_capture_portal_setup_dbus: OpenPipeWireRemote\n");
     if(!gsr_dbus_screencast_open_pipewire_remote(&self->dbus, self->session_handle, pipewire_fd)) {
         fprintf(stderr, "gsr error: gsr_capture_portal_setup_dbus: OpenPipeWireRemote failed\n");
-        return false;
+        return -1;
     }
 
     fprintf(stderr, "gsr info: gsr_capture_portal_setup_dbus: desktop portal setup finished\n");
-    return true;
+    return 0;
 }
 
 static bool gsr_capture_portal_get_frame_dimensions(gsr_capture_portal *self) {
@@ -236,10 +238,20 @@ static int gsr_capture_portal_start(gsr_capture *cap, AVCodecContext *video_code
 
     int pipewire_fd = 0;
     uint32_t pipewire_node = 0;
-    if(!gsr_capture_portal_setup_dbus(self, &pipewire_fd, &pipewire_node)) {
-        fprintf(stderr, "gsr error: gsr_capture_portal_start: desktop portal capture failed. Either you canceled the desktop portal or your Wayland compositor doesn't support desktop portal capture or it's incorrectly setup on your system\n");
+    const int response_status = gsr_capture_portal_setup_dbus(self, &pipewire_fd, &pipewire_node);
+    if(response_status != 0) {
         gsr_capture_portal_stop(self);
-        return 50;
+        // Response status values:
+        // 0: Success, the request is carried out
+        // 1: The user cancelled the interaction
+        // 2: The user interaction was ended in some other way
+        // Response status value 2 happens usually if there was some kind of error in the desktop portal on the system
+        if(response_status == 2) {
+            fprintf(stderr, "gsr error: gsr_capture_portal_start: desktop portal capture failed. Either you canceled the desktop portal or your Wayland compositor doesn't support desktop portal capture or it's incorrectly setup on your system\n");
+            return 50;
+        } else {
+            return -1;
+        }
     }
 
     fprintf(stderr, "gsr info: gsr_capture_portal_start: setting up pipewire\n");

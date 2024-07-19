@@ -237,6 +237,7 @@ static int gsr_capture_portal_start(gsr_capture *cap, AVCodecContext *video_code
     int pipewire_fd = 0;
     uint32_t pipewire_node = 0;
     if(!gsr_capture_portal_setup_dbus(self, &pipewire_fd, &pipewire_node)) {
+        fprintf(stderr, "gsr error: gsr_capture_portal_start: desktop portal capture failed. Either you canceled the desktop portal or your Wayland compositor doesn't support desktop portal capture or it's incorrectly setup on your system\n");
         gsr_capture_portal_stop(self);
         return 50;
     }

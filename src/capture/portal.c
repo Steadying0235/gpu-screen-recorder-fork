@@ -15,9 +15,6 @@
 typedef struct {
     gsr_capture_portal_params params;
 
-    bool should_stop;
-    bool stop_is_error;
-
     unsigned int input_texture_id;
     unsigned int cursor_texture_id;
 
@@ -328,16 +325,10 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
 }
 
 static bool gsr_capture_portal_should_stop(gsr_capture *cap, bool *err) {
-    gsr_capture_portal *cap_portal = cap->priv;
-    if(cap_portal->should_stop) {
-        if(err)
-            *err = cap_portal->stop_is_error;
-        return true;
-    }
-
+    gsr_capture_portal *self = cap->priv;
     if(err)
         *err = false;
-    return false;
+    return gsr_pipewire_recording_stopped(&self->pipewire);
 }
 
 static void gsr_capture_portal_capture_end(gsr_capture *cap, AVFrame *frame) {

@@ -246,6 +246,14 @@ static void on_param_changed_cb(void *user_data, uint32_t id, const struct spa_p
 static void on_state_changed_cb(void *user_data, enum pw_stream_state old, enum pw_stream_state state, const char *error) {
     (void)old;
     gsr_pipewire *self = user_data;
+    if(state == PW_STREAM_STATE_STREAMING)
+        self->started = true;
+
+    if(self->started && state == PW_STREAM_STATE_PAUSED) {
+        self->started = false;
+        self->stopped = true;
+    }
+
     fprintf(stderr, "gsr info: pipewire: stream %p state: \"%s\" (error: %s)\n",
          (void*)self->stream, pw_stream_state_as_string(state),
          error ? error : "none");
@@ -626,4 +634,8 @@ bool gsr_pipewire_map_texture(gsr_pipewire *self, unsigned int texture_id, unsig
 
     pthread_mutex_unlock(&self->mutex);
     return true;
+}
+
+bool gsr_pipewire_recording_stopped(gsr_pipewire *self) {
+    return self->stopped;
 }

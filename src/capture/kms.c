@@ -25,9 +25,6 @@ typedef struct {
 
 typedef struct {
     gsr_capture_kms_params params;
-
-    bool should_stop;
-    bool stop_is_error;
     
     gsr_kms_client kms_client;
     gsr_kms_response kms_response;
@@ -477,13 +474,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
 }
 
 static bool gsr_capture_kms_should_stop(gsr_capture *cap, bool *err) {
-    gsr_capture_kms *cap_kms = cap->priv;
-    if(cap_kms->should_stop) {
-        if(err)
-            *err = cap_kms->stop_is_error;
-        return true;
-    }
-
+    (void)cap;
     if(err)
         *err = false;
     return false;

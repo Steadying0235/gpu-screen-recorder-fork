@@ -56,9 +56,6 @@ On nvidia some games apparently causes the game to appear to stutter (without dr
 
 Support "screen" (all monitors) capture on wayland. This should be done by getting all drm fds and multiple EGL_DMA_BUF_PLANEX_FD_EXT to create one egl image with all fds combined.
 
-Support pipewire screen capture?
-CPU usage is pretty high on AMD/Intel/(Nvidia(wayland)), why? opening and closing fds, creating egl, cuda association, is slow when done every frame. Test if desktop portal screencast has better performance.
-
 Capture is broken on amd on wlroots. It's disabled at the moment and instead uses kms capture. Find out why we get a black screen in wlroots.
 
 Support vulkan video encoding. That might workaround forced p2 state nvidia driver "bug". Ffmpeg supports vulkan video encoding if it's encoding with --enable-vulkan

@@ -1085,7 +1085,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -restore-portal-session\n");
     fprintf(stderr, "        If GPU Screen Recorder should use the same capture option as the last time. Using this option removes the popup asking what you want to record the next time you record with '-w portal' if you selected the option to save session (token) in the desktop portal screencast popup.\n");
-    fprintf(stderr, "        This option may not have any effect on all Wayland compositors. Optional, set to 'no' by default.\n");
+    fprintf(stderr, "        This option may not have any effect on your Wayland compositor and your systems desktop portal needs to support ScreenCast version 5 or later. Optional, set to 'no' by default.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -encoder\n");
     fprintf(stderr, "        Which device should be used for video encoding. Should either be 'gpu' or 'cpu'. Does currently only work with h264 codec option (-k).\n");

@@ -238,7 +238,7 @@ static int gsr_capture_portal_start(gsr_capture *cap, AVCodecContext *video_code
     uint32_t pipewire_node = 0;
     if(!gsr_capture_portal_setup_dbus(self, &pipewire_fd, &pipewire_node)) {
         gsr_capture_portal_stop(self);
-        return -1;
+        return 50;
     }
 
     fprintf(stderr, "gsr info: gsr_capture_portal_start: setting up pipewire\n");

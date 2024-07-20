@@ -247,8 +247,11 @@ static int gsr_capture_portal_start(gsr_capture *cap, AVCodecContext *video_code
         // 2: The user interaction was ended in some other way
         // Response status value 2 happens usually if there was some kind of error in the desktop portal on the system
         if(response_status == 2) {
-            fprintf(stderr, "gsr error: gsr_capture_portal_start: desktop portal capture failed. Either you canceled the desktop portal or your Wayland compositor doesn't support desktop portal capture or it's incorrectly setup on your system\n");
+            fprintf(stderr, "gsr error: gsr_capture_portal_start: desktop portal capture failed. Either you Wayland compositor doesn't support desktop portal capture or it's incorrectly setup on your system\n");
             return 50;
+        } else if(response_status == 1) {
+            fprintf(stderr, "gsr error: gsr_capture_portal_start: desktop portal capture failed. It seems like desktop portal capture was canceled by the user.\n");
+            return 60;
         } else {
             return -1;
         }

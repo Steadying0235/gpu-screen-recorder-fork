@@ -1676,7 +1676,7 @@ static void list_supported_capture_options(gsr_egl *egl, bool wayland) {
         return;
 
     char *session_handle = NULL;
-    if(gsr_dbus_screencast_create_session(&dbus, &session_handle)) {
+    if(gsr_dbus_screencast_create_session(&dbus, &session_handle) == 0) {
         free(session_handle);
         puts("portal");
     }

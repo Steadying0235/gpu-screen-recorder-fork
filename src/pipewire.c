@@ -9,6 +9,8 @@
 
 #include <fcntl.h>
 
+/* This code is partially based on xr-video-player pipewire implementation which is based on obs-studio's pipewire implementation */
+
 /* TODO: Make gsr_pipewire_init asynchronous */
 /* TODO: Support 10-bit capture (hdr) when pipewire supports it */
 /* TODO: Test all of the image formats */

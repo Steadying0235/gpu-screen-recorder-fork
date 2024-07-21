@@ -287,7 +287,8 @@ static int max_int(int a, int b) {
     return a > b ? a : b;
 }
 
-static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
+static int gsr_capture_portal_capture(gsr_capture *cap, AVStream *video_stream, AVFrame *frame, gsr_color_conversion *color_conversion) {
+    (void)video_stream;
     (void)frame;
     (void)color_conversion;
     gsr_capture_portal *self = cap->priv;

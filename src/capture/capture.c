@@ -24,9 +24,9 @@ bool gsr_capture_should_stop(gsr_capture *cap, bool *err) {
         return false;
 }
 
-int gsr_capture_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
+int gsr_capture_capture(gsr_capture *cap, AVStream *video_stream, AVFrame *frame, gsr_color_conversion *color_conversion) {
     assert(cap->started);
-    return cap->capture(cap, frame, color_conversion);
+    return cap->capture(cap, video_stream, frame, color_conversion);
 }
 
 void gsr_capture_capture_end(gsr_capture *cap, AVFrame *frame) {

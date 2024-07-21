@@ -378,8 +378,9 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     return -1;
 }
 
-static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
+static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVStream *video_stream, AVFrame *frame, gsr_color_conversion *color_conversion) {
     gsr_capture_nvfbc *cap_nvfbc = cap->priv;
+    (void)video_stream;
 
     const double nvfbc_recreate_retry_time_seconds = 1.0;
     if(cap_nvfbc->nvfbc_needs_recreate) {

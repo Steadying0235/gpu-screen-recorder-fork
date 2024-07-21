@@ -868,9 +868,7 @@ int gsr_dbus_screencast_start(gsr_dbus *self, const char *session_handle, uint32
 bool gsr_dbus_screencast_open_pipewire_remote(gsr_dbus *self, const char *session_handle, int *pipewire_fd) {
     assert(session_handle);
     *pipewire_fd = -1;
-
-    dict_entry args[1];
-    return gsr_dbus_call_screencast_method(self, "OpenPipeWireRemote", session_handle, NULL, args, 0, pipewire_fd, NULL);
+    return gsr_dbus_call_screencast_method(self, "OpenPipeWireRemote", session_handle, NULL, NULL, 0, pipewire_fd, NULL);
 }
 
 const char* gsr_dbus_screencast_get_restore_token(gsr_dbus *self) {

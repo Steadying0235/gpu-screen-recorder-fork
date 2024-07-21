@@ -121,8 +121,6 @@ Go back to using pure vaapi without opengl for video encoding? rotation (transpo
 
 Implement scaling and use lanczos resampling for better quality. Lanczos resampling can also be used for YUV chroma for better color quality on small text.
 
-Try fixing HDR by passing HDR+10 data as well, and in the packet. Run "ffprobe -loglevel quiet -read_intervals "%+#2" -select_streams v:0 -show_entries side_data video.mp4" to test if the file has correct metadata.
-
 Flac is disabled because the frame sizes are too large which causes big audio/video desync.
 
 Add 10-bit capture option. This is good because it reduces banding and quality in very dark areas while reducing the file size compared to doing the same thing with 8-bits.
@@ -139,7 +137,6 @@ Remove is_damaged and clear_damage and return a value from capture function inst
 
 When adding support for steam deck, add option to send video to another computer.
 New gpu screen recorder gui should have the option to cut the video directly, maybe running an ffmpeg command or implementing that ourselves. Only support gpu screen recorder video files.
-Add hdr metadata to encoder settings metadata.
 
 Check if is software renderer by using eglQueryDisplayAttribEXT(egl_display, EGL_DEVICE_EXT..) eglQueryDeviceStringEXT(egl_device, EGL_EXTENSIONS) and check for "EGL_MESA_device_software".
 
@@ -154,3 +151,7 @@ Cleanup pipewire code and add more error checks.
 Detect if recording monitor on intel and plane is compressed. In that case give an error and tell the user to use -w portal instead.
 
 Make dbus code and pipewire setup non blocking.
+
+Support portal (pipewire) hdr capture when pipewire adds support for it.
+
+HDR support on x11?

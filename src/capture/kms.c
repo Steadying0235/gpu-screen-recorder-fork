@@ -12,6 +12,7 @@
 
 #include <libavcodec/avcodec.h>
 #include <libavutil/mastering_display_metadata.h>
+#include <libavformat/avformat.h>
 
 #define HDMI_STATIC_METADATA_TYPE1 0
 #define HDMI_EOTF_SMPTE_ST2084 2
@@ -35,6 +36,8 @@ typedef struct {
 
     AVMasteringDisplayMetadata *mastering_display_metadata;
     AVContentLightMetadata *light_metadata;
+    size_t light_metadata_size;
+    bool hdr_metadata_set;
 
     gsr_monitor_rotation monitor_rotation;
 
@@ -229,12 +232,26 @@ static bool hdr_metadata_is_supported_format(const struct hdr_output_metadata *h
         hdr_metadata->hdmi_metadata_type1.eotf == HDMI_EOTF_SMPTE_ST2084;
 }
 
-static void gsr_kms_set_hdr_metadata(gsr_capture_kms *self, AVFrame *frame, gsr_kms_response_fd *drm_fd) {
-    if(!self->mastering_display_metadata)
-        self->mastering_display_metadata = av_mastering_display_metadata_create_side_data(frame);
+static void gsr_kms_set_hdr_metadata(gsr_capture_kms *self, AVStream *video_stream, gsr_kms_response_fd *drm_fd) {
+    if(self->hdr_metadata_set)
+        return;
 
     if(!self->light_metadata)
-        self->light_metadata = av_content_light_metadata_create_side_data(frame);
+        self->light_metadata = av_content_light_metadata_alloc(&self->light_metadata_size);
+
+    if(!self->mastering_display_metadata)
+        self->mastering_display_metadata = av_mastering_display_metadata_alloc();
+
+    if(self->light_metadata) {
+        self->light_metadata->MaxCLL = drm_fd->hdr_metadata.hdmi_metadata_type1.max_cll;
+        self->light_metadata->MaxFALL = drm_fd->hdr_metadata.hdmi_metadata_type1.max_fall;
+
+        #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(60, 31, 102)
+        av_stream_add_side_data(video_stream, AV_PKT_DATA_CONTENT_LIGHT_LEVEL, self->light_metadata, self->light_metadata_size);
+        #else
+        av_packet_side_data_add(&video_stream->codecpar->coded_side_data, &video_stream->codecpar->nb_coded_side_data, AV_PKT_DATA_CONTENT_LIGHT_LEVEL, self->light_metadata, self->light_metadata_size, 0);
+        #endif
+    }
 
     if(self->mastering_display_metadata) {
         for(int i = 0; i < 3; ++i) {
@@ -250,12 +267,15 @@ static void gsr_kms_set_hdr_metadata(gsr_capture_kms *self, AVFrame *frame, gsr_
 
         self->mastering_display_metadata->has_primaries = self->mastering_display_metadata->display_primaries[0][0].num > 0;
         self->mastering_display_metadata->has_luminance = self->mastering_display_metadata->max_luminance.num > 0;
+
+        #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(60, 31, 102)
+        av_stream_add_side_data(video_stream, AV_PKT_DATA_MASTERING_DISPLAY_METADATA, self->mastering_display_metadata, sizeof(*self->mastering_display_metadata));
+        #else
+        av_packet_side_data_add(&video_stream->codecpar->coded_side_data, &video_stream->codecpar->nb_coded_side_data, AV_PKT_DATA_MASTERING_DISPLAY_METADATA, self->mastering_display_metadata, sizeof(*self->mastering_display_metadata), 0);
+        #endif
     }
 
-    if(self->light_metadata) {
-        self->light_metadata->MaxCLL = drm_fd->hdr_metadata.hdmi_metadata_type1.max_cll;
-        self->light_metadata->MaxFALL = drm_fd->hdr_metadata.hdmi_metadata_type1.max_fall;
-    }
+    self->hdr_metadata_set = true;
 }
 
 static vec2i swap_vec2i(vec2i value) {
@@ -283,7 +303,7 @@ static bool is_plane_compressed(uint64_t modifier) {
     return false;
 }
 
-static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
+static int gsr_capture_kms_capture(gsr_capture *cap, AVStream *video_stream, AVFrame *frame, gsr_color_conversion *color_conversion) {
     gsr_capture_kms *self = cap->priv;
     const bool screen_plane_use_modifiers = self->params.egl->gpu_info.vendor != GSR_GPU_VENDOR_AMD;
     const bool cursor_texture_id_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
@@ -334,7 +354,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         cursor_drm_fd = NULL;
 
     if(drm_fd->has_hdr_metadata && self->params.hdr && hdr_metadata_is_supported_format(&drm_fd->hdr_metadata))
-        gsr_kms_set_hdr_metadata(self, frame, drm_fd);
+        gsr_kms_set_hdr_metadata(self, video_stream, drm_fd);
 
     // TODO: This causes a crash sometimes on steam deck, why? is it a driver bug? a vaapi pure version doesn't cause a crash.
     // Even ffmpeg kmsgrab causes this crash. The error is:

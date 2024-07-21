@@ -1047,8 +1047,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'hevc', 'av1', 'hevc_hdr', 'av1_hdr', 'vp8' or 'vp9'. Optional, set to 'auto' by default which defaults to 'h264'.\n");
     fprintf(stderr, "        Forcefully set to 'h264' if the file container type is 'flv'.\n");
-    fprintf(stderr, "        'hevc_hdr' and 'av1_hdr' option is not available on X11.\n");
-    fprintf(stderr, "        Note: hdr metadata is not included in the video when recording with 'hevc_hdr'/'av1_hdr' because of bugs in AMD, Intel and NVIDIA drivers (amazin', they are all bugged).\n");
+    fprintf(stderr, "        'hevc_hdr' and 'av1_hdr' option is not available on X11 nor when using the portal capture option.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -ac   Audio codec to use. Should be either 'aac', 'opus' or 'flac'. Optional, set to 'opus' for .mp4/.mkv files, otherwise set to 'aac'.\n");
     fprintf(stderr, "        'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
@@ -3099,7 +3098,7 @@ int main(int argc, char **argv) {
             const int num_frames = framerate_mode == FramerateMode::CONSTANT ? std::max((int64_t)0LL, expected_frames - video_pts_counter) : 1;
 
             if(num_frames > 0 && !paused) {
-                gsr_capture_capture(capture, video_frame, &color_conversion);
+                gsr_capture_capture(capture, video_stream, video_frame, &color_conversion);
                 gsr_video_encoder_copy_textures_to_frame(video_encoder, video_frame);
 
                 // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again

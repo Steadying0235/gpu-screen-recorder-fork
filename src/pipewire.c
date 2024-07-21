@@ -8,6 +8,7 @@
 #include <libdrm/drm_fourcc.h>
 
 #include <fcntl.h>
+#include <unistd.h>
 
 /* This code is partially based on xr-video-player pipewire implementation which is based on obs-studio's pipewire implementation */
 

@@ -31,7 +31,6 @@ typedef void* EGLSurface;
 typedef void* EGLContext;
 typedef void* EGLClientBuffer;
 typedef void* EGLImage;
-typedef void* EGLImageKHR;
 typedef void *GLeglImageOES;
 typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 typedef struct __GLXFBConfigRec *GLXFBConfig;
@@ -122,8 +121,6 @@ typedef void(*__GLXextFuncPtr)(void);
 #define GL_COMPILE_STATUS                       0x8B81
 #define GL_LINK_STATUS                          0x8B82
 
-typedef unsigned int (*FUNC_eglExportDMABUFImageQueryMESA)(EGLDisplay dpy, EGLImageKHR image, int *fourcc, int *num_planes, uint64_t *modifiers);
-typedef unsigned int (*FUNC_eglExportDMABUFImageMESA)(EGLDisplay dpy, EGLImageKHR image, int *fds, int32_t *strides, int32_t *offsets);
 typedef void (*FUNC_glEGLImageTargetTexture2DOES)(unsigned int target, GLeglImageOES image);
 typedef GLXContext (*FUNC_glXCreateContextAttribsARB)(Display *dpy, GLXFBConfig config, GLXContext share_context, Bool direct, const int *attrib_list);
 typedef void (*FUNC_glXSwapIntervalEXT)(Display * dpy, GLXDrawable drawable, int interval);
@@ -132,6 +129,7 @@ typedef int (*FUNC_glXSwapIntervalSGI)(int interval);
 typedef void (*GLDEBUGPROC)(unsigned int source, unsigned int type, unsigned int id, unsigned int severity, int length, const char *message, const void *userParam);
 typedef int (*FUNC_eglQueryDisplayAttribEXT)(EGLDisplay dpy, int32_t attribute, intptr_t *value);
 typedef const char* (*FUNC_eglQueryDeviceStringEXT)(void *device, int32_t name);
+typedef int (*FUNC_eglQueryDmaBufModifiersEXT)(EGLDisplay dpy, int32_t format, int32_t max_modifiers, uint64_t *modifiers, int *external_only, int32_t *num_modifiers);
 
 #define GSR_MAX_OUTPUTS 32
 
@@ -203,11 +201,10 @@ struct gsr_egl {
     unsigned int (*eglBindAPI)(unsigned int api);
     __eglMustCastToProperFunctionPointerType (*eglGetProcAddress)(const char *procname);
 
-    FUNC_eglExportDMABUFImageQueryMESA eglExportDMABUFImageQueryMESA;
-    FUNC_eglExportDMABUFImageMESA eglExportDMABUFImageMESA;
     FUNC_glEGLImageTargetTexture2DOES glEGLImageTargetTexture2DOES;
     FUNC_eglQueryDisplayAttribEXT eglQueryDisplayAttribEXT;
     FUNC_eglQueryDeviceStringEXT eglQueryDeviceStringEXT;
+    FUNC_eglQueryDmaBufModifiersEXT eglQueryDmaBufModifiersEXT;
 
     __GLXextFuncPtr (*glXGetProcAddress)(const unsigned char *procName);
     GLXFBConfig* (*glXChooseFBConfig)(Display *dpy, int screen, const int *attribList, int *nitems);

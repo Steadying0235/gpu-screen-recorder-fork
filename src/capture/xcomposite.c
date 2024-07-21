@@ -133,16 +133,6 @@ static int gsr_capture_xcomposite_start(gsr_capture *cap, AVCodecContext *video_
     // TODO: Get select and add these on top of it and then restore at the end. Also do the same in other xcomposite
     XSelectInput(self->params.egl->x11.dpy, self->window, StructureNotifyMask | ExposureMask);
 
-    if(!self->params.egl->eglExportDMABUFImageQueryMESA) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_start: could not find eglExportDMABUFImageQueryMESA\n");
-        return -1;
-    }
-
-    if(!self->params.egl->eglExportDMABUFImageMESA) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_start: could not find eglExportDMABUFImageMESA\n");
-        return -1;
-    }
-
     /* Disable vsync */
     self->params.egl->eglSwapInterval(self->params.egl->egl_display, 0);
     if(window_texture_init(&self->window_texture, self->params.egl->x11.dpy, self->window, self->params.egl) != 0 && !self->params.follow_focused) {

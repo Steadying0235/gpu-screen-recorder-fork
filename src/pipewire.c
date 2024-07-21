@@ -313,7 +313,7 @@ static inline struct spa_pod *build_format(struct spa_pod_builder *b,
     return spa_pod_builder_pop(b, &format_frame);
 }
 
-#define NUM_FORMATS 10
+#define NUM_VIDEO_FORMATS 10
 
 /* https://gstreamer.freedesktop.org/documentation/additional/design/mediatype-video-raw.html?gi-language=c#formats */
 /* For some reason gstreamer formats are in opposite order to drm formats */
@@ -334,28 +334,56 @@ static int64_t spa_video_format_to_drm_format(const enum spa_video_format format
     return DRM_FORMAT_INVALID;
 }
 
+static const enum spa_video_format supported_video_formats[] = {
+    SPA_VIDEO_FORMAT_BGRx,
+    SPA_VIDEO_FORMAT_BGRA,
+    SPA_VIDEO_FORMAT_ABGR,
+    SPA_VIDEO_FORMAT_xBGR,
+    SPA_VIDEO_FORMAT_BGR,
+    SPA_VIDEO_FORMAT_RGBx,
+    SPA_VIDEO_FORMAT_xRGB,
+    SPA_VIDEO_FORMAT_RGBA,
+    SPA_VIDEO_FORMAT_ARGB,
+    SPA_VIDEO_FORMAT_RGB,
+};
+
+static void spa_video_format_get_modifiers(gsr_pipewire *self, const enum spa_video_format format, uint64_t *modifiers, int32_t max_modifiers, int32_t *num_modifiers) {
+    *num_modifiers = 0;
+
+    if(!self->egl->eglQueryDmaBufModifiersEXT) {
+        fprintf(stderr, "gsr error: spa_video_format_get_modifiers: failed to initialize modifiers because eglQueryDmaBufModifiersEXT is not available\n");
+        modifiers[0] = DRM_FORMAT_MOD_LINEAR;
+        modifiers[1] = DRM_FORMAT_MOD_INVALID;
+        *num_modifiers = 2;
+        return;
+    }
+
+    const int64_t drm_format = spa_video_format_to_drm_format(format);
+    if(!self->egl->eglQueryDmaBufModifiersEXT(self->egl->egl_display, drm_format, max_modifiers, modifiers, NULL, num_modifiers)) {
+        fprintf(stderr, "gsr error: spa_video_format_get_modifiers: eglQueryDmaBufModifiersEXT failed with drm format %" PRIi64 "\n", drm_format);
+        modifiers[0] = DRM_FORMAT_MOD_LINEAR;
+        modifiers[1] = DRM_FORMAT_MOD_INVALID;
+        *num_modifiers = 2;
+        return;
+    }
+
+    if(*num_modifiers + 2 <= max_modifiers) {
+        modifiers[*num_modifiers + 0] = DRM_FORMAT_MOD_LINEAR;
+        modifiers[*num_modifiers + 1] = DRM_FORMAT_MOD_INVALID;
+        *num_modifiers += 2;
+    }
+}
+
 static bool gsr_pipewire_build_format_params(gsr_pipewire *self, struct spa_pod_builder *pod_builder, struct spa_pod **params) {
     if(!check_pw_version(&self->server_version, 0, 3, 33))
         return false;
 
-    const enum spa_video_format formats[] = {
-        SPA_VIDEO_FORMAT_RGBx,
-        SPA_VIDEO_FORMAT_BGRx,
-        SPA_VIDEO_FORMAT_xRGB,
-        SPA_VIDEO_FORMAT_xBGR,
-        SPA_VIDEO_FORMAT_RGBA,
-        SPA_VIDEO_FORMAT_BGRA,
-        SPA_VIDEO_FORMAT_ARGB,
-        SPA_VIDEO_FORMAT_ABGR,
-        SPA_VIDEO_FORMAT_RGB,
-        SPA_VIDEO_FORMAT_BGR,
-    };
-
-    const uint64_t modifiers[] = { DRM_FORMAT_MOD_LINEAR, DRM_FORMAT_MOD_INVALID };
-
-    for (size_t i = 0; i < NUM_FORMATS; i++) {
-        enum spa_video_format format = formats[i];
-        params[i] = build_format(pod_builder, &self->video_info, format, modifiers, 2);
+    uint64_t modifiers[1024];
+    int32_t num_modifiers = 0;
+    for(size_t i = 0; i < NUM_VIDEO_FORMATS; i++) {
+        const enum spa_video_format format = supported_video_formats[i];
+        spa_video_format_get_modifiers(self, format, modifiers, sizeof(modifiers), &num_modifiers);
+        params[i] = build_format(pod_builder, &self->video_info, format, modifiers, num_modifiers);
     }
 
     return true;
@@ -367,7 +395,7 @@ static void renegotiate_format(void *data, uint64_t expirations) {
 
     pw_thread_loop_lock(self->thread_loop);
 
-    struct spa_pod *params[NUM_FORMATS];
+    struct spa_pod *params[NUM_VIDEO_FORMATS];
     uint8_t params_buffer[2048];
     struct spa_pod_builder pod_builder = SPA_POD_BUILDER_INIT(params_buffer, sizeof(params_buffer));
     if (!gsr_pipewire_build_format_params(self, &pod_builder, params)) {
@@ -375,12 +403,12 @@ static void renegotiate_format(void *data, uint64_t expirations) {
         return;
     }
 
-    pw_stream_update_params(self->stream, (const struct spa_pod**)params, NUM_FORMATS);
+    pw_stream_update_params(self->stream, (const struct spa_pod**)params, NUM_VIDEO_FORMATS);
     pw_thread_loop_unlock(self->thread_loop);
 }
 
 static bool gsr_pipewire_setup_stream(gsr_pipewire *self) {
-    struct spa_pod *params[NUM_FORMATS];
+    struct spa_pod *params[NUM_VIDEO_FORMATS];
     uint8_t params_buffer[2048];
     struct spa_pod_builder pod_builder = SPA_POD_BUILDER_INIT(params_buffer, sizeof(params_buffer));
 
@@ -445,7 +473,7 @@ static bool gsr_pipewire_setup_stream(gsr_pipewire *self) {
     if(pw_stream_connect(
         self->stream, PW_DIRECTION_INPUT, self->node,
         PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS, (const struct spa_pod**)params,
-        NUM_FORMATS) < 0)
+        NUM_VIDEO_FORMATS) < 0)
     {
         pw_thread_loop_unlock(self->thread_loop);
         fprintf(stderr, "gsr error: gsr_pipewire_setup_stream: failed to connect stream\n");

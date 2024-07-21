@@ -232,6 +232,7 @@ static bool hdr_metadata_is_supported_format(const struct hdr_output_metadata *h
         hdr_metadata->hdmi_metadata_type1.eotf == HDMI_EOTF_SMPTE_ST2084;
 }
 
+// TODO: Check if this hdr data can be changed after the call to av_packet_side_data_add
 static void gsr_kms_set_hdr_metadata(gsr_capture_kms *self, AVStream *video_stream, gsr_kms_response_fd *drm_fd) {
     if(self->hdr_metadata_set)
         return;

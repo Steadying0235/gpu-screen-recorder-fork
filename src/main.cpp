@@ -1070,7 +1070,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -mf   Organise replays in folders based on the current date.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -sc   Run a script on the saved video file (non-blocking). The first argument to the script is the filepath to the saved video file and the second argument is the recording type (either \"regular\" or \"replay\").\n");
+    fprintf(stderr, "  -sc   Run a script on the saved video file (asynchronously). The first argument to the script is the filepath to the saved video file and the second argument is the recording type (either \"regular\" or \"replay\").\n");
     fprintf(stderr, "        Not applicable for live streams.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -cursor\n");

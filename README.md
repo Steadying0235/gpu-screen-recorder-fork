@@ -94,19 +94,24 @@ dbus\
 libpipewire (and libspa which is usually part of libpipewire)
 
 # How to use
-Run `gpu-screen-recorder --help` to see all options.
+Run `gpu-screen-recorder --help` to see all options and also examples.
 ## Recording
-Here is an example of how to record all monitors and the default audio output: `gpu-screen-recorder -w screen -f 60 -a "$(pactl get-default-sink).monitor" -o ~/Videos/test_video.mp4` then stop the screen recorder with `Ctrl+C`, which will also save the recording. You can record a single monitor if you change `-w screen` to the name of a monitor, which you can find if you run the `xrandr`. An example of a monitor name is HDMI-1.
+Here is an example of how to record your monitor and the default audio output: `gpu-screen-recorder -w screen -f 60 -a "$(pactl get-default-sink).monitor" -o ~/Videos/test_video.mp4`.
+Yyou can stop and save the recording with `Ctrl+C` or by running `killall -SIGINT gpu-screen-recorder`.
+You can see a list of monitor names to record if you use an invalid monitor name, for example: `gpu-screen-recorder -w invalid -f 60 -o video.mp4`.
 ## Streaming
-Streaming works the same as recording, but the `-o` argument should be path to the live streaming service you want to use (including your live streaming key). Take a look at scripts/twitch-stream.sh to see an example of how to stream to twitch.
+Streaming works the same as recording, but the `-o` argument should be path to the live streaming service you want to use (including your live streaming key). Take a look at `scripts/twitch-stream.sh` to see an example of how to stream to twitch.
 ## Replay mode
 Run `gpu-screen-recorder` with the `-c mp4` and `-r` option, for example: `gpu-screen-recorder -w screen -f 60 -r 30 -c mp4 -o ~/Videos`. Note that in this case, `-o` should point to a directory.\
 If `-mf yes` is set, replays are save in folders based on the date.
-To save a video in replay mode, you need to send signal SIGUSR1 to gpu screen recorder. You can do this by running `killall -SIGUSR1 gpu-screen-recorder`.\
-To stop recording send SIGINT to gpu screen recorder. You can do this by running `killall -SIGINT gpu-screen-recorder` or pressing `Ctrl-C` in the terminal that runs gpu screen recorder.\
-To pause/unpause recording send SIGUSR2 to gpu screen recorder. You can do this by running `killall -SIGUSR2 gpu-screen-recorder`. This is only applicable and useful when recording (not streaming nor replay).\
-The file path to the saved replay is output to stdout. All other output from GPU Screen Recorder is output to stderr.\
+The file path to the saved replay is output to stdout. All other output from GPU Screen Recorder are output to stderr.
+You can also use the `-sc` option to specify a script that should be run (asynchronously) when the video has been saved and the script will have access to the location of the saved file as its first argument.
+This can be used for example to show a notification when a replay has been saved, to rename the video with a title that matches the game played (see `scripts/record-save-application-name.sh` as an example on how to do this on X11) or to re-encode the video.\
 The replay buffer is stored in ram (as encoded video), so don't use a too large replay time and/or video quality unless you have enough ram to store it.
+## Controlling GPU Screen Recorder remotely
+To save a video in replay mode, you need to send signal SIGUSR1 to gpu screen recorder. You can do this by running `killall -SIGUSR1 gpu-screen-recorder`.\
+To stop recording send SIGINT to gpu screen recorder. You can do this by running `killall -SIGINT gpu-screen-recorder` or pressing `Ctrl-C` in the terminal that runs gpu screen recorder. When recording a regular non-replay video this will also save the video.\
+To pause/unpause recording send SIGUSR2 to gpu screen recorder. You can do this by running `killall -SIGUSR2 gpu-screen-recorder`. This is only applicable and useful when recording (not streaming nor replay).\
 ## Finding audio device name
 You can find the default output audio device (headset, speakers (in other words, desktop audio)) with the command `pactl get-default-sink`. Add `monitor` to the end of that to use that as an audio input in gpu screen recorder.\
 You can find the default input audio device (microphone) with the command `pactl get-default-source`. This input should not have `monitor` added to the end when used in gpu screen recorder.\

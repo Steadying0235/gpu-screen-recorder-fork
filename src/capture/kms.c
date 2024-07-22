@@ -311,7 +311,6 @@ static bool is_plane_compressed(uint64_t modifier) {
 
 static int gsr_capture_kms_capture(gsr_capture *cap, AVStream *video_stream, AVFrame *frame, gsr_color_conversion *color_conversion) {
     gsr_capture_kms *self = cap->priv;
-    const bool screen_plane_use_modifiers = self->params.egl->gpu_info.vendor != GSR_GPU_VENDOR_AMD;
     const bool cursor_texture_id_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
 
     //egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -402,7 +401,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVStream *video_stream, AVF
 
     intptr_t img_attr[44];
     setup_dma_buf_attrs(img_attr, drm_fd->pixel_format, drm_fd->width, drm_fd->height,
-        fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs, screen_plane_use_modifiers);
+        fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs, true);
 
     EGLImage image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
     self->params.egl->glBindTexture(GL_TEXTURE_2D, self->input_texture_id);

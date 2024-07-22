@@ -84,6 +84,7 @@ typedef struct {
 
     bool started;
     bool stopped;
+    bool no_modifiers_fallback;
 
     uint64_t modifiers[GSR_PIPEWIRE_MAX_MODIFIERS];
     size_t num_modifiers;

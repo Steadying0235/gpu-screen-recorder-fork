@@ -43,6 +43,8 @@ typedef struct {
 
     unsigned int input_texture_id;
     unsigned int cursor_texture_id;
+
+    bool no_modifiers_fallback;
 } gsr_capture_kms;
 
 static void gsr_capture_kms_cleanup_kms_fds(gsr_capture_kms *self) {
@@ -399,11 +401,23 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVStream *video_stream, AVF
         modifiers[i] = drm_fd->modifier;
     }
 
+    EGLImage image = NULL;
     intptr_t img_attr[44];
-    setup_dma_buf_attrs(img_attr, drm_fd->pixel_format, drm_fd->width, drm_fd->height,
-        fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs, true);
 
-    EGLImage image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+    if(self->no_modifiers_fallback) {
+        setup_dma_buf_attrs(img_attr, drm_fd->pixel_format, drm_fd->width, drm_fd->height, fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs, false);
+    } else {
+        setup_dma_buf_attrs(img_attr, drm_fd->pixel_format, drm_fd->width, drm_fd->height, fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs, true);
+        while(self->params.egl->eglGetError() != EGL_SUCCESS){}
+        image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+        if(!image || self->params.egl->eglGetError() != EGL_SUCCESS) {
+            fprintf(stderr, "gsr error: gsr_capture_kms_capture: failed to create egl image with modifiers, trying without modifiers\n");
+            self->no_modifiers_fallback = true;
+            setup_dma_buf_attrs(img_attr, drm_fd->pixel_format, drm_fd->width, drm_fd->height, fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs, false);
+            image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+        }
+    }
+
     self->params.egl->glBindTexture(GL_TEXTURE_2D, self->input_texture_id);
     self->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
     self->params.egl->eglDestroyImage(self->params.egl->egl_display, image);

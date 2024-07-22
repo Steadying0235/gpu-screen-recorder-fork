@@ -643,11 +643,27 @@ bool gsr_pipewire_map_texture(gsr_pipewire *self, unsigned int texture_id, unsig
         modifiers[i] = self->format.info.raw.modifier;
     }
 
+    EGLImage image = NULL;
     intptr_t img_attr[44];
-    setup_dma_buf_attrs(img_attr, spa_video_format_to_drm_format(self->format.info.raw.format), self->format.info.raw.size.width, self->format.info.raw.size.height,
-        fds, offsets, pitches, modifiers, self->dmabuf_num_planes, true);
 
-    EGLImage image = self->egl->eglCreateImage(self->egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+    if(self->no_modifiers_fallback) {
+        setup_dma_buf_attrs(img_attr, spa_video_format_to_drm_format(self->format.info.raw.format), self->format.info.raw.size.width, self->format.info.raw.size.height,
+            fds, offsets, pitches, modifiers, self->dmabuf_num_planes, false);
+    } else {
+        setup_dma_buf_attrs(img_attr, spa_video_format_to_drm_format(self->format.info.raw.format), self->format.info.raw.size.width, self->format.info.raw.size.height,
+            fds, offsets, pitches, modifiers, self->dmabuf_num_planes, true);
+
+        while(self->egl->eglGetError() != EGL_SUCCESS){}
+        image = self->egl->eglCreateImage(self->egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+        if(!image || self->egl->eglGetError() != EGL_SUCCESS) {
+            fprintf(stderr, "gsr error: gsr_pipewire_map_texture: failed to create egl image with modifiers, trying without modifiers\n");
+            self->no_modifiers_fallback = true;
+            setup_dma_buf_attrs(img_attr, spa_video_format_to_drm_format(self->format.info.raw.format), self->format.info.raw.size.width, self->format.info.raw.size.height,
+                fds, offsets, pitches, modifiers, self->dmabuf_num_planes, false);
+            image = self->egl->eglCreateImage(self->egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+        }
+    }
+
     self->egl->glBindTexture(GL_TEXTURE_2D, texture_id);
     self->egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
     self->egl->eglDestroyImage(self->egl->egl_display, image);

@@ -150,7 +150,7 @@ Detect if recording monitor on intel and plane is compressed. In that case give 
 
 Make dbus code and pipewire setup non blocking.
 
-Support portal (pipewire) hdr capture when pipewire adds support for it.
+Support portal (pipewire) hdr capture when pipewire adds support for it. Maybe use the result of SelectSources and then query the hdr metadata with drm.
 
 HDR support on x11?
 

@@ -8,6 +8,9 @@
 #include <spa/utils/hook.h>
 #include <spa/param/video/format.h>
 
+#define GSR_PIPEWIRE_MAX_MODIFIERS 1024
+#define GSR_PIPEWIRE_NUM_VIDEO_FORMATS 10
+
 typedef struct gsr_egl gsr_egl;
 
 typedef struct {
@@ -31,6 +34,12 @@ typedef struct {
     int x, y;
     int width, height;
 } gsr_pipewire_region;
+
+typedef struct {
+    enum spa_video_format format;
+    size_t modifiers_index;
+    size_t modifiers_size;
+} gsr_video_format;
 
 typedef struct {
     gsr_egl *egl;
@@ -65,12 +74,17 @@ typedef struct {
         uint32_t width, height;
     } crop;
 
+    gsr_video_format supported_video_formats[GSR_PIPEWIRE_NUM_VIDEO_FORMATS];
+
     gsr_pipewire_data_version server_version;
     gsr_pipewire_video_info video_info;
     gsr_pipewire_dmabuf_data dmabuf_data;
 
     bool started;
     bool stopped;
+
+    uint64_t modifiers[GSR_PIPEWIRE_MAX_MODIFIERS];
+    size_t num_modifiers;
 } gsr_pipewire;
 
 /*

@@ -54,8 +54,6 @@ Limit fps recording with x damage. This is good when running replay mode 24/7 an
 On nvidia some games apparently causes the game to appear to stutter (without dropping fps) when recording a monitor but not using
     when using direct screen capture. Observed in Deus Ex and Apex Legends.
 
-Support "screen" (all monitors) capture on wayland. This should be done by getting all drm fds and multiple EGL_DMA_BUF_PLANEX_FD_EXT to create one egl image with all fds combined.
-
 Capture is broken on amd on wlroots. It's disabled at the moment and instead uses kms capture. Find out why we get a black screen in wlroots.
 
 Support vulkan video encoding. That might workaround forced p2 state nvidia driver "bug". Ffmpeg supports vulkan video encoding if it's encoding with --enable-vulkan

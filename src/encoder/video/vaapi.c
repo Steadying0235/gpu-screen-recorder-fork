@@ -96,20 +96,21 @@ static bool gsr_video_encoder_vaapi_setup_textures(gsr_video_encoder_vaapi *self
         self->params.egl->glGenTextures(2, self->target_textures);
         for(int i = 0; i < 2; ++i) {
             const int layer = i;
-            const int plane = 0;
 
-            const uint64_t modifier = self->prime.objects[self->prime.layers[layer].object_index[plane]].drm_format_modifier;
-            const intptr_t img_attr[] = {
-                EGL_LINUX_DRM_FOURCC_EXT,           formats[i],
-                EGL_WIDTH,                          self->prime.width / div[i],
-                EGL_HEIGHT,                         self->prime.height / div[i],
-                EGL_DMA_BUF_PLANE0_FD_EXT,          self->prime.objects[self->prime.layers[layer].object_index[plane]].fd,
-                EGL_DMA_BUF_PLANE0_OFFSET_EXT,      self->prime.layers[layer].offset[plane],
-                EGL_DMA_BUF_PLANE0_PITCH_EXT,       self->prime.layers[layer].pitch[plane],
-                EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier & 0xFFFFFFFFULL,
-                EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, modifier >> 32ULL,
-                EGL_NONE
-            };
+            int fds[4];
+            uint32_t offsets[4];
+            uint32_t pitches[4];
+            uint64_t modifiers[4];
+            for(uint32_t j = 0; j < self->prime.layers[layer].num_planes; ++j) {
+                fds[j] = self->prime.objects[self->prime.layers[layer].object_index[j]].fd;
+                offsets[j] = self->prime.layers[layer].offset[j];
+                pitches[j] = self->prime.layers[layer].pitch[j];
+                modifiers[j] = self->prime.objects[self->prime.layers[layer].object_index[j]].drm_format_modifier;
+            }
+
+            intptr_t img_attr[44];
+            setup_dma_buf_attrs(img_attr, formats[i], self->prime.width / div[i], self->prime.height / div[i],
+                fds, offsets, pitches, modifiers, self->prime.layers[layer].num_planes, true);
 
             while(self->params.egl->eglGetError() != EGL_SUCCESS){}
             EGLImage image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);

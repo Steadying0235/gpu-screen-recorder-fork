@@ -1,5 +1,6 @@
 #include "../include/pipewire.h"
 #include "../include/egl.h"
+#include "../include/utils.h"
 
 #include <pipewire/pipewire.h>
 #include <spa/param/video/format-utils.h>
@@ -112,17 +113,21 @@ static void on_process_cb(void *user_data) {
     pthread_mutex_lock(&self->mutex);
 
     if(buffer->datas[0].type == SPA_DATA_DmaBuf) {
-        if(self->dmabuf_data.fd > 0) {
-            close(self->dmabuf_data.fd);
-            self->dmabuf_data.fd = -1;
+        for(size_t i = 0; i < self->dmabuf_num_planes; ++i) {
+            if(self->dmabuf_data[i].fd > 0) {
+                close(self->dmabuf_data[i].fd);
+                self->dmabuf_data[i].fd = -1;
+            }
         }
 
-        if(buffer->n_datas > 0) {
-            self->dmabuf_data.fd = dup(buffer->datas[0].fd);
-            self->dmabuf_data.offset = buffer->datas[0].chunk->offset;
-            self->dmabuf_data.stride = buffer->datas[0].chunk->stride;
-        } else {
-            self->dmabuf_data.fd = -1;
+        self->dmabuf_num_planes = buffer->n_datas;
+        if(self->dmabuf_num_planes > GSR_PIPEWIRE_DMABUF_MAX_PLANES)
+            self->dmabuf_num_planes = GSR_PIPEWIRE_DMABUF_MAX_PLANES;
+
+        for(size_t i = 0; i < self->dmabuf_num_planes; ++i) {
+            self->dmabuf_data[i].fd = dup(buffer->datas[i].fd);
+            self->dmabuf_data[i].offset = buffer->datas[i].chunk->offset;
+            self->dmabuf_data[i].stride = buffer->datas[i].chunk->stride;
         }
     } else {
         // TODO:
@@ -214,7 +219,7 @@ static void on_param_changed_cb(void *user_data, uint32_t id, const struct spa_p
          spa_debug_type_find_name(spa_type_video_format, self->format.info.raw.format));
 
     if(has_modifier) {
-        fprintf(stderr, "gsr info: pipewire:    Modifier: %" PRIu64 "\n", self->format.info.raw.modifier);
+        fprintf(stderr, "gsr info: pipewire:    Modifier: 0x%" PRIx64 "\n", self->format.info.raw.modifier);
     }
 
     fprintf(stderr, "gsr info: pipewire:    Size: %dx%d\n", self->format.info.raw.size.width, self->format.info.raw.size.height);
@@ -319,12 +324,8 @@ static int64_t spa_video_format_to_drm_format(const enum spa_video_format format
     switch(format) {
         case SPA_VIDEO_FORMAT_RGBx: return DRM_FORMAT_XBGR8888;
         case SPA_VIDEO_FORMAT_BGRx: return DRM_FORMAT_XRGB8888;
-        case SPA_VIDEO_FORMAT_xRGB: return DRM_FORMAT_BGRX8888;
-        case SPA_VIDEO_FORMAT_xBGR: return DRM_FORMAT_RGBX8888;
         case SPA_VIDEO_FORMAT_RGBA: return DRM_FORMAT_ABGR8888;
         case SPA_VIDEO_FORMAT_BGRA: return DRM_FORMAT_ARGB8888;
-        case SPA_VIDEO_FORMAT_ARGB: return DRM_FORMAT_BGRA8888;
-        case SPA_VIDEO_FORMAT_ABGR: return DRM_FORMAT_RGBA8888;
         case SPA_VIDEO_FORMAT_RGB:  return DRM_FORMAT_XBGR8888;
         case SPA_VIDEO_FORMAT_BGR:  return DRM_FORMAT_XRGB8888;
         default:                    break;
@@ -335,13 +336,9 @@ static int64_t spa_video_format_to_drm_format(const enum spa_video_format format
 static const enum spa_video_format video_formats[] = {
     SPA_VIDEO_FORMAT_BGRA,
     SPA_VIDEO_FORMAT_BGRx,
-    SPA_VIDEO_FORMAT_ABGR,
-    SPA_VIDEO_FORMAT_xBGR,
     SPA_VIDEO_FORMAT_BGR,
     SPA_VIDEO_FORMAT_RGBx,
-    SPA_VIDEO_FORMAT_xRGB,
     SPA_VIDEO_FORMAT_RGBA,
-    SPA_VIDEO_FORMAT_ARGB,
     SPA_VIDEO_FORMAT_RGB,
 };
 
@@ -401,7 +398,7 @@ static bool spa_video_format_get_modifiers(gsr_pipewire *self, const enum spa_vi
 
     const int64_t drm_format = spa_video_format_to_drm_format(format);
     if(!self->egl->eglQueryDmaBufModifiersEXT(self->egl->egl_display, drm_format, max_modifiers, modifiers, NULL, num_modifiers)) {
-        fprintf(stderr, "gsr error: spa_video_format_get_modifiers: eglQueryDmaBufModifiersEXT failed with drm format %" PRIi64 "\n", drm_format);
+        fprintf(stderr, "gsr error: spa_video_format_get_modifiers: eglQueryDmaBufModifiersEXT failed with drm format %d, %" PRIi64 "\n", (int)format, drm_format);
         //modifiers[0] = DRM_FORMAT_MOD_LINEAR;
         //modifiers[1] = DRM_FORMAT_MOD_INVALID;
         //*num_modifiers = 2;
@@ -595,10 +592,13 @@ void gsr_pipewire_deinit(gsr_pipewire *self) {
         self->fd = -1;
     }
 
-    if(self->dmabuf_data.fd > 0) {
-        close(self->dmabuf_data.fd);
-        self->dmabuf_data.fd = -1;
+    for(size_t i = 0; i < self->dmabuf_num_planes; ++i) {
+        if(self->dmabuf_data[i].fd > 0) {
+            close(self->dmabuf_data[i].fd);
+            self->dmabuf_data[i].fd = -1;
+        }
     }
+    self->dmabuf_num_planes = 0;
 
     self->negotiated = false;
 
@@ -620,30 +620,32 @@ void gsr_pipewire_deinit(gsr_pipewire *self) {
     }
 }
 
-bool gsr_pipewire_map_texture(gsr_pipewire *self, unsigned int texture_id, unsigned int cursor_texture_id, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region, int *plane_fd) {
-    *plane_fd = -1;
+bool gsr_pipewire_map_texture(gsr_pipewire *self, unsigned int texture_id, unsigned int cursor_texture_id, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region, int *plane_fds, int *num_plane_fds) {
+    for(int i = 0; i < GSR_PIPEWIRE_DMABUF_MAX_PLANES; ++i) {
+        plane_fds[i] = -1;
+    }
+    *num_plane_fds = 0;
     pthread_mutex_lock(&self->mutex);
 
-    if(!self->negotiated || self->dmabuf_data.fd <= 0) {
+    if(!self->negotiated || self->dmabuf_data[0].fd <= 0) {
         pthread_mutex_unlock(&self->mutex);
         return false;
     }
 
-    *plane_fd = self->dmabuf_data.fd;
-    self->dmabuf_data.fd = -1;
+    int fds[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
+    uint32_t offsets[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
+    uint32_t pitches[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
+    uint64_t modifiers[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
+    for(size_t i = 0; i < self->dmabuf_num_planes; ++i) {
+        fds[i] = self->dmabuf_data[i].fd;
+        offsets[i] = self->dmabuf_data[i].offset;
+        pitches[i] = self->dmabuf_data[i].stride;
+        modifiers[i] = self->format.info.raw.modifier;
+    }
 
-    /* TODO: Support multiple planes */
-    const intptr_t img_attr[] = {
-        EGL_LINUX_DRM_FOURCC_EXT,           spa_video_format_to_drm_format(self->format.info.raw.format),
-        EGL_WIDTH,                          self->format.info.raw.size.width,
-        EGL_HEIGHT,                         self->format.info.raw.size.height,
-        EGL_DMA_BUF_PLANE0_FD_EXT,          *plane_fd,
-        EGL_DMA_BUF_PLANE0_OFFSET_EXT,      self->dmabuf_data.offset,
-        EGL_DMA_BUF_PLANE0_PITCH_EXT,       self->dmabuf_data.stride,
-        EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, self->format.info.raw.modifier & 0xFFFFFFFFULL,
-        EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, self->format.info.raw.modifier >> 32ULL,
-        EGL_NONE
-    };
+    intptr_t img_attr[44];
+    setup_dma_buf_attrs(img_attr, spa_video_format_to_drm_format(self->format.info.raw.format), self->format.info.raw.size.width, self->format.info.raw.size.height,
+        fds, offsets, pitches, modifiers, self->dmabuf_num_planes, true);
 
     EGLImage image = self->egl->eglCreateImage(self->egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
     self->egl->glBindTexture(GL_TEXTURE_2D, texture_id);
@@ -685,6 +687,13 @@ bool gsr_pipewire_map_texture(gsr_pipewire *self, unsigned int texture_id, unsig
 
     cursor_region->width = self->cursor.width;
     cursor_region->height = self->cursor.height;
+
+    for(size_t i = 0; i < self->dmabuf_num_planes; ++i) {
+        plane_fds[i] = self->dmabuf_data[i].fd;
+        self->dmabuf_data[i].fd = -1;
+    }
+    *num_plane_fds = self->dmabuf_num_planes;
+    self->dmabuf_num_planes = 0;
 
     pthread_mutex_unlock(&self->mutex);
     return true;

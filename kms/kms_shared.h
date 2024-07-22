@@ -5,10 +5,12 @@
 #include <stdbool.h>
 #include <drm_mode.h>
 
-#define GSR_KMS_PROTOCOL_VERSION 2
-#define GSR_KMS_MAX_PLANES 10
+#define GSR_KMS_PROTOCOL_VERSION 3
+#define GSR_KMS_MAX_ITEMS 8
+#define GSR_KMS_MAX_DMA_BUFS 4
 
-typedef struct gsr_kms_response_fd gsr_kms_response_fd;
+typedef struct gsr_kms_response_dma_buf gsr_kms_response_dma_buf;
+typedef struct gsr_kms_response_item gsr_kms_response_item;
 typedef struct gsr_kms_response gsr_kms_response;
 
 typedef enum {
@@ -30,12 +32,17 @@ typedef struct {
     int new_connection_fd;
 } gsr_kms_request;
 
-struct gsr_kms_response_fd {
+struct gsr_kms_response_dma_buf {
     int fd;
-    uint32_t width;
-    uint32_t height;
     uint32_t pitch;
     uint32_t offset;
+};
+
+struct gsr_kms_response_item {
+    gsr_kms_response_dma_buf dma_buf[GSR_KMS_MAX_DMA_BUFS];
+    int num_dma_bufs;
+    uint32_t width;
+    uint32_t height;
     uint32_t pixel_format;
     uint64_t modifier;
     uint32_t connector_id; /* 0 if unknown */
@@ -53,8 +60,8 @@ struct gsr_kms_response {
     uint32_t version; /* GSR_KMS_PROTOCOL_VERSION */
     int result;       /* gsr_kms_result */
     char err_msg[128];
-    gsr_kms_response_fd fds[GSR_KMS_MAX_PLANES];
-    int num_fds;
+    gsr_kms_response_item items[GSR_KMS_MAX_ITEMS];
+    int num_items;
 };
 
 #endif /* #define GSR_KMS_SHARED_H */

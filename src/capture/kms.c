@@ -46,12 +46,17 @@ typedef struct {
 } gsr_capture_kms;
 
 static void gsr_capture_kms_cleanup_kms_fds(gsr_capture_kms *self) {
-    for(int i = 0; i < self->kms_response.num_fds; ++i) {
-        if(self->kms_response.fds[i].fd > 0)
-            close(self->kms_response.fds[i].fd);
-        self->kms_response.fds[i].fd = 0;
+    for(int i = 0; i < self->kms_response.num_items; ++i) {
+        for(int j = 0; j < self->kms_response.items[i].num_dma_bufs; ++j) {
+            gsr_kms_response_dma_buf *dma_buf = &self->kms_response.items[i].dma_buf[j];
+            if(dma_buf->fd > 0) {
+                close(dma_buf->fd);
+                dma_buf->fd = -1;
+            }
+        }
+        self->kms_response.items[i].num_dma_bufs = 0;
     }
-    self->kms_response.num_fds = 0;
+    self->kms_response.num_items = 0;
 }
 
 static void gsr_capture_kms_stop(gsr_capture_kms *self) {
@@ -177,51 +182,51 @@ static float monitor_rotation_to_radians(gsr_monitor_rotation rot) {
 }
 
 /* Prefer non combined planes */
-static gsr_kms_response_fd* find_drm_by_connector_id(gsr_kms_response *kms_response, uint32_t connector_id) {
+static gsr_kms_response_item* find_drm_by_connector_id(gsr_kms_response *kms_response, uint32_t connector_id) {
     int index_combined = -1;
-    for(int i = 0; i < kms_response->num_fds; ++i) {
-        if(kms_response->fds[i].connector_id == connector_id && !kms_response->fds[i].is_cursor) {
-            if(kms_response->fds[i].is_combined_plane)
+    for(int i = 0; i < kms_response->num_items; ++i) {
+        if(kms_response->items[i].connector_id == connector_id && !kms_response->items[i].is_cursor) {
+            if(kms_response->items[i].is_combined_plane)
                 index_combined = i;
             else
-                return &kms_response->fds[i];
+                return &kms_response->items[i];
         }
     }
 
     if(index_combined != -1)
-        return &kms_response->fds[index_combined];
+        return &kms_response->items[index_combined];
     else
         return NULL;
 }
 
-static gsr_kms_response_fd* find_first_combined_drm(gsr_kms_response *kms_response) {
-    for(int i = 0; i < kms_response->num_fds; ++i) {
-        if(kms_response->fds[i].is_combined_plane && !kms_response->fds[i].is_cursor)
-            return &kms_response->fds[i];
+static gsr_kms_response_item* find_first_combined_drm(gsr_kms_response *kms_response) {
+    for(int i = 0; i < kms_response->num_items; ++i) {
+        if(kms_response->items[i].is_combined_plane && !kms_response->items[i].is_cursor)
+            return &kms_response->items[i];
     }
     return NULL;
 }
 
-static gsr_kms_response_fd* find_largest_drm(gsr_kms_response *kms_response) {
-    if(kms_response->num_fds == 0)
+static gsr_kms_response_item* find_largest_drm(gsr_kms_response *kms_response) {
+    if(kms_response->num_items == 0)
         return NULL;
 
     int64_t largest_size = 0;
-    gsr_kms_response_fd *largest_drm = &kms_response->fds[0];
-    for(int i = 0; i < kms_response->num_fds; ++i) {
-        const int64_t size = (int64_t)kms_response->fds[i].width * (int64_t)kms_response->fds[i].height;
-        if(size > largest_size && !kms_response->fds[i].is_cursor) {
+    gsr_kms_response_item *largest_drm = &kms_response->items[0];
+    for(int i = 0; i < kms_response->num_items; ++i) {
+        const int64_t size = (int64_t)kms_response->items[i].width * (int64_t)kms_response->items[i].height;
+        if(size > largest_size && !kms_response->items[i].is_cursor) {
             largest_size = size;
-            largest_drm = &kms_response->fds[i];
+            largest_drm = &kms_response->items[i];
         }
     }
     return largest_drm;
 }
 
-static gsr_kms_response_fd* find_cursor_drm(gsr_kms_response *kms_response) {
-    for(int i = 0; i < kms_response->num_fds; ++i) {
-        if(kms_response->fds[i].is_cursor)
-            return &kms_response->fds[i];
+static gsr_kms_response_item* find_cursor_drm(gsr_kms_response *kms_response) {
+    for(int i = 0; i < kms_response->num_items; ++i) {
+        if(kms_response->items[i].is_cursor)
+            return &kms_response->items[i];
     }
     return NULL;
 }
@@ -233,7 +238,7 @@ static bool hdr_metadata_is_supported_format(const struct hdr_output_metadata *h
 }
 
 // TODO: Check if this hdr data can be changed after the call to av_packet_side_data_add
-static void gsr_kms_set_hdr_metadata(gsr_capture_kms *self, AVStream *video_stream, gsr_kms_response_fd *drm_fd) {
+static void gsr_kms_set_hdr_metadata(gsr_capture_kms *self, AVStream *video_stream, gsr_kms_response_item *drm_fd) {
     if(self->hdr_metadata_set)
         return;
 
@@ -314,8 +319,8 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVStream *video_stream, AVF
 
     gsr_capture_kms_cleanup_kms_fds(self);
 
-    gsr_kms_response_fd *drm_fd = NULL;
-    gsr_kms_response_fd *cursor_drm_fd = NULL;
+    gsr_kms_response_item *drm_fd = NULL;
+    gsr_kms_response_item *cursor_drm_fd = NULL;
     bool capture_is_combined_plane = false;
 
     if(gsr_kms_client_get_kms(&self->kms_client, &self->kms_response) != 0) {
@@ -323,7 +328,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVStream *video_stream, AVF
         return -1;
     }
 
-    if(self->kms_response.num_fds == 0) {
+    if(self->kms_response.num_items == 0) {
         static bool error_shown = false;
         if(!error_shown) {
             error_shown = true;
@@ -357,6 +362,14 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVStream *video_stream, AVF
     if(drm_fd->has_hdr_metadata && self->params.hdr && hdr_metadata_is_supported_format(&drm_fd->hdr_metadata))
         gsr_kms_set_hdr_metadata(self, video_stream, drm_fd);
 
+    if(is_plane_compressed(drm_fd->modifier)) {
+        static bool compressed_plane_warning_shown = false;
+        if(!compressed_plane_warning_shown) {
+            compressed_plane_warning_shown = true;
+            fprintf(stderr, "gsr warning: gsr_capture_kms_capture: the monitor plane is compressed. The video will likely be glitched/black. Try recording on X11 instead (maybe capturing a single window) or use the \"-w portal\" capture option on Wayland.\n");
+        }
+    }
+
     // TODO: This causes a crash sometimes on steam deck, why? is it a driver bug? a vaapi pure version doesn't cause a crash.
     // Even ffmpeg kmsgrab causes this crash. The error is:
     // amdgpu: Failed to allocate a buffer:
@@ -375,36 +388,21 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVStream *video_stream, AVF
     // Error: avcodec_send_frame failed, error: Input/output error
     // Assertion pic->display_order == pic->encode_order failed at libavcodec/vaapi_encode_h265.c:765
     // kms server info: kms client shutdown, shutting down the server
-    intptr_t img_attr[18] = {
-        EGL_LINUX_DRM_FOURCC_EXT,      drm_fd->pixel_format,
-        EGL_WIDTH,                     drm_fd->width,
-        EGL_HEIGHT,                    drm_fd->height,
-        EGL_DMA_BUF_PLANE0_FD_EXT,     drm_fd->fd,
-        EGL_DMA_BUF_PLANE0_OFFSET_EXT, drm_fd->offset,
-        EGL_DMA_BUF_PLANE0_PITCH_EXT,  drm_fd->pitch,
-    };
 
-    if(is_plane_compressed(drm_fd->modifier)) {
-        static bool compressed_plane_warning_shown = false;
-        if(!compressed_plane_warning_shown) {
-            compressed_plane_warning_shown = true;
-            fprintf(stderr, "gsr warning: gsr_capture_kms_capture: the monitor plane is compressed. The video will likely be glitched/black. Try recording on X11 instead (maybe capturing a single window) or use the \"-w portal\" capture option on Wayland.\n");
-        }
+    int fds[GSR_KMS_MAX_DMA_BUFS];
+    uint32_t offsets[GSR_KMS_MAX_DMA_BUFS];
+    uint32_t pitches[GSR_KMS_MAX_DMA_BUFS];
+    uint64_t modifiers[GSR_KMS_MAX_DMA_BUFS];
+    for(int i = 0; i < drm_fd->num_dma_bufs; ++i) {
+        fds[i] = drm_fd->dma_buf[i].fd;
+        offsets[i] = drm_fd->dma_buf[i].offset;
+        pitches[i] = drm_fd->dma_buf[i].pitch;
+        modifiers[i] = drm_fd->modifier;
     }
 
-    if(screen_plane_use_modifiers) {
-        img_attr[12] = EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT;
-        img_attr[13] = drm_fd->modifier & 0xFFFFFFFFULL;
-
-        img_attr[14] = EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT;
-        img_attr[15] = drm_fd->modifier >> 32ULL;
-
-        img_attr[16] = EGL_NONE;
-        img_attr[17] = EGL_NONE;
-    } else {
-        img_attr[12] = EGL_NONE;
-        img_attr[13] = EGL_NONE;
-    }
+    intptr_t img_attr[44];
+    setup_dma_buf_attrs(img_attr, drm_fd->pixel_format, drm_fd->width, drm_fd->height,
+        fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs, screen_plane_use_modifiers);
 
     EGLImage image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
     self->params.egl->glBindTexture(GL_TEXTURE_2D, self->input_texture_id);
@@ -456,17 +454,20 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVStream *video_stream, AVF
         cursor_pos.x += target_x;
         cursor_pos.y += target_y;
 
-        const intptr_t img_attr_cursor[] = {
-            EGL_LINUX_DRM_FOURCC_EXT,           cursor_drm_fd->pixel_format,
-            EGL_WIDTH,                          cursor_drm_fd->width,
-            EGL_HEIGHT,                         cursor_drm_fd->height,
-            EGL_DMA_BUF_PLANE0_FD_EXT,          cursor_drm_fd->fd,
-            EGL_DMA_BUF_PLANE0_OFFSET_EXT,      cursor_drm_fd->offset,
-            EGL_DMA_BUF_PLANE0_PITCH_EXT,       cursor_drm_fd->pitch,
-            EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, cursor_drm_fd->modifier & 0xFFFFFFFFULL,
-            EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, cursor_drm_fd->modifier >> 32ULL,
-            EGL_NONE
-        };
+        int fds[GSR_KMS_MAX_DMA_BUFS];
+        uint32_t offsets[GSR_KMS_MAX_DMA_BUFS];
+        uint32_t pitches[GSR_KMS_MAX_DMA_BUFS];
+        uint64_t modifiers[GSR_KMS_MAX_DMA_BUFS];
+        for(int i = 0; i < cursor_drm_fd->num_dma_bufs; ++i) {
+            fds[i] = cursor_drm_fd->dma_buf[i].fd;
+            offsets[i] = cursor_drm_fd->dma_buf[i].offset;
+            pitches[i] = cursor_drm_fd->dma_buf[i].pitch;
+            modifiers[i] = cursor_drm_fd->modifier;
+        }
+
+        intptr_t img_attr_cursor[44];
+        setup_dma_buf_attrs(img_attr_cursor, cursor_drm_fd->pixel_format, cursor_drm_fd->width, cursor_drm_fd->height,
+            fds, offsets, pitches, modifiers, cursor_drm_fd->num_dma_bufs, true);
 
         EGLImage cursor_image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr_cursor);
         const int target = cursor_texture_id_is_external ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;

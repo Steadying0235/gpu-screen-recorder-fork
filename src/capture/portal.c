@@ -23,8 +23,19 @@ typedef struct {
 
     gsr_pipewire pipewire;
     vec2i capture_size;
-    int plane_fd;
+    int plane_fds[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
+    int num_plane_fds;
 } gsr_capture_portal;
+
+static void gsr_capture_portal_cleanup_plane_fds(gsr_capture_portal *self) {
+    for(int i = 0; i < self->num_plane_fds; ++i) {
+        if(self->plane_fds[i] > 0) {
+            close(self->plane_fds[i]);
+            self->plane_fds[i] = 0;
+        }
+    }
+    self->num_plane_fds = 0;
+}
 
 static void gsr_capture_portal_stop(gsr_capture_portal *self) {
     if(self->input_texture_id) {
@@ -37,10 +48,7 @@ static void gsr_capture_portal_stop(gsr_capture_portal *self) {
         self->cursor_texture_id = 0;
     }
 
-    if(self->plane_fd > 0) {
-        close(self->plane_fd);
-        self->plane_fd = 0;
-    }
+    gsr_capture_portal_cleanup_plane_fds(self);
 
     gsr_pipewire_deinit(&self->pipewire);
 
@@ -212,13 +220,8 @@ static bool gsr_capture_portal_get_frame_dimensions(gsr_capture_portal *self) {
 
     const double start_time = clock_get_monotonic_seconds();
     while(clock_get_monotonic_seconds() - start_time < 5.0) {
-        int plane_fd = 0;
-        if(gsr_pipewire_map_texture(&self->pipewire, self->input_texture_id, self->cursor_texture_id, &region, &cursor_region, &plane_fd)) {
-            if(plane_fd > 0) {
-                close(plane_fd);
-                plane_fd = 0;
-            }
-
+        if(gsr_pipewire_map_texture(&self->pipewire, self->input_texture_id, self->cursor_texture_id, &region, &cursor_region, self->plane_fds, &self->num_plane_fds)) {
+            gsr_capture_portal_cleanup_plane_fds(self);
             self->capture_size.x = region.width;
             self->capture_size.y = region.height;
             fprintf(stderr, "gsr info: gsr_capture_portal_start: pipewire negotiation finished\n");
@@ -293,10 +296,7 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVStream *video_stream, 
     (void)color_conversion;
     gsr_capture_portal *self = cap->priv;
 
-    if(self->plane_fd > 0) {
-        close(self->plane_fd);
-        self->plane_fd = 0;
-    }
+    gsr_capture_portal_cleanup_plane_fds(self);
 
     //egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     self->params.egl->glClear(0);
@@ -304,7 +304,7 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVStream *video_stream, 
     /* TODO: Handle formats other than RGB(a) */
     gsr_pipewire_region region = {0, 0, 0, 0};
     gsr_pipewire_region cursor_region = {0, 0, 0, 0};
-    if(gsr_pipewire_map_texture(&self->pipewire, self->input_texture_id, self->cursor_texture_id, &region, &cursor_region, &self->plane_fd)) {
+    if(gsr_pipewire_map_texture(&self->pipewire, self->input_texture_id, self->cursor_texture_id, &region, &cursor_region, self->plane_fds, &self->num_plane_fds)) {
         if(region.width != self->capture_size.x || region.height != self->capture_size.y) {
             gsr_color_conversion_clear(color_conversion);
             self->capture_size.x = region.width;
@@ -351,10 +351,7 @@ static bool gsr_capture_portal_should_stop(gsr_capture *cap, bool *err) {
 static void gsr_capture_portal_capture_end(gsr_capture *cap, AVFrame *frame) {
     (void)frame;
     gsr_capture_portal *self = cap->priv;
-    if(self->plane_fd > 0) {
-        close(self->plane_fd);
-        self->plane_fd = 0;
-    }
+    gsr_capture_portal_cleanup_plane_fds(self);
 }
 
 static gsr_source_color gsr_capture_portal_get_source_color(gsr_capture *cap) {

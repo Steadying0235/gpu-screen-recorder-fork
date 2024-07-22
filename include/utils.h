@@ -44,4 +44,7 @@ bool gsr_card_path_get_render_path(const char *card_path, char *render_path);
 
 int create_directory_recursive(char *path);
 
+/* |img_attr| needs to be at least 44 in size */
+void setup_dma_buf_attrs(intptr_t *img_attr, uint32_t format, uint32_t width, uint32_t height, const int *fds, const uint32_t *offsets, const uint32_t *pitches, const uint64_t *modifiers, int num_planes, bool use_modifier);
+
 #endif /* GSR_UTILS_H */

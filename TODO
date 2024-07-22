@@ -155,3 +155,5 @@ Make dbus code and pipewire setup non blocking.
 Support portal (pipewire) hdr capture when pipewire adds support for it.
 
 HDR support on x11?
+
+Move most kms data to kms client. We dont need root access for everything that is server from kms server right now, such as hdr metadata and drm plane properties. Only the drm plane fd really needs root access.

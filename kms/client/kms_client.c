@@ -36,11 +36,17 @@ static bool generate_random_characters(char *buffer, int buffer_size, const char
 }
 
 static void close_fds(gsr_kms_response *response) {
-    for(int i = 0; i < response->num_fds; ++i) {
-        if(response->fds[i].fd > 0)
-            close(response->fds[i].fd);
-        response->fds[i].fd = 0;
+    for(int i = 0; i < response->num_items; ++i) {
+        for(int j = 0; j < response->items[i].num_dma_bufs; ++j) {
+            gsr_kms_response_dma_buf *dma_buf = &response->items[i].dma_buf[j];
+            if(dma_buf->fd > 0) {
+                close(dma_buf->fd);
+                dma_buf->fd = -1;
+            }
+        }
+        response->items[i].num_dma_bufs = 0;
     }
+    response->num_items = 0;
 }
 
 static int send_msg_to_server(int server_fd, gsr_kms_request *request) {
@@ -82,7 +88,7 @@ static int recv_msg_from_server(int server_pid, int server_fd, gsr_kms_response 
     response_message.msg_iov = &iov;
     response_message.msg_iovlen = 1;
 
-    char cmsgbuf[CMSG_SPACE(sizeof(int) * GSR_KMS_MAX_PLANES)];
+    char cmsgbuf[CMSG_SPACE(sizeof(int) * GSR_KMS_MAX_ITEMS)];
     memset(cmsgbuf, 0, sizeof(cmsgbuf));
     response_message.msg_control = cmsgbuf;
     response_message.msg_controllen = sizeof(cmsgbuf);
@@ -106,12 +112,16 @@ static int recv_msg_from_server(int server_pid, int server_fd, gsr_kms_response 
         }
     }
 
-    if(res > 0 && response->num_fds > 0) {
+    if(res > 0 && response->num_items > 0) {
         struct cmsghdr *cmsg = CMSG_FIRSTHDR(&response_message);
         if(cmsg) {
             int *fds = (int*)CMSG_DATA(cmsg);
-            for(int i = 0; i < response->num_fds; ++i) {
-                response->fds[i].fd = fds[i];
+            int fd_index = 0;
+            for(int i = 0; i < response->num_items; ++i) {
+                for(int j = 0; j < response->items[i].num_dma_bufs; ++j) {
+                    gsr_kms_response_dma_buf *dma_buf = &response->items[i].dma_buf[j];
+                    dma_buf->fd = fds[fd_index++];
+                }
             }
         } else {
             close_fds(response);

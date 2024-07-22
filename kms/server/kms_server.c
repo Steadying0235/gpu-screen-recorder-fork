@@ -37,6 +37,14 @@ static int max_int(int a, int b) {
     return a > b ? a : b;
 }
 
+static int count_num_fds(const gsr_kms_response *response) {
+    int num_fds = 0;
+    for(int i = 0; i < response->num_items; ++i) {
+        num_fds += response->items[i].num_dma_bufs;
+    }
+    return num_fds;
+}
+
 static int send_msg_to_client(int client_fd, gsr_kms_response *response) {
     struct iovec iov;
     iov.iov_base = response;
@@ -46,21 +54,24 @@ static int send_msg_to_client(int client_fd, gsr_kms_response *response) {
     response_message.msg_iov = &iov;
     response_message.msg_iovlen = 1;
 
-    char cmsgbuf[CMSG_SPACE(sizeof(int) * max_int(1, response->num_fds))];
+    char cmsgbuf[CMSG_SPACE(sizeof(int) * max_int(1, response->num_items))];
     memset(cmsgbuf, 0, sizeof(cmsgbuf));
 
-    if(response->num_fds > 0) {
+    if(response->num_items > 0) {
         response_message.msg_control = cmsgbuf;
         response_message.msg_controllen = sizeof(cmsgbuf);
 
         struct cmsghdr *cmsg = CMSG_FIRSTHDR(&response_message);
         cmsg->cmsg_level = SOL_SOCKET;
         cmsg->cmsg_type = SCM_RIGHTS;
-        cmsg->cmsg_len = CMSG_LEN(sizeof(int) * response->num_fds);
+        cmsg->cmsg_len = CMSG_LEN(sizeof(int) * count_num_fds(response));
 
         int *fds = (int*)CMSG_DATA(cmsg);
-        for(int i = 0; i < response->num_fds; ++i) {
-            fds[i] = response->fds[i].fd;
+        int fd_index = 0;
+        for(int i = 0; i < response->num_items; ++i) {
+            for(int j = 0; j < response->items[i].num_dma_bufs; ++j) {
+                fds[fd_index++] = response->items[i].dma_buf[j].fd;
+            }
         }
 
         response_message.msg_controllen = cmsg->cmsg_len;
@@ -258,14 +269,27 @@ static bool get_hdr_metadata(int drm_fd, uint64_t hdr_metadata_blob_id, struct h
     return true;
 }
 
+/* Returns the number of drm handles that we managed to get */
+static int drm_prime_handles_to_fds(gsr_drm *drm, drmModeFB2Ptr drmfb, int *fb_fds) {
+    for(int i = 0; i < GSR_KMS_MAX_DMA_BUFS; ++i) {
+        if(!drmfb->handles[i])
+            return i;
+
+        const int ret = drmPrimeHandleToFD(drm->drmfd, drmfb->handles[i], O_RDONLY, &fb_fds[i]);
+        if(ret != 0 || fb_fds[i] == -1)
+            return i;
+    }
+    return GSR_KMS_MAX_DMA_BUFS;
+}
+
 static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crtc_map *c2crtc_map) {
     int result = -1;
 
     response->result = KMS_RESULT_OK;
     response->err_msg[0] = '\0';
-    response->num_fds = 0;
+    response->num_items = 0;
 
-    for(uint32_t i = 0; i < drm->planes->count_planes && response->num_fds < GSR_KMS_MAX_PLANES; ++i) {
+    for(uint32_t i = 0; i < drm->planes->count_planes && response->num_items < GSR_KMS_MAX_ITEMS; ++i) {
         drmModePlanePtr plane = NULL;
         drmModeFB2Ptr drmfb = NULL;
 
@@ -299,52 +323,55 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
         // TODO: Check if dimensions have changed by comparing width and height to previous time this was called.
         // TODO: Support other plane formats than rgb (with multiple planes, such as direct YUV420 on wayland).
 
-        int fb_fd = -1;
-        const int ret = drmPrimeHandleToFD(drm->drmfd, drmfb->handles[0], O_RDONLY, &fb_fd);
-        if(ret != 0 || fb_fd == -1) {
+        int x = 0, y = 0, src_x = 0, src_y = 0, src_w = 0, src_h = 0;
+        plane_property_mask property_mask = plane_get_properties(drm->drmfd, plane->plane_id, &x, &y, &src_x, &src_y, &src_w, &src_h);
+        if(!(property_mask & PLANE_PROPERTY_IS_PRIMARY) && !(property_mask & PLANE_PROPERTY_IS_CURSOR))
+            continue;
+
+        int fb_fds[GSR_KMS_MAX_DMA_BUFS];
+        const int num_fb_fds = drm_prime_handles_to_fds(drm, drmfb, fb_fds);
+        if(num_fb_fds == 0) {
             response->result = KMS_RESULT_FAILED_TO_GET_PLANE;
             snprintf(response->err_msg, sizeof(response->err_msg), "failed to get fd from drm handle, error: %s", strerror(errno));
             fprintf(stderr, "kms server error: %s\n", response->err_msg);
             goto cleanup_handles;
         }
 
-        const int fd_index = response->num_fds;
+        const int item_index = response->num_items;
 
-        int x = 0, y = 0, src_x = 0, src_y = 0, src_w = 0, src_h = 0;
-        plane_property_mask property_mask = plane_get_properties(drm->drmfd, plane->plane_id, &x, &y, &src_x, &src_y, &src_w, &src_h);
-        if((property_mask & PLANE_PROPERTY_IS_PRIMARY) || (property_mask & PLANE_PROPERTY_IS_CURSOR)) {
-            const connector_crtc_pair *crtc_pair = get_connector_pair_by_crtc_id(c2crtc_map, plane->crtc_id);
-            if(crtc_pair && crtc_pair->hdr_metadata_blob_id) {
-                response->fds[fd_index].has_hdr_metadata = get_hdr_metadata(drm->drmfd, crtc_pair->hdr_metadata_blob_id, &response->fds[fd_index].hdr_metadata);
-            } else {
-                response->fds[fd_index].has_hdr_metadata = false;
-            }
-
-            response->fds[fd_index].fd = fb_fd;
-            response->fds[fd_index].width = drmfb->width;
-            response->fds[fd_index].height = drmfb->height;
-            response->fds[fd_index].pitch = drmfb->pitches[0];
-            response->fds[fd_index].offset = drmfb->offsets[0];
-            response->fds[fd_index].pixel_format = drmfb->pixel_format;
-            response->fds[fd_index].modifier = drmfb->modifier;
-            response->fds[fd_index].connector_id = crtc_pair ? crtc_pair->connector_id : 0;
-            response->fds[fd_index].is_cursor = property_mask & PLANE_PROPERTY_IS_CURSOR;
-            response->fds[fd_index].is_combined_plane = false;
-            if(property_mask & PLANE_PROPERTY_IS_CURSOR) {
-                response->fds[fd_index].x = x;
-                response->fds[fd_index].y = y;
-                response->fds[fd_index].src_w = 0;
-                response->fds[fd_index].src_h = 0;
-            } else {
-                response->fds[fd_index].x = src_x;
-                response->fds[fd_index].y = src_y;
-                response->fds[fd_index].src_w = src_w;
-                response->fds[fd_index].src_h = src_h;
-            }
-            ++response->num_fds;
+        const connector_crtc_pair *crtc_pair = get_connector_pair_by_crtc_id(c2crtc_map, plane->crtc_id);
+        if(crtc_pair && crtc_pair->hdr_metadata_blob_id) {
+            response->items[item_index].has_hdr_metadata = get_hdr_metadata(drm->drmfd, crtc_pair->hdr_metadata_blob_id, &response->items[item_index].hdr_metadata);
         } else {
-            close(fb_fd);
+            response->items[item_index].has_hdr_metadata = false;
         }
+
+        for(int j = 0; j < num_fb_fds; ++j) {
+            response->items[item_index].dma_buf[j].fd = fb_fds[j];
+            response->items[item_index].dma_buf[j].pitch = drmfb->pitches[j];
+            response->items[item_index].dma_buf[j].offset = drmfb->offsets[j];
+        }
+        response->items[item_index].num_dma_bufs = num_fb_fds;
+
+        response->items[item_index].width = drmfb->width;
+        response->items[item_index].height = drmfb->height;
+        response->items[item_index].pixel_format = drmfb->pixel_format;
+        response->items[item_index].modifier = drmfb->modifier;
+        response->items[item_index].connector_id = crtc_pair ? crtc_pair->connector_id : 0;
+        response->items[item_index].is_cursor = property_mask & PLANE_PROPERTY_IS_CURSOR;
+        response->items[item_index].is_combined_plane = false;
+        if(property_mask & PLANE_PROPERTY_IS_CURSOR) {
+            response->items[item_index].x = x;
+            response->items[item_index].y = y;
+            response->items[item_index].src_w = 0;
+            response->items[item_index].src_h = 0;
+        } else {
+            response->items[item_index].x = src_x;
+            response->items[item_index].y = src_y;
+            response->items[item_index].src_w = src_w;
+            response->items[item_index].src_h = src_h;
+        }
+        ++response->num_items;
 
         cleanup_handles:
         drm_mode_cleanup_handles(drm->drmfd, drmfb);
@@ -356,16 +383,23 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
             drmModeFreePlane(plane);
     }
 
-    if(response->num_fds > 0)
+    if(response->num_items > 0)
         response->result = KMS_RESULT_OK;
 
     if(response->result == KMS_RESULT_OK) {
         result = 0;
     } else {
-        for(int i = 0; i < response->num_fds; ++i) {
-            close(response->fds[i].fd);
+        for(int i = 0; i < response->num_items; ++i) {
+            for(int j = 0; j < response->items[i].num_dma_bufs; ++j) {
+                gsr_kms_response_dma_buf *dma_buf = &response->items[i].dma_buf[j];
+                if(dma_buf->fd > 0) {
+                    close(dma_buf->fd);
+                    dma_buf->fd = -1;
+                }
+            }
+            response->items[i].num_dma_bufs = 0;
         }
-        response->num_fds = 0;
+        response->num_items = 0;
     }
 
     return result;
@@ -506,7 +540,7 @@ int main(int argc, char **argv) {
             case KMS_REQUEST_TYPE_REPLACE_CONNECTION: {
                 gsr_kms_response response;
                 response.version = GSR_KMS_PROTOCOL_VERSION;
-                response.num_fds = 0;
+                response.num_items = 0;
 
                 if(request.new_connection_fd > 0) {
                     if(socket_fd > 0)
@@ -529,7 +563,7 @@ int main(int argc, char **argv) {
             case KMS_REQUEST_TYPE_GET_KMS: {
                 gsr_kms_response response;
                 response.version = GSR_KMS_PROTOCOL_VERSION;
-                response.num_fds = 0;
+                response.num_items = 0;
                 
                 if(kms_get_fb(&drm, &response, &c2crtc_map) == 0) {
                     if(send_msg_to_client(socket_fd, &response) == -1)
@@ -539,9 +573,17 @@ int main(int argc, char **argv) {
                         fprintf(stderr, "kms server error: failed to respond to client KMS_REQUEST_TYPE_GET_KMS request\n");
                 }
 
-                for(int i = 0; i < response.num_fds; ++i) {
-                    close(response.fds[i].fd);
+                for(int i = 0; i < response.num_items; ++i) {
+                    for(int j = 0; j < response.items[i].num_dma_bufs; ++j) {
+                        gsr_kms_response_dma_buf *dma_buf = &response.items[i].dma_buf[j];
+                        if(dma_buf->fd > 0) {
+                            close(dma_buf->fd);
+                            dma_buf->fd = -1;
+                        }
+                    }
+                    response.items[i].num_dma_bufs = 0;
                 }
+                response.num_items = 0;
 
                 break;
             }
@@ -549,7 +591,7 @@ int main(int argc, char **argv) {
                 gsr_kms_response response;
                 response.version = GSR_KMS_PROTOCOL_VERSION;
                 response.result = KMS_RESULT_INVALID_REQUEST;
-                response.num_fds = 0;
+                response.num_items = 0;
 
                 snprintf(response.err_msg, sizeof(response.err_msg), "invalid request type %d, expected %d (%s)", request.type, KMS_REQUEST_TYPE_GET_KMS, "KMS_REQUEST_TYPE_GET_KMS");
                 fprintf(stderr, "kms server error: %s\n", response.err_msg);

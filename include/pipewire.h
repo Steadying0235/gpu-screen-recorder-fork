@@ -9,7 +9,8 @@
 #include <spa/param/video/format.h>
 
 #define GSR_PIPEWIRE_MAX_MODIFIERS 1024
-#define GSR_PIPEWIRE_NUM_VIDEO_FORMATS 10
+#define GSR_PIPEWIRE_NUM_VIDEO_FORMATS 6
+#define GSR_PIPEWIRE_DMABUF_MAX_PLANES 4
 
 typedef struct gsr_egl gsr_egl;
 
@@ -78,7 +79,8 @@ typedef struct {
 
     gsr_pipewire_data_version server_version;
     gsr_pipewire_video_info video_info;
-    gsr_pipewire_dmabuf_data dmabuf_data;
+    gsr_pipewire_dmabuf_data dmabuf_data[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
+    size_t dmabuf_num_planes;
 
     bool started;
     bool stopped;
@@ -95,7 +97,8 @@ typedef struct {
 bool gsr_pipewire_init(gsr_pipewire *self, int pipewire_fd, uint32_t pipewire_node, int fps, bool capture_cursor, gsr_egl *egl);
 void gsr_pipewire_deinit(gsr_pipewire *self);
 
-bool gsr_pipewire_map_texture(gsr_pipewire *self, unsigned int texture_id, unsigned int cursor_texture_id, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region, int *plane_fd);
+/* |plane_fds| should be at GSR_PIPEWIRE_DMABUF_MAX_PLANES in size */
+bool gsr_pipewire_map_texture(gsr_pipewire *self, unsigned int texture_id, unsigned int cursor_texture_id, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region, int *plane_fds, int *num_plane_fds);
 bool gsr_pipewire_recording_stopped(gsr_pipewire *self);
 
 #endif /* GSR_PIPEWIRE_H */

@@ -159,3 +159,5 @@ Move most kms data to kms client. We dont need root access for everything that i
 Show rotated window size in monitor list when using incorrect monitor name.
 
 Desktop portal capture on kde plasma makes notifications not show up unless the notification is set as urgent. How to fix this? do we have to make our own notification system?
+
+Add the option to specify a path to desktop portal session token, to allow different recording modes (streaming, recording, replay) to restore with different setup.

@@ -1003,7 +1003,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr|vp8|vp9] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-cr limited|full] [-mf yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [-h|--help]\n", program_name);
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr|vp8|vp9] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [-h|--help]\n", program_name);
 }
 
 // TODO: Update with portal info
@@ -1068,7 +1068,7 @@ static void usage_full() {
     fprintf(stderr, "        Limited color range means that colors are in range 16-235 (4112-60395 for hdr) while full color range means that colors are in range 0-255 (0-65535 for hdr).\n");
     fprintf(stderr, "        Note that some buggy video players (such as vlc) are unable to correctly display videos in full color range.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -mf   Organise replays in folders based on the current date.\n");
+    fprintf(stderr, "  -df   Organise replays in folders based on the current date.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -sc   Run a script on the saved video file (asynchronously). The first argument to the script is the filepath to the saved video file and the second argument is the recording type (either \"regular\" or \"replay\").\n");
     fprintf(stderr, "        Not applicable for live streams.\n");
@@ -2000,6 +2000,7 @@ int main(int argc, char **argv) {
         { "-pixfmt", Arg { {}, true, false } },
         { "-v", Arg { {}, true, false } },
         { "-mf", Arg { {}, true, false } },
+        { "-df", Arg { {}, true, false } },
         { "-sc", Arg { {}, true, false } },
         { "-cr", Arg { {}, true, false } },
         { "-cursor", Arg { {}, true, false } },
@@ -2160,16 +2161,18 @@ int main(int argc, char **argv) {
     }
 
     bool make_folders = false;
-    const char *make_folders_str = args["-mf"].value();
-    if(!make_folders_str)
-        make_folders_str = "no";
+    const char *date_folders_str = args["-df"].value();
+    if(!date_folders_str)
+        date_folders_str = args["-mf"].value();
+    if(!date_folders_str)
+        date_folders_str = "no";
 
-    if(strcmp(make_folders_str, "yes") == 0) {
+    if(strcmp(date_folders_str, "yes") == 0) {
         make_folders = true;
-    } else if(strcmp(make_folders_str, "no") == 0) {
+    } else if(strcmp(date_folders_str, "no") == 0) {
         make_folders = false;
     } else {
-        fprintf(stderr, "Error: -mf should either be either 'yes' or 'no', got: '%s'\n", make_folders_str);
+        fprintf(stderr, "Error: -df should either be either 'yes' or 'no', got: '%s'\n", date_folders_str);
         usage();
     }
 
@@ -2183,7 +2186,7 @@ int main(int argc, char **argv) {
     } else if(strcmp(restore_portal_session_str, "no") == 0) {
         restore_portal_session = false;
     } else {
-        fprintf(stderr, "Error: -restore-portal-session should either be either 'yes' or 'no', got: '%s'\n", make_folders_str);
+        fprintf(stderr, "Error: -restore-portal-session should either be either 'yes' or 'no', got: '%s'\n", restore_portal_session_str);
         usage();
     }
 

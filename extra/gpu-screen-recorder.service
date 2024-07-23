@@ -18,7 +18,7 @@ Environment=COLOR_RANGE=limited
 Environment=KEYINT=2
 Environment=ENCODER=gpu
 Environment=RESTORE_PORTAL_SESSION=yes
-ExecStart=/bin/sh -c 'AUDIO="${AUDIO_DEVICE:-$(pactl get-default-sink).monitor}"; gpu-screen-recorder -v no -w "$WINDOW" -c "$CONTAINER" -q "$QUALITY" -k "$CODEC" -ac "$AUDIO_CODEC" -a "$AUDIO" -a "$SECONDARY_AUDIO_DEVICE" -f "$FRAMERATE" -r "$REPLAYDURATION" -o "$OUTPUTDIR" -mf "$MAKEFOLDERS" $ADDITIONAL_ARGS -cr "$COLOR_RANGE" -keyint "$KEYINT" -restore-portal-session "$RESTORE_PORTAL_SESSION" -encoder "$ENCODER"'
+ExecStart=/bin/sh -c 'AUDIO="${AUDIO_DEVICE:-$(pactl get-default-sink).monitor}"; gpu-screen-recorder -v no -w "$WINDOW" -c "$CONTAINER" -q "$QUALITY" -k "$CODEC" -ac "$AUDIO_CODEC" -a "$AUDIO" -a "$SECONDARY_AUDIO_DEVICE" -f "$FRAMERATE" -r "$REPLAYDURATION" -o "$OUTPUTDIR" -df "$MAKEFOLDERS" $ADDITIONAL_ARGS -cr "$COLOR_RANGE" -keyint "$KEYINT" -restore-portal-session "$RESTORE_PORTAL_SESSION" -encoder "$ENCODER"'
 KillSignal=SIGINT
 Restart=on-failure
 RestartSec=5s

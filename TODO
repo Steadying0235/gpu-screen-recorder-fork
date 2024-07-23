@@ -20,7 +20,7 @@ Reverse engineer nvapi so we can disable "force p2 state" on linux too (nvapi pr
 Support yuv444p on amd/intel.
 fix yuv444 for hevc.
 Do not allow streaming if yuv444.
-Re-enable yuv444.
+Re-enable yuv444 and allow yuv444 for software encoding. Good for remote desktop. But for remote desktop its more ideal to use yuv420 and when the image is not moving then send a png image instead, for clear image when the image is static.
 Support 10 bit output because of better gradients. May even be smaller file size. Better supported on hevc (not supported at all on h264 on my gpu).
 Add nvidia/(amd/intel) specific install script for ubuntu. User should run install_ubuntu.sh but it should run different install dep script depending on if /proc/driver/nvidia/version exists or not. But what about switchable graphics setup?
 Test different combinations of switchable graphics. Intel hybrid mode (running intel but possible to run specific applications with prime-run), running pure intel. Detect switchable graphics.
@@ -161,3 +161,5 @@ Show rotated window size in monitor list when using incorrect monitor name.
 Desktop portal capture on kde plasma makes notifications not show up unless the notification is set as urgent. How to fix this? do we have to make our own notification system?
 
 Add the option to specify a path to desktop portal session token, to allow different recording modes (streaming, recording, replay) to restore with different setup.
+
+Explicit sync is done with the drm property IN_FENCE_FD (see https://drmdb.emersion.fr/properties/4008636142/IN_FENCE_FD). Check if this needs to be used on wayland (especially on nvidia) when capturing a monitor directly without desktop portal.

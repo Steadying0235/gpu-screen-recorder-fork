@@ -103,7 +103,7 @@ static int recv_msg_from_server(int server_pid, int server_fd, gsr_kms_response 
             int status = 0;
             int wait_result = waitpid(server_pid, &status, WNOHANG);
             if(wait_result != 0) {
-                res = 0;
+                res = -1;
                 break;
             }
             usleep(1000);

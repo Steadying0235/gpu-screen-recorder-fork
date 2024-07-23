@@ -168,6 +168,13 @@ static bool gsr_video_encoder_vaapi_start(gsr_video_encoder *encoder, AVCodecCon
         }
     }
 
+    if(video_codec_context->width != frame->width || video_codec_context->height != frame->height) {
+        fprintf(stderr, "gsr warning: gsr_video_encoder_vaapi_start: black bars have been added to the video because of a bug in AMD drivers/hardware. Record with h264 codec instead (-k h264) to get around this issue\n");
+    }
+
+    frame->width = video_codec_context->width;
+    frame->height = video_codec_context->height;
+
     if(!gsr_video_encoder_vaapi_setup_context(encoder_vaapi, video_codec_context)) {
         gsr_video_encoder_vaapi_stop(encoder_vaapi, video_codec_context);
         return false;

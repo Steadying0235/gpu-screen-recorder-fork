@@ -313,9 +313,8 @@ static bool gsr_capture_xcomposite_should_stop(gsr_capture *cap, bool *err) {
     return false;
 }
 
-static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVStream *video_stream, AVFrame *frame, gsr_color_conversion *color_conversion) {
+static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
     gsr_capture_xcomposite *self = cap->priv;
-    (void)video_stream;
     (void)frame;
 
     //self->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);

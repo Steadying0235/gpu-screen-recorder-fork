@@ -34,17 +34,15 @@ typedef struct {
     vec2i capture_size;
     MonitorId monitor_id;
 
-    AVMasteringDisplayMetadata *mastering_display_metadata;
-    AVContentLightMetadata *light_metadata;
-    size_t light_metadata_size;
-    bool hdr_metadata_set;
-
     gsr_monitor_rotation monitor_rotation;
 
     unsigned int input_texture_id;
     unsigned int cursor_texture_id;
 
     bool no_modifiers_fallback;
+
+    struct hdr_output_metadata hdr_metadata;
+    bool hdr_metadata_set;
 } gsr_capture_kms;
 
 static void gsr_capture_kms_cleanup_kms_fds(gsr_capture_kms *self) {
@@ -240,50 +238,12 @@ static bool hdr_metadata_is_supported_format(const struct hdr_output_metadata *h
 }
 
 // TODO: Check if this hdr data can be changed after the call to av_packet_side_data_add
-static void gsr_kms_set_hdr_metadata(gsr_capture_kms *self, AVStream *video_stream, gsr_kms_response_item *drm_fd) {
+static void gsr_kms_set_hdr_metadata(gsr_capture_kms *self, gsr_kms_response_item *drm_fd) {
     if(self->hdr_metadata_set)
         return;
 
-    if(!self->light_metadata)
-        self->light_metadata = av_content_light_metadata_alloc(&self->light_metadata_size);
-
-    if(!self->mastering_display_metadata)
-        self->mastering_display_metadata = av_mastering_display_metadata_alloc();
-
-    if(self->light_metadata) {
-        self->light_metadata->MaxCLL = drm_fd->hdr_metadata.hdmi_metadata_type1.max_cll;
-        self->light_metadata->MaxFALL = drm_fd->hdr_metadata.hdmi_metadata_type1.max_fall;
-
-        #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(60, 31, 102)
-        av_stream_add_side_data(video_stream, AV_PKT_DATA_CONTENT_LIGHT_LEVEL, self->light_metadata, self->light_metadata_size);
-        #else
-        av_packet_side_data_add(&video_stream->codecpar->coded_side_data, &video_stream->codecpar->nb_coded_side_data, AV_PKT_DATA_CONTENT_LIGHT_LEVEL, self->light_metadata, self->light_metadata_size, 0);
-        #endif
-    }
-
-    if(self->mastering_display_metadata) {
-        for(int i = 0; i < 3; ++i) {
-            self->mastering_display_metadata->display_primaries[i][0] = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.display_primaries[i].x, 50000);
-            self->mastering_display_metadata->display_primaries[i][1] = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.display_primaries[i].y, 50000);
-        }
-
-        self->mastering_display_metadata->white_point[0] = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.white_point.x, 50000);
-        self->mastering_display_metadata->white_point[1] = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.white_point.y, 50000);
-
-        self->mastering_display_metadata->min_luminance = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.min_display_mastering_luminance, 10000);
-        self->mastering_display_metadata->max_luminance = av_make_q(drm_fd->hdr_metadata.hdmi_metadata_type1.max_display_mastering_luminance, 1);
-
-        self->mastering_display_metadata->has_primaries = self->mastering_display_metadata->display_primaries[0][0].num > 0;
-        self->mastering_display_metadata->has_luminance = self->mastering_display_metadata->max_luminance.num > 0;
-
-        #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(60, 31, 102)
-        av_stream_add_side_data(video_stream, AV_PKT_DATA_MASTERING_DISPLAY_METADATA, self->mastering_display_metadata, sizeof(*self->mastering_display_metadata));
-        #else
-        av_packet_side_data_add(&video_stream->codecpar->coded_side_data, &video_stream->codecpar->nb_coded_side_data, AV_PKT_DATA_MASTERING_DISPLAY_METADATA, self->mastering_display_metadata, sizeof(*self->mastering_display_metadata), 0);
-        #endif
-    }
-
     self->hdr_metadata_set = true;
+    self->hdr_metadata = drm_fd->hdr_metadata;
 }
 
 static vec2i swap_vec2i(vec2i value) {
@@ -311,7 +271,7 @@ static bool is_plane_compressed(uint64_t modifier) {
     return false;
 }
 
-static int gsr_capture_kms_capture(gsr_capture *cap, AVStream *video_stream, AVFrame *frame, gsr_color_conversion *color_conversion) {
+static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
     gsr_capture_kms *self = cap->priv;
     const bool cursor_texture_id_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
 
@@ -361,7 +321,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVStream *video_stream, AVF
         cursor_drm_fd = NULL;
 
     if(drm_fd->has_hdr_metadata && self->params.hdr && hdr_metadata_is_supported_format(&drm_fd->hdr_metadata))
-        gsr_kms_set_hdr_metadata(self, video_stream, drm_fd);
+        gsr_kms_set_hdr_metadata(self, drm_fd);
 
     if(is_plane_compressed(drm_fd->modifier)) {
         static bool compressed_plane_warning_shown = false;
@@ -526,17 +486,43 @@ static gsr_source_color gsr_capture_kms_get_source_color(gsr_capture *cap) {
 }
 
 static bool gsr_capture_kms_uses_external_image(gsr_capture *cap) {
-    gsr_capture_kms *cap_kms = cap->priv;
-    return cap_kms->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
+    gsr_capture_kms *self = cap->priv;
+    return self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
+}
+
+static bool gsr_capture_kms_set_hdr_metadata(gsr_capture *cap, AVMasteringDisplayMetadata *mastering_display_metadata, AVContentLightMetadata *light_metadata) {
+    gsr_capture_kms *self = cap->priv;
+
+    if(!self->hdr_metadata_set)
+        return false;
+
+    light_metadata->MaxCLL = self->hdr_metadata.hdmi_metadata_type1.max_cll;
+    light_metadata->MaxFALL = self->hdr_metadata.hdmi_metadata_type1.max_fall;
+
+    for(int i = 0; i < 3; ++i) {
+        mastering_display_metadata->display_primaries[i][0] = av_make_q(self->hdr_metadata.hdmi_metadata_type1.display_primaries[i].x, 50000);
+        mastering_display_metadata->display_primaries[i][1] = av_make_q(self->hdr_metadata.hdmi_metadata_type1.display_primaries[i].y, 50000);
+    }
+
+    mastering_display_metadata->white_point[0] = av_make_q(self->hdr_metadata.hdmi_metadata_type1.white_point.x, 50000);
+    mastering_display_metadata->white_point[1] = av_make_q(self->hdr_metadata.hdmi_metadata_type1.white_point.y, 50000);
+
+    mastering_display_metadata->min_luminance = av_make_q(self->hdr_metadata.hdmi_metadata_type1.min_display_mastering_luminance, 10000);
+    mastering_display_metadata->max_luminance = av_make_q(self->hdr_metadata.hdmi_metadata_type1.max_display_mastering_luminance, 1);
+
+    mastering_display_metadata->has_primaries = mastering_display_metadata->display_primaries[0][0].num > 0;
+    mastering_display_metadata->has_luminance = mastering_display_metadata->max_luminance.num > 0;
+
+    return true;
 }
 
 static void gsr_capture_kms_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
     (void)video_codec_context;
-    gsr_capture_kms *cap_kms = cap->priv;
+    gsr_capture_kms *self = cap->priv;
     if(cap->priv) {
-        gsr_capture_kms_stop(cap_kms);
-        free((void*)cap_kms->params.display_to_capture);
-        cap_kms->params.display_to_capture = NULL;
+        gsr_capture_kms_stop(self);
+        free((void*)self->params.display_to_capture);
+        self->params.display_to_capture = NULL;
         free(cap->priv);
         cap->priv = NULL;
     }
@@ -577,6 +563,7 @@ gsr_capture* gsr_capture_kms_create(const gsr_capture_kms_params *params) {
         .capture_end = gsr_capture_kms_capture_end,
         .get_source_color = gsr_capture_kms_get_source_color,
         .uses_external_image = gsr_capture_kms_uses_external_image,
+        .set_hdr_metadata = gsr_capture_kms_set_hdr_metadata,
         .destroy = gsr_capture_kms_destroy,
         .priv = cap_kms
     };

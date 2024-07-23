@@ -39,6 +39,7 @@ extern "C" {
 #include <libswresample/swresample.h>
 #include <libavutil/avutil.h>
 #include <libavutil/time.h>
+#include <libavutil/mastering_display_metadata.h>
 #include <libavfilter/avfilter.h>
 #include <libavfilter/buffersink.h>
 #include <libavfilter/buffersrc.h>
@@ -1287,11 +1288,49 @@ struct AudioTrack {
     int64_t pts = 0;
 };
 
+static bool add_hdr_metadata_to_video_stream(gsr_capture *cap, AVStream *video_stream) {
+    size_t light_metadata_size = 0;
+    AVContentLightMetadata *light_metadata = av_content_light_metadata_alloc(&light_metadata_size);
+    AVMasteringDisplayMetadata *mastering_display_metadata = av_mastering_display_metadata_alloc();
+
+    if(!light_metadata || !mastering_display_metadata) {
+        if(light_metadata)
+            av_freep(light_metadata);
+
+        if(mastering_display_metadata)
+            av_freep(mastering_display_metadata);
+
+        return false;
+    }
+
+    if(!gsr_capture_set_hdr_metadata(cap, mastering_display_metadata, light_metadata)) {
+        av_freep(light_metadata);
+        av_freep(mastering_display_metadata);
+        return false;
+    }
+
+    // TODO: More error checking
+
+    #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(60, 31, 102)
+    const bool added_light_metadata = av_stream_add_side_data(video_stream, AV_PKT_DATA_CONTENT_LIGHT_LEVEL, light_metadata, light_metadata_size);
+    #else
+    av_packet_side_data_add(&video_stream->codecpar->coded_side_data, &video_stream->codecpar->nb_coded_side_data, AV_PKT_DATA_CONTENT_LIGHT_LEVEL, light_metadata, light_metadata_size, 0);
+    #endif
+
+    #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(60, 31, 102)
+    const bool added_display_metadata = av_stream_add_side_data(video_stream, AV_PKT_DATA_MASTERING_DISPLAY_METADATA, mastering_display_metadata, sizeof(*mastering_display_metadata));
+    #else
+    av_packet_side_data_add(&video_stream->codecpar->coded_side_data, &video_stream->codecpar->nb_coded_side_data, AV_PKT_DATA_MASTERING_DISPLAY_METADATA, mastering_display_metadata, sizeof(*mastering_display_metadata), 0);
+    #endif
+
+    return true;
+}
+
 static std::future<void> save_replay_thread;
 static std::vector<std::shared_ptr<PacketData>> save_replay_packets;
 static std::string save_replay_output_filepath;
 
-static void save_replay_async(AVCodecContext *video_codec_context, int video_stream_index, std::vector<AudioTrack> &audio_tracks, std::deque<std::shared_ptr<PacketData>> &frame_data_queue, bool frames_erased, std::string output_dir, const char *container_format, const std::string &file_extension, std::mutex &write_output_mutex, bool date_folders) {
+static void save_replay_async(AVCodecContext *video_codec_context, int video_stream_index, std::vector<AudioTrack> &audio_tracks, std::deque<std::shared_ptr<PacketData>> &frame_data_queue, bool frames_erased, std::string output_dir, const char *container_format, const std::string &file_extension, std::mutex &write_output_mutex, bool date_folders, bool hdr, gsr_capture *capture) {
     if(save_replay_thread.valid())
         return;
     
@@ -1343,36 +1382,42 @@ static void save_replay_async(AVCodecContext *video_codec_context, int video_str
         save_replay_output_filepath = output_dir + "/Replay_" + get_date_str() + "." + file_extension;
     }
 
-    save_replay_thread = std::async(std::launch::async, [video_stream_index, container_format, start_index, video_pts_offset, audio_pts_offset, video_codec_context, &audio_tracks]() mutable {
-        AVFormatContext *av_format_context;
-        avformat_alloc_output_context2(&av_format_context, nullptr, container_format, nullptr);
+    AVFormatContext *av_format_context;
+    avformat_alloc_output_context2(&av_format_context, nullptr, container_format, nullptr);
 
-        AVStream *video_stream = create_stream(av_format_context, video_codec_context);
-        avcodec_parameters_from_context(video_stream->codecpar, video_codec_context);
+    AVStream *video_stream = create_stream(av_format_context, video_codec_context);
+    avcodec_parameters_from_context(video_stream->codecpar, video_codec_context);
 
-        std::unordered_map<int, AudioTrack*> stream_index_to_audio_track_map;
-        for(AudioTrack &audio_track : audio_tracks) {
-            stream_index_to_audio_track_map[audio_track.stream_index] = &audio_track;
-            AVStream *audio_stream = create_stream(av_format_context, audio_track.codec_context);
-            avcodec_parameters_from_context(audio_stream->codecpar, audio_track.codec_context);
-            audio_track.stream = audio_stream;
-        }
+    std::unordered_map<int, AudioTrack*> stream_index_to_audio_track_map;
+    for(AudioTrack &audio_track : audio_tracks) {
+        stream_index_to_audio_track_map[audio_track.stream_index] = &audio_track;
+        AVStream *audio_stream = create_stream(av_format_context, audio_track.codec_context);
+        avcodec_parameters_from_context(audio_stream->codecpar, audio_track.codec_context);
+        audio_track.stream = audio_stream;
+    }
 
-        int ret = avio_open(&av_format_context->pb, save_replay_output_filepath.c_str(), AVIO_FLAG_WRITE);
-        if (ret < 0) {
-            fprintf(stderr, "Error: Could not open '%s': %s. Make sure %s is an existing directory with write access\n", save_replay_output_filepath.c_str(), av_error_to_string(ret), save_replay_output_filepath.c_str());
-            return;
-        }
+    int ret = avio_open(&av_format_context->pb, save_replay_output_filepath.c_str(), AVIO_FLAG_WRITE);
+    if (ret < 0) {
+        fprintf(stderr, "Error: Could not open '%s': %s. Make sure %s is an existing directory with write access\n", save_replay_output_filepath.c_str(), av_error_to_string(ret), save_replay_output_filepath.c_str());
+        return;
+    }
 
-        AVDictionary *options = nullptr;
-        av_dict_set(&options, "strict", "experimental", 0);
+    AVDictionary *options = nullptr;
+    av_dict_set(&options, "strict", "experimental", 0);
 
-        ret = avformat_write_header(av_format_context, &options);
-        if (ret < 0) {
-            fprintf(stderr, "Error occurred when writing header to output file: %s\n", av_error_to_string(ret));
-            return;
-        }
+    ret = avformat_write_header(av_format_context, &options);
+    if (ret < 0) {
+        fprintf(stderr, "Error occurred when writing header to output file: %s\n", av_error_to_string(ret));
+        avio_close(av_format_context->pb);
+        avformat_free_context(av_format_context);
+        av_dict_free(&options);
+        return;
+    }
 
+    if(hdr)
+        add_hdr_metadata_to_video_stream(capture, video_stream);
+
+    save_replay_thread = std::async(std::launch::async, [video_stream_index, video_stream, start_index, video_pts_offset, audio_pts_offset, video_codec_context, &audio_tracks, stream_index_to_audio_track_map, av_format_context, options]() mutable {
         for(size_t i = start_index; i < save_replay_packets.size(); ++i) {
             // TODO: Check if successful
             AVPacket av_packet;
@@ -1404,7 +1449,7 @@ static void save_replay_async(AVCodecContext *video_codec_context, int video_str
             av_packet.stream_index = stream->index;
             av_packet_rescale_ts(&av_packet, codec_context->time_base, stream->time_base);
 
-            ret = av_write_frame(av_format_context, &av_packet);
+            const int ret = av_write_frame(av_format_context, &av_packet);
             if(ret < 0)
                 fprintf(stderr, "Error: Failed to write frame index %d to muxer, reason: %s (%d)\n", stream->index, av_error_to_string(ret), ret);
 
@@ -3044,6 +3089,8 @@ int main(int argc, char **argv) {
     int64_t video_pts_counter = 0;
     int64_t video_prev_pts = 0;
 
+    bool hdr_metadata_set = false;
+
     while(running) {
         double frame_start = clock_get_monotonic_seconds();
 
@@ -3107,8 +3154,11 @@ int main(int argc, char **argv) {
             const int num_frames = framerate_mode == FramerateMode::CONSTANT ? std::max((int64_t)0LL, expected_frames - video_pts_counter) : 1;
 
             if(num_frames > 0 && !paused) {
-                gsr_capture_capture(capture, video_stream, video_frame, &color_conversion);
+                gsr_capture_capture(capture, video_frame, &color_conversion);
                 gsr_video_encoder_copy_textures_to_frame(video_encoder, video_frame);
+
+                if(hdr && !hdr_metadata_set && replay_buffer_size_secs == -1 && add_hdr_metadata_to_video_stream(capture, video_stream))
+                    hdr_metadata_set = true;
 
                 // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
                 for(int i = 0; i < num_frames; ++i) {
@@ -3163,7 +3213,7 @@ int main(int argc, char **argv) {
 
         if(save_replay == 1 && !save_replay_thread.valid() && replay_buffer_size_secs != -1) {
             save_replay = 0;
-            save_replay_async(video_codec_context, VIDEO_STREAM_INDEX, audio_tracks, frame_data_queue, frames_erased, filename, container_format, file_extension, write_output_mutex, date_folders);
+            save_replay_async(video_codec_context, VIDEO_STREAM_INDEX, audio_tracks, frame_data_queue, frames_erased, filename, container_format, file_extension, write_output_mutex, date_folders, hdr, capture);
         }
 
         double frame_end = clock_get_monotonic_seconds();

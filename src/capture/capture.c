@@ -24,9 +24,9 @@ bool gsr_capture_should_stop(gsr_capture *cap, bool *err) {
         return false;
 }
 
-int gsr_capture_capture(gsr_capture *cap, AVStream *video_stream, AVFrame *frame, gsr_color_conversion *color_conversion) {
+int gsr_capture_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
     assert(cap->started);
-    return cap->capture(cap, video_stream, frame, color_conversion);
+    return cap->capture(cap, frame, color_conversion);
 }
 
 void gsr_capture_capture_end(gsr_capture *cap, AVFrame *frame) {
@@ -42,6 +42,13 @@ gsr_source_color gsr_capture_get_source_color(gsr_capture *cap) {
 bool gsr_capture_uses_external_image(gsr_capture *cap) {
     if(cap->uses_external_image)
         return cap->uses_external_image(cap);
+    else
+        return false;
+}
+
+bool gsr_capture_set_hdr_metadata(gsr_capture *cap, AVMasteringDisplayMetadata *mastering_display_metadata, AVContentLightMetadata *light_metadata) {
+    if(cap->set_hdr_metadata)
+        return cap->set_hdr_metadata(cap, mastering_display_metadata, light_metadata);
     else
         return false;
 }

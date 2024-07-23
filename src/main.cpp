@@ -1291,7 +1291,7 @@ static std::future<void> save_replay_thread;
 static std::vector<std::shared_ptr<PacketData>> save_replay_packets;
 static std::string save_replay_output_filepath;
 
-static void save_replay_async(AVCodecContext *video_codec_context, int video_stream_index, std::vector<AudioTrack> &audio_tracks, std::deque<std::shared_ptr<PacketData>> &frame_data_queue, bool frames_erased, std::string output_dir, const char *container_format, const std::string &file_extension, std::mutex &write_output_mutex, bool make_folders) {
+static void save_replay_async(AVCodecContext *video_codec_context, int video_stream_index, std::vector<AudioTrack> &audio_tracks, std::deque<std::shared_ptr<PacketData>> &frame_data_queue, bool frames_erased, std::string output_dir, const char *container_format, const std::string &file_extension, std::mutex &write_output_mutex, bool date_folders) {
     if(save_replay_thread.valid())
         return;
     
@@ -1334,7 +1334,7 @@ static void save_replay_async(AVCodecContext *video_codec_context, int video_str
         }
     }
 
-    if (make_folders) {
+    if (date_folders) {
         std::string output_folder = output_dir + '/' + get_date_only_str();
         create_directory_recursive(&output_folder[0]);
         save_replay_output_filepath = output_folder + "/Replay_" + get_time_only_str() + "." + file_extension;
@@ -1999,7 +1999,7 @@ int main(int argc, char **argv) {
         { "-fm", Arg { {}, true, false } },
         { "-pixfmt", Arg { {}, true, false } },
         { "-v", Arg { {}, true, false } },
-        { "-mf", Arg { {}, true, false } },
+        { "-mf", Arg { {}, true, false } }, // TODO: Remove, this exists for backwards compatibility. -df should be used instead
         { "-df", Arg { {}, true, false } },
         { "-sc", Arg { {}, true, false } },
         { "-cr", Arg { {}, true, false } },
@@ -2160,17 +2160,20 @@ int main(int argc, char **argv) {
         usage();
     }
 
-    bool make_folders = false;
+    bool date_folders = false;
     const char *date_folders_str = args["-df"].value();
-    if(!date_folders_str)
+    if(!date_folders_str) {
         date_folders_str = args["-mf"].value();
+        if(date_folders_str)
+            fprintf(stderr, "Warning: -mf is deprecated, use -df instead\n");
+    }
     if(!date_folders_str)
         date_folders_str = "no";
 
     if(strcmp(date_folders_str, "yes") == 0) {
-        make_folders = true;
+        date_folders = true;
     } else if(strcmp(date_folders_str, "no") == 0) {
-        make_folders = false;
+        date_folders = false;
     } else {
         fprintf(stderr, "Error: -df should either be either 'yes' or 'no', got: '%s'\n", date_folders_str);
         usage();
@@ -3160,7 +3163,7 @@ int main(int argc, char **argv) {
 
         if(save_replay == 1 && !save_replay_thread.valid() && replay_buffer_size_secs != -1) {
             save_replay = 0;
-            save_replay_async(video_codec_context, VIDEO_STREAM_INDEX, audio_tracks, frame_data_queue, frames_erased, filename, container_format, file_extension, write_output_mutex, make_folders);
+            save_replay_async(video_codec_context, VIDEO_STREAM_INDEX, audio_tracks, frame_data_queue, frames_erased, filename, container_format, file_extension, write_output_mutex, date_folders);
         }
 
         double frame_end = clock_get_monotonic_seconds();

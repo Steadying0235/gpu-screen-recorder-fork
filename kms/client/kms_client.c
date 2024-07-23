@@ -88,7 +88,7 @@ static int recv_msg_from_server(int server_pid, int server_fd, gsr_kms_response 
     response_message.msg_iov = &iov;
     response_message.msg_iovlen = 1;
 
-    char cmsgbuf[CMSG_SPACE(sizeof(int) * GSR_KMS_MAX_ITEMS)];
+    char cmsgbuf[CMSG_SPACE(sizeof(int) * GSR_KMS_MAX_ITEMS * GSR_KMS_MAX_DMA_BUFS)];
     memset(cmsgbuf, 0, sizeof(cmsgbuf));
     response_message.msg_control = cmsgbuf;
     response_message.msg_controllen = sizeof(cmsgbuf);

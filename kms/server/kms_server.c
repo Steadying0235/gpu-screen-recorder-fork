@@ -54,17 +54,18 @@ static int send_msg_to_client(int client_fd, gsr_kms_response *response) {
     response_message.msg_iov = &iov;
     response_message.msg_iovlen = 1;
 
-    char cmsgbuf[CMSG_SPACE(sizeof(int) * max_int(1, response->num_items))];
+    const int num_fds = count_num_fds(response);
+    char cmsgbuf[CMSG_SPACE(sizeof(int) * max_int(1, num_fds))];
     memset(cmsgbuf, 0, sizeof(cmsgbuf));
 
-    if(response->num_items > 0) {
+    if(num_fds > 0) {
         response_message.msg_control = cmsgbuf;
         response_message.msg_controllen = sizeof(cmsgbuf);
 
         struct cmsghdr *cmsg = CMSG_FIRSTHDR(&response_message);
         cmsg->cmsg_level = SOL_SOCKET;
         cmsg->cmsg_type = SCM_RIGHTS;
-        cmsg->cmsg_len = CMSG_LEN(sizeof(int) * count_num_fds(response));
+        cmsg->cmsg_len = CMSG_LEN(sizeof(int) * num_fds);
 
         int *fds = (int*)CMSG_DATA(cmsg);
         int fd_index = 0;

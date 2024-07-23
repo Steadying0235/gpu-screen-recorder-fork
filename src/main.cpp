@@ -1092,7 +1092,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  --info\n");
     fprintf(stderr, "        List info about the system (for use by GPU Screen Recorder UI). Lists the following information (prints them to stdout and exits):\n");
-    fprintf(stderr, "        Supported video codecs (h264, hevc, av1, vp8, vp9, (if supported)).\n");
+    fprintf(stderr, "        Supported video codecs (h264, hevc, hevc_hdr, av1, av1_hdr, vp8, vp9, (if supported)).\n");
     fprintf(stderr, "        Supported capture options (window, focused, screen, monitors and portal, if supported by the system).\n");
     fprintf(stderr, "        If opengl initialization fails then the program exits with 22, if no usable drm device is found then it exits with 23. On success it exits with 0.\n");
     fprintf(stderr, "\n");
@@ -1614,13 +1614,16 @@ static void list_gpu_info(gsr_egl *egl) {
 }
 
 static void list_supported_video_codecs(gsr_egl *egl) {
-    // TODO: Output hdr
     if(find_h264_encoder(egl->gpu_info.vendor, egl->card_path))
         puts("h264");
-    if(find_hevc_encoder(egl->gpu_info.vendor, egl->card_path))
+    if(find_hevc_encoder(egl->gpu_info.vendor, egl->card_path)) {
         puts("hevc");
-    if(find_av1_encoder(egl->gpu_info.vendor, egl->card_path))
+        puts("hevc_hdr");
+    }
+    if(find_av1_encoder(egl->gpu_info.vendor, egl->card_path)) {
         puts("av1");
+        puts("av1_hdr");
+    }
     if(find_vp8_encoder(egl->gpu_info.vendor, egl->card_path))
         puts("vp8");
     if(find_vp9_encoder(egl->gpu_info.vendor, egl->card_path))

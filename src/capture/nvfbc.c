@@ -25,12 +25,8 @@ typedef struct {
     bool capture_session_created;
 
     gsr_cuda cuda;
-    CUgraphicsResource cuda_graphics_resources[2];
-    CUarray mapped_arrays[2];
-    CUstream cuda_stream; // TODO: asdasdsa
     NVFBC_TOGL_SETUP_PARAMS setup_params;
 
-    bool direct_capture;
     bool supports_direct_cursor;
     bool capture_region;
     uint32_t x, y, width, height;
@@ -258,15 +254,15 @@ static int gsr_capture_nvfbc_setup_session(gsr_capture_nvfbc *cap_nvfbc) {
     memset(&create_capture_params, 0, sizeof(create_capture_params));
     create_capture_params.dwVersion = NVFBC_CREATE_CAPTURE_SESSION_PARAMS_VER;
     create_capture_params.eCaptureType = NVFBC_CAPTURE_TO_GL;
-    create_capture_params.bWithCursor = (!cap_nvfbc->direct_capture || cap_nvfbc->supports_direct_cursor) ? NVFBC_TRUE : NVFBC_FALSE;
+    create_capture_params.bWithCursor = (!cap_nvfbc->params.direct_capture || cap_nvfbc->supports_direct_cursor) ? NVFBC_TRUE : NVFBC_FALSE;
     if(!cap_nvfbc->params.record_cursor)
         create_capture_params.bWithCursor = false;
     if(cap_nvfbc->capture_region)
         create_capture_params.captureBox = (NVFBC_BOX){ cap_nvfbc->x, cap_nvfbc->y, cap_nvfbc->width, cap_nvfbc->height };
     create_capture_params.eTrackingType = cap_nvfbc->tracking_type;
     create_capture_params.dwSamplingRateMs = (uint32_t)ceilf(1000.0f / (float)cap_nvfbc->params.fps);
-    create_capture_params.bAllowDirectCapture = cap_nvfbc->direct_capture ? NVFBC_TRUE : NVFBC_FALSE;
-    create_capture_params.bPushModel = cap_nvfbc->direct_capture ? NVFBC_TRUE : NVFBC_FALSE;
+    create_capture_params.bAllowDirectCapture = cap_nvfbc->params.direct_capture ? NVFBC_TRUE : NVFBC_FALSE;
+    create_capture_params.bPushModel = cap_nvfbc->params.direct_capture ? NVFBC_TRUE : NVFBC_FALSE;
     create_capture_params.bDisableAutoModesetRecovery = true;
     if(cap_nvfbc->tracking_type == NVFBC_TRACKING_OUTPUT)
         create_capture_params.dwOutputId = cap_nvfbc->output_id;

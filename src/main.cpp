@@ -1396,18 +1396,18 @@ static void save_replay_async(AVCodecContext *video_codec_context, int video_str
         audio_track.stream = audio_stream;
     }
 
-    int ret = avio_open(&av_format_context->pb, save_replay_output_filepath.c_str(), AVIO_FLAG_WRITE);
-    if (ret < 0) {
-        fprintf(stderr, "Error: Could not open '%s': %s. Make sure %s is an existing directory with write access\n", save_replay_output_filepath.c_str(), av_error_to_string(ret), save_replay_output_filepath.c_str());
+    const int open_ret = avio_open(&av_format_context->pb, save_replay_output_filepath.c_str(), AVIO_FLAG_WRITE);
+    if (open_ret < 0) {
+        fprintf(stderr, "Error: Could not open '%s': %s. Make sure %s is an existing directory with write access\n", save_replay_output_filepath.c_str(), av_error_to_string(open_ret), save_replay_output_filepath.c_str());
         return;
     }
 
     AVDictionary *options = nullptr;
     av_dict_set(&options, "strict", "experimental", 0);
 
-    ret = avformat_write_header(av_format_context, &options);
-    if (ret < 0) {
-        fprintf(stderr, "Error occurred when writing header to output file: %s\n", av_error_to_string(ret));
+    const int header_write_ret = avformat_write_header(av_format_context, &options);
+    if (header_write_ret < 0) {
+        fprintf(stderr, "Error occurred when writing header to output file: %s\n", av_error_to_string(header_write_ret));
         avio_close(av_format_context->pb);
         avformat_free_context(av_format_context);
         av_dict_free(&options);

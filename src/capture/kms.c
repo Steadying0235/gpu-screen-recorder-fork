@@ -354,6 +354,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     uint32_t offsets[GSR_KMS_MAX_DMA_BUFS];
     uint32_t pitches[GSR_KMS_MAX_DMA_BUFS];
     uint64_t modifiers[GSR_KMS_MAX_DMA_BUFS];
+
     for(int i = 0; i < drm_fd->num_dma_bufs; ++i) {
         fds[i] = drm_fd->dma_buf[i].fd;
         offsets[i] = drm_fd->dma_buf[i].offset;
@@ -427,10 +428,6 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         cursor_pos.x += target_x;
         cursor_pos.y += target_y;
 
-        int fds[GSR_KMS_MAX_DMA_BUFS];
-        uint32_t offsets[GSR_KMS_MAX_DMA_BUFS];
-        uint32_t pitches[GSR_KMS_MAX_DMA_BUFS];
-        uint64_t modifiers[GSR_KMS_MAX_DMA_BUFS];
         for(int i = 0; i < cursor_drm_fd->num_dma_bufs; ++i) {
             fds[i] = cursor_drm_fd->dma_buf[i].fd;
             offsets[i] = cursor_drm_fd->dma_buf[i].offset;

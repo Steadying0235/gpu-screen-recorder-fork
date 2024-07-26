@@ -1754,7 +1754,7 @@ static void info_command() {
     egl.card_path[0] = '\0';
     if(monitor_capture_use_drm(&egl, wayland)) {
         // TODO: Allow specifying another card, and in other places
-        if(!gsr_get_valid_card_path(&egl, egl.card_path, false)) {
+        if(!gsr_get_valid_card_path(&egl, egl.card_path, true)) {
             fprintf(stderr, "Error: no /dev/dri/cardX device found. If you are running GPU Screen Recorder with prime-run then try running without it. Also make sure that you have at least one connected monitor or record a single window instead on X11\n");
             _exit(23);
         }

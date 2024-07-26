@@ -419,7 +419,6 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
         { (void**)&self->glTexSubImage2D, "glTexSubImage2D" },
         { (void**)&self->glCopyImageSubData, "glCopyImageSubData" },
         { (void**)&self->glGetTexImage, "glGetTexImage" },
-        { (void**)&self->glClearTexImage, "glClearTexImage" },
         { (void**)&self->glGenFramebuffers, "glGenFramebuffers" },
         { (void**)&self->glBindFramebuffer, "glBindFramebuffer" },
         { (void**)&self->glDeleteFramebuffers, "glDeleteFramebuffers" },
@@ -650,4 +649,12 @@ void gsr_egl_update(gsr_egl *self) {
 
     // TODO: pselect on wl_display_get_fd before doing dispatch
     wl_display_dispatch(self->wayland.dpy);
+}
+
+void gsr_egl_swap_buffers(gsr_egl *self) {
+    if(self->egl_display) {
+        self->eglSwapBuffers(self->egl_display, self->egl_surface);
+    } else if(self->x11.window) {
+        self->glXSwapBuffers(self->x11.dpy, self->x11.window);
+    }
 }

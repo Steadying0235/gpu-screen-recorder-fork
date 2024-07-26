@@ -250,7 +250,6 @@ struct gsr_egl {
     void (*glTexImage2D)(unsigned int target, int level, int internalFormat, int width, int height, int border, unsigned int format, unsigned int type, const void *pixels);
     void (*glTexSubImage2D)(unsigned int target, int level, int xoffset, int yoffset, int width, int height, unsigned int format, unsigned int type, const void *pixels);
     void (*glCopyImageSubData)(unsigned int srcName, unsigned int srcTarget, int srcLevel, int srcX, int srcY, int srcZ, unsigned int dstName, unsigned int dstTarget, int dstLevel, int dstX, int dstY, int dstZ, int srcWidth, int srcHeight, int srcDepth);
-    void (*glClearTexImage)(unsigned int texture, unsigned int level, unsigned int format, unsigned int type, const void *data);
     void (*glGetTexImage)(unsigned int target, int level, unsigned int format, unsigned int type, void *pixels);
     void (*glGenFramebuffers)(int n, unsigned int *framebuffers);
     void (*glBindFramebuffer)(unsigned int target, unsigned int framebuffer);
@@ -298,5 +297,7 @@ bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland, bool is_monitor_cap
 void gsr_egl_unload(gsr_egl *self);
 
 void gsr_egl_update(gsr_egl *self);
+/* Does opengl swap with egl or glx, depending on which one is active */
+void gsr_egl_swap_buffers(gsr_egl *self);
 
 #endif /* GSR_EGL_H */

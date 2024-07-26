@@ -275,9 +275,6 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     gsr_capture_kms *self = cap->priv;
     const bool cursor_texture_id_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
 
-    //egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    self->params.egl->glClear(0);
-
     gsr_capture_kms_cleanup_kms_fds(self);
 
     gsr_kms_response_item *drm_fd = NULL;
@@ -456,8 +453,6 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
 
         self->params.egl->glDisable(GL_SCISSOR_TEST);
     }
-
-    self->params.egl->eglSwapBuffers(self->params.egl->egl_display, self->params.egl->egl_surface);
 
     //self->params.egl->glFlush();
     //self->params.egl->glFinish();

@@ -297,9 +297,6 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
 
     gsr_capture_portal_cleanup_plane_fds(self);
 
-    //egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    self->params.egl->glClear(0);
-
     /* TODO: Handle formats other than RGB(a) */
     gsr_pipewire_region region = {0, 0, 0, 0};
     gsr_pipewire_region cursor_region = {0, 0, 0, 0};
@@ -331,8 +328,6 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
         (vec2i){0, 0}, (vec2i){cursor_region.width, cursor_region.height},
         0.0f, false);
     self->params.egl->glDisable(GL_SCISSOR_TEST);
-
-    self->params.egl->eglSwapBuffers(self->params.egl->egl_display, self->params.egl->egl_surface);
 
     //self->params.egl->glFlush();
     //self->params.egl->glFinish();

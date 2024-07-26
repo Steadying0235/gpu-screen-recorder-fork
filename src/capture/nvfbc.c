@@ -418,15 +418,10 @@ static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame, gsr_color
         return 0;
     }
 
-    //cap_nvfbc->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    cap_nvfbc->params.egl->glClear(0);
-
     gsr_color_conversion_draw(color_conversion, cap_nvfbc->setup_params.dwTextures[grab_params.dwTextureIndex],
         (vec2i){0, 0}, (vec2i){frame->width, frame->height},
         (vec2i){0, 0}, (vec2i){frame->width, frame->height},
         0.0f, false);
-
-    cap_nvfbc->params.egl->glXSwapBuffers(cap_nvfbc->params.egl->x11.dpy, cap_nvfbc->params.egl->x11.window);
 
     return 0;
 }

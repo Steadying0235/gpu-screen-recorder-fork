@@ -317,9 +317,6 @@ static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_
     gsr_capture_xcomposite *self = cap->priv;
     (void)frame;
 
-    //self->params.egl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    self->params.egl->glClear(0);
-
     if(self->clear_background) {
         self->clear_background = false;
         gsr_color_conversion_clear(color_conversion);
@@ -351,8 +348,6 @@ static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_
 
         self->params.egl->glDisable(GL_SCISSOR_TEST);
     }
-
-    self->params.egl->eglSwapBuffers(self->params.egl->egl_display, self->params.egl->egl_surface);
 
     // TODO: Do video encoder specific conversion here
 

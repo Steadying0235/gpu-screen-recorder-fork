@@ -1755,7 +1755,7 @@ static void info_command() {
     if(monitor_capture_use_drm(&egl, wayland)) {
         // TODO: Allow specifying another card, and in other places
         if(!gsr_get_valid_card_path(&egl, egl.card_path, true)) {
-            fprintf(stderr, "Error: no /dev/dri/cardX device found. If you are running GPU Screen Recorder with prime-run then try running without it. Also make sure that you have at least one connected monitor or record a single window instead on X11\n");
+            fprintf(stderr, "Error: no /dev/dri/cardX device found. Make sure that you have at least one monitor connected or record a single window instead on X11\n");
             _exit(23);
         }
     }
@@ -2014,6 +2014,11 @@ int main(int argc, char **argv) {
     unsetenv("__GL_SYNC_TO_VBLANK");
     // Same as above, but for amd/intel
     unsetenv("vblank_mode");
+    // Disable prime-run and similar options as it doesn't work, the monitor to capture has to be run on the same device
+    unsetenv("__NV_PRIME_RENDER_OFFLOAD");
+    unsetenv("__NV_PRIME_RENDER_OFFLOAD_PROVIDER");
+    unsetenv("__GLX_VENDOR_LIBRARY_NAME");
+    unsetenv("__VK_LAYER_NV_optimus");
 
     if(argc <= 1)
         usage_full();
@@ -2400,7 +2405,7 @@ int main(int argc, char **argv) {
     if(monitor_capture_use_drm(&egl, wayland)) {
         // TODO: Allow specifying another card, and in other places
         if(!gsr_get_valid_card_path(&egl, egl.card_path, is_monitor_capture)) {
-            fprintf(stderr, "Error: no /dev/dri/cardX device found. If you are running GPU Screen Recorder with prime-run then try running without it. Also make sure that you have at least one connected monitor or record a single window instead on X11\n");
+            fprintf(stderr, "Error: no /dev/dri/cardX device found. Make sure that you have at least one monitor connected or record a single window instead on X11\n");
             _exit(2);
         }
     }

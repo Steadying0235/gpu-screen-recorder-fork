@@ -80,5 +80,5 @@ if get_option('capabilities') == true
 endif
 
 if get_option('nvidia_suspend_fix') == true
-    install_data(files('extra/gsr-nvidia.conf'), install_dir : '/etc/modprobe.d/gsr-nvidia.conf')
+    install_data(files('extra/gsr-nvidia.conf'), install_dir : '/etc/modprobe.d')
 endif

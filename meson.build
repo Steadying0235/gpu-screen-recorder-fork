@@ -78,3 +78,7 @@ endif
 if get_option('capabilities') == true
     meson.add_install_script('extra/meson_post_install.sh')
 endif
+
+if get_option('nvidia_suspend_fix') == true
+    install_data(files('extra/gsr-nvidia.conf'), install_dir : '/etc/modprobe.d/gsr-nvidia.conf')
+endif

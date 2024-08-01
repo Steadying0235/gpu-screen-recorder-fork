@@ -1036,6 +1036,7 @@ static void usage_full() {
     fprintf(stderr, "  -a    Audio device to record from (pulse audio device). Can be specified multiple times. Each time this is specified a new audio track is added for the specified audio device.\n");
     fprintf(stderr, "        A name can be given to the audio input device by prefixing the audio input with <name>/, for example \"dummy/alsa_output.pci-0000_00_1b.0.analog-stereo.monitor\".\n");
     fprintf(stderr, "        Multiple audio devices can be merged into one audio track by using \"|\" as a separator into one -a argument, for example: -a \"alsa_output1|alsa_output2\".\n");
+    fprintf(stderr, "        The audio device can also be \"default_output\" in which case the default output device is used, or \"default_input\" in which case the default input device is used.\n");
     fprintf(stderr, "        If the audio device is an empty string then the audio device is ignored.\n");
     fprintf(stderr, "        Optional, no audio track is added by default.\n");
     fprintf(stderr, "\n");
@@ -1096,6 +1097,13 @@ static void usage_full() {
     fprintf(stderr, "        Supported video codecs (h264, hevc, hevc_hdr, av1, av1_hdr, vp8, vp9, (if supported)).\n");
     fprintf(stderr, "        Supported capture options (window, focused, screen, monitors and portal, if supported by the system).\n");
     fprintf(stderr, "        If opengl initialization fails then the program exits with 22, if no usable drm device is found then it exits with 23. On success it exits with 0.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  --list-audio-devices\n");
+    fprintf(stderr, "        List audio devices (for use by GPU Screen Recorder UI). Lists audio devices in the following format (prints them to stdout and exits):\n");
+    fprintf(stderr, "          <audio_device_name> <audio_device_name_in_human_readable_format>\n");
+    fprintf(stderr, "        For example:\n");
+    fprintf(stderr, "          bluez_input.88:C9:E8:66:A2:27 WH-1000XM4\n");
+    fprintf(stderr, "        The <audio_device_name> is the name to pass to GPU Screen Recorder in a -a option.\n");
     fprintf(stderr, "\n");
     //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, set to 'yuv420' by default\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r).\n");
@@ -1782,6 +1790,23 @@ static void info_command() {
     _exit(0);
 }
 
+static void list_audio_devices_command() {
+    const AudioDevices audio_devices = get_pulseaudio_inputs();
+
+    if(!audio_devices.default_output.empty())
+        puts("default_output Default output");
+
+    if(!audio_devices.default_input.empty())
+        puts("default_input Default input");
+
+    for(const auto &audio_input : audio_devices.audio_inputs) {
+        printf("%s %s\n", audio_input.name.c_str(), audio_input.description.c_str());
+    }
+
+    fflush(stdout);
+    _exit(0);
+}
+
 static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl *egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range, bool record_cursor, bool track_damage, bool use_software_video_encoder, bool restore_portal_session) {
     vec2i region_size = { 0, 0 };
     Window src_window_id = None;
@@ -1998,6 +2023,65 @@ struct Arg {
     }
 };
 
+// Manually check if the audio inputs we give exist. This is only needed for pipewire, not pulseaudio.
+// Pipewire instead DEFAULTS TO THE DEFAULT AUDIO INPUT. THAT'S RETARDED.
+// OH, YOU MISSPELLED THE AUDIO INPUT? FUCK YOU
+static std::vector<MergedAudioInputs> parse_audio_inputs(const AudioDevices &audio_devices, const Arg &audio_input_arg, bool &uses_amix) {
+    std::vector<MergedAudioInputs> requested_audio_inputs;
+    uses_amix = false;
+
+    for(const char *audio_input : audio_input_arg.values) {
+        if(!audio_input || audio_input[0] == '\0')
+            continue;
+
+        requested_audio_inputs.push_back({parse_audio_input_arg(audio_input)});
+        if(requested_audio_inputs.back().audio_inputs.size() > 1)
+            uses_amix = true;
+
+        for(AudioInput &request_audio_input : requested_audio_inputs.back().audio_inputs) {
+            bool match = false;
+
+            if(!audio_devices.default_output.empty() && request_audio_input.name == "default_output") {
+                request_audio_input.name = audio_devices.default_output;
+                if(request_audio_input.description.empty())
+                    request_audio_input.description = "gsr-Default output";
+                match = true;
+            }
+
+            if(!audio_devices.default_input.empty() && request_audio_input.name == "default_input") {
+                request_audio_input.name = audio_devices.default_input;
+                if(request_audio_input.description.empty())
+                    request_audio_input.description = "gsr-Default input";
+                match = true;
+            }
+
+            for(const auto &existing_audio_input : audio_devices.audio_inputs) {
+                if(request_audio_input.name == existing_audio_input.name) {
+                    if(request_audio_input.description.empty())
+                        request_audio_input.description = "gsr-" + existing_audio_input.description;
+
+                    match = true;
+                    break;
+                }
+            }
+
+            if(!match) {
+                fprintf(stderr, "Error: Audio input device '%s' is not a valid audio device, expected one of:\n", request_audio_input.name.c_str());
+                if(!audio_devices.default_output.empty())
+                    fprintf(stderr, "    default_output (Default output)\n");
+                if(!audio_devices.default_input.empty())
+                    fprintf(stderr, "    default_input (Default input)\n");
+                for(const auto &existing_audio_input : audio_devices.audio_inputs) {
+                    fprintf(stderr, "    %s (%s)\n", existing_audio_input.name.c_str(), existing_audio_input.description.c_str());
+                }
+                _exit(2);
+            }
+        }
+    }
+
+    return requested_audio_inputs;
+}
+
 int main(int argc, char **argv) {
     signal(SIGINT, stop_handler);
     signal(SIGUSR1, save_replay_handler);
@@ -2030,6 +2114,11 @@ int main(int argc, char **argv) {
 
     if(argc == 2 && strcmp(argv[1], "--info") == 0) {
         info_command();
+        _exit(0);
+    }
+
+    if(argc == 2 && strcmp(argv[1], "--list-audio-devices") == 0) {
+        list_audio_devices_command();
         _exit(0);
     }
 
@@ -2274,44 +2363,12 @@ int main(int argc, char **argv) {
     }
 
     const Arg &audio_input_arg = args["-a"];
-    std::vector<AudioInput> audio_inputs;
+    AudioDevices audio_devices;
     if(!audio_input_arg.values.empty())
-        audio_inputs = get_pulseaudio_inputs();
-    std::vector<MergedAudioInputs> requested_audio_inputs;
+        audio_devices = get_pulseaudio_inputs();
+
     bool uses_amix = false;
-
-    // Manually check if the audio inputs we give exist. This is only needed for pipewire, not pulseaudio.
-    // Pipewire instead DEFAULTS TO THE DEFAULT AUDIO INPUT. THAT'S RETARDED.
-    // OH, YOU MISSPELLED THE AUDIO INPUT? FUCK YOU
-    for(const char *audio_input : audio_input_arg.values) {
-        if(!audio_input || audio_input[0] == '\0')
-            continue;
-
-        requested_audio_inputs.push_back({parse_audio_input_arg(audio_input)});
-        if(requested_audio_inputs.back().audio_inputs.size() > 1)
-            uses_amix = true;
-
-        for(AudioInput &request_audio_input : requested_audio_inputs.back().audio_inputs) {
-            bool match = false;
-            for(const auto &existing_audio_input : audio_inputs) {
-                if(strcmp(request_audio_input.name.c_str(), existing_audio_input.name.c_str()) == 0) {
-                    if(request_audio_input.description.empty())
-                        request_audio_input.description = "gsr-" + existing_audio_input.description;
-
-                    match = true;
-                    break;
-                }
-            }
-
-            if(!match) {
-                fprintf(stderr, "Error: Audio input device '%s' is not a valid audio device, expected one of:\n", request_audio_input.name.c_str());
-                for(const auto &existing_audio_input : audio_inputs) {
-                    fprintf(stderr, "    %s (%s)\n", existing_audio_input.name.c_str(), existing_audio_input.description.c_str());
-                }
-                _exit(2);
-            }
-        }
-    }
+    std::vector<MergedAudioInputs> requested_audio_inputs = parse_audio_inputs(audio_devices, audio_input_arg, uses_amix);
 
     const char *container_format = args["-c"].value();
     if(container_format && strcmp(container_format, "mkv") == 0)

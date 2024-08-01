@@ -31,6 +31,12 @@ struct AudioInput {
     std::string description;
 };
 
+struct AudioDevices {
+    std::string default_output;
+    std::string default_input;
+    std::vector<AudioInput> audio_inputs;
+};
+
 struct MergedAudioInputs {
     std::vector<AudioInput> audio_inputs;
 };
@@ -57,6 +63,6 @@ void sound_device_close(SoundDevice *device);
 */
 int sound_device_read_next_chunk(SoundDevice *device, void **buffer, double timeout_sec, double *latency_seconds);
 
-std::vector<AudioInput> get_pulseaudio_inputs();
+AudioDevices get_pulseaudio_inputs();
 
 #endif /* GPU_SCREEN_RECORDER_H */

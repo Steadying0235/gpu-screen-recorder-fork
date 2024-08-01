@@ -327,12 +327,66 @@ static void pa_sourcelist_cb(pa_context *ctx, const pa_source_info *source_info,
     if(eol > 0)
         return;
 
-    std::vector<AudioInput> *inputs = (std::vector<AudioInput>*)userdata;
-    inputs->push_back({ source_info->name, source_info->description });
+    AudioDevices *audio_devices = (AudioDevices*)userdata;
+    audio_devices->audio_inputs.push_back({ source_info->name, source_info->description });
 }
 
-std::vector<AudioInput> get_pulseaudio_inputs() {
-    std::vector<AudioInput> inputs;
+static void pa_server_info_cb(pa_context*, const pa_server_info *server_info, void *userdata) {
+    AudioDevices *audio_devices = (AudioDevices*)userdata;
+    if(server_info->default_sink_name)
+        audio_devices->default_output = std::string(server_info->default_sink_name) + ".monitor";
+    if(server_info->default_source_name)
+        audio_devices->default_input = server_info->default_source_name;
+}
+
+static void get_pulseaudio_default_inputs(AudioDevices &audio_devices) {
+    pa_mainloop *main_loop = pa_mainloop_new();
+
+    pa_context *ctx = pa_context_new(pa_mainloop_get_api(main_loop), "gpu-screen-recorder-gtk");
+    pa_context_connect(ctx, NULL, PA_CONTEXT_NOFLAGS, NULL);
+    int state = 0;
+    int pa_ready = 0;
+    pa_context_set_state_callback(ctx, pa_state_cb, &pa_ready);
+
+    pa_operation *pa_op = NULL;
+
+    for(;;) {
+        // Not ready
+        if(pa_ready == 0) {
+            pa_mainloop_iterate(main_loop, 1, NULL);
+            continue;
+        }
+
+        switch(state) {
+            case 0: {
+                pa_op = pa_context_get_server_info(ctx, pa_server_info_cb, &audio_devices);
+                ++state;
+                break;
+            }
+        }
+
+        // Couldn't get connection to the server
+        if(pa_ready == 2 || (state == 1 && pa_op && pa_operation_get_state(pa_op) == PA_OPERATION_DONE)) {
+            if(pa_op)
+                pa_operation_unref(pa_op);
+            pa_context_disconnect(ctx);
+            pa_context_unref(ctx);
+            pa_mainloop_free(main_loop);
+            return;
+        }
+
+        pa_mainloop_iterate(main_loop, 1, NULL);
+    }
+
+    pa_mainloop_free(main_loop);
+}
+
+AudioDevices get_pulseaudio_inputs() {
+    AudioDevices audio_devices;
+
+    // TODO: Do this in the same connection below instead of two separate connections
+    get_pulseaudio_default_inputs(audio_devices);
+
     pa_mainloop *main_loop = pa_mainloop_new();
 
     pa_context *ctx = pa_context_new(pa_mainloop_get_api(main_loop), "gpu-screen-recorder");
@@ -352,7 +406,7 @@ std::vector<AudioInput> get_pulseaudio_inputs() {
 
         switch(state) {
             case 0: {
-                pa_op = pa_context_get_source_info_list(ctx, pa_sourcelist_cb, &inputs);
+                pa_op = pa_context_get_source_info_list(ctx, pa_sourcelist_cb, &audio_devices);
                 ++state;
                 break;
             }
@@ -371,5 +425,5 @@ std::vector<AudioInput> get_pulseaudio_inputs() {
     }
 
     pa_mainloop_free(main_loop);
-    return inputs;
+    return audio_devices;
 }

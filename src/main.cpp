@@ -1658,16 +1658,18 @@ static void list_gpu_info(gsr_egl *egl) {
     }
 }
 
-static void list_supported_video_codecs(gsr_egl *egl) {
+static void list_supported_video_codecs(gsr_egl *egl, bool wayland) {
     if(find_h264_encoder(egl->gpu_info.vendor, egl->card_path))
         puts("h264");
     if(find_hevc_encoder(egl->gpu_info.vendor, egl->card_path)) {
         puts("hevc");
-        puts("hevc_hdr");
+        if(wayland)
+            puts("hevc_hdr");
     }
     if(find_av1_encoder(egl->gpu_info.vendor, egl->card_path)) {
         puts("av1");
-        puts("av1_hdr");
+        if(wayland)
+            puts("av1_hdr");
     }
     if(find_vp8_encoder(egl->gpu_info.vendor, egl->card_path))
         puts("vp8");
@@ -1767,7 +1769,7 @@ static void info_command() {
     puts("section=gpu_info");
     list_gpu_info(&egl);
     puts("section=video_codecs");
-    list_supported_video_codecs(&egl);
+    list_supported_video_codecs(&egl, wayland);
     puts("section=capture_options");
     list_supported_capture_options(&egl, wayland);
 

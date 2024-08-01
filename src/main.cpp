@@ -2899,7 +2899,7 @@ int main(int argc, char **argv) {
         const double audio_startup_time_seconds = force_no_audio_offset ? 0 : audio_codec_get_desired_delay(audio_codec, fps);// * ((double)audio_codec_context->frame_size / 1024.0);
         const double num_audio_frames_shift = audio_startup_time_seconds / timeout_sec;
 
-        std::vector<AudioDevice> audio_devices;
+        std::vector<AudioDevice> audio_track_audio_devices;
         for(size_t i = 0; i < merged_audio_inputs.audio_inputs.size(); ++i) {
             auto &audio_input = merged_audio_inputs.audio_inputs[i];
             AVFilterContext *src_ctx = nullptr;
@@ -2923,13 +2923,13 @@ int main(int argc, char **argv) {
             audio_device.frame = create_audio_frame(audio_codec_context);
             audio_device.frame->pts = -audio_codec_context->frame_size * num_audio_frames_shift;
 
-            audio_devices.push_back(std::move(audio_device));
+            audio_track_audio_devices.push_back(std::move(audio_device));
         }
 
         AudioTrack audio_track;
         audio_track.codec_context = audio_codec_context;
         audio_track.stream = audio_stream;
-        audio_track.audio_devices = std::move(audio_devices);
+        audio_track.audio_devices = std::move(audio_track_audio_devices);
         audio_track.graph = graph;
         audio_track.sink = sink;
         audio_track.stream_index = audio_stream_index;

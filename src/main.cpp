@@ -1757,6 +1757,16 @@ static void info_command() {
     if(!wayland)
         wayland = is_xwayland(dpy);
 
+    if(!wayland) {
+        // Disable prime-run and similar options as it doesn't work, the monitor to capture has to be run on the same device.
+        // This is fine on wayland since nvidia uses drm interface there and the monitor query checks the monitors connected
+        // to the drm device.
+        unsetenv("__NV_PRIME_RENDER_OFFLOAD");
+        unsetenv("__NV_PRIME_RENDER_OFFLOAD_PROVIDER");
+        unsetenv("__GLX_VENDOR_LIBRARY_NAME");
+        unsetenv("__VK_LAYER_NV_optimus");
+    }
+
     gsr_egl egl;
     if(!gsr_egl_load(&egl, dpy, wayland, false)) {
         fprintf(stderr, "gsr error: failed to load opengl\n");
@@ -2102,11 +2112,6 @@ int main(int argc, char **argv) {
     unsetenv("__GL_SYNC_TO_VBLANK");
     // Same as above, but for amd/intel
     unsetenv("vblank_mode");
-    // Disable prime-run and similar options as it doesn't work, the monitor to capture has to be run on the same device
-    unsetenv("__NV_PRIME_RENDER_OFFLOAD");
-    unsetenv("__NV_PRIME_RENDER_OFFLOAD_PROVIDER");
-    unsetenv("__GLX_VENDOR_LIBRARY_NAME");
-    unsetenv("__VK_LAYER_NV_optimus");
 
     if(argc <= 1)
         usage_full();
@@ -2432,6 +2437,16 @@ int main(int argc, char **argv) {
 
     if(!wayland)
         wayland = is_xwayland(dpy);
+
+    if(!wayland) {
+        // Disable prime-run and similar options as it doesn't work, the monitor to capture has to be run on the same device.
+        // This is fine on wayland since nvidia uses drm interface there and the monitor query checks the monitors connected
+        // to the drm device.
+        unsetenv("__NV_PRIME_RENDER_OFFLOAD");
+        unsetenv("__NV_PRIME_RENDER_OFFLOAD_PROVIDER");
+        unsetenv("__GLX_VENDOR_LIBRARY_NAME");
+        unsetenv("__VK_LAYER_NV_optimus");
+    }
 
     if(video_codec_is_hdr(video_codec) && !wayland) {
         fprintf(stderr, "Error: hdr video codec option %s is not available on X11\n", video_codec_to_use);

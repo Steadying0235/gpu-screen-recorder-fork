@@ -1320,13 +1320,13 @@ static bool add_hdr_metadata_to_video_stream(gsr_capture *cap, AVStream *video_s
     // TODO: More error checking
 
     #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(60, 31, 102)
-    const bool added_light_metadata = av_stream_add_side_data(video_stream, AV_PKT_DATA_CONTENT_LIGHT_LEVEL, light_metadata, light_metadata_size);
+    const bool added_light_metadata = av_stream_add_side_data(video_stream, AV_PKT_DATA_CONTENT_LIGHT_LEVEL, (uint8_t*)light_metadata, light_metadata_size);
     #else
     av_packet_side_data_add(&video_stream->codecpar->coded_side_data, &video_stream->codecpar->nb_coded_side_data, AV_PKT_DATA_CONTENT_LIGHT_LEVEL, light_metadata, light_metadata_size, 0);
     #endif
 
     #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(60, 31, 102)
-    const bool added_display_metadata = av_stream_add_side_data(video_stream, AV_PKT_DATA_MASTERING_DISPLAY_METADATA, mastering_display_metadata, sizeof(*mastering_display_metadata));
+    const bool added_display_metadata = av_stream_add_side_data(video_stream, AV_PKT_DATA_MASTERING_DISPLAY_METADATA, (uint8_t*)mastering_display_metadata, sizeof(*mastering_display_metadata));
     #else
     av_packet_side_data_add(&video_stream->codecpar->coded_side_data, &video_stream->codecpar->nb_coded_side_data, AV_PKT_DATA_MASTERING_DISPLAY_METADATA, mastering_display_metadata, sizeof(*mastering_display_metadata), 0);
     #endif

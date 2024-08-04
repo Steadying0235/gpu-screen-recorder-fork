@@ -77,12 +77,6 @@ Use SRC_W and SRC_H for screen plane instead of crtc_w and crtc_h.
 
 Make it possible to select which /dev/dri/card* to use, but that requires opengl to also use the same card. Not sure if that is possible for amd, intel and nvidia without using vulkan instead.
 
-Support intel display framebuffer compression (I915_FORMAT_MOD_Y_TILED_CCS modifier) (and other power saving modifiers, see https://trac.ffmpeg.org/ticket/8542). The only fix may be to use desktop portal for recording. This issue doesn't appear on x11 since these modifiers are not used by xorg server.
-This issue only appears on some intel iGPUs, such as Intel Iris Xe, see: https://github.com/dec05eba/gpu-screen-recorder-issues/issues/1.
-    The compression format is described in libdrm/drm_fourcc.h (I915_FORMAT_MOD_Y_TILED_CCS comment). The main surface is plane 0 while plane 1 contains the compression data.
-    The compression data (plane 1) is 1024x512 pixels and matches the main surface (plane 0) and it's divided into 128Bx32 blocks,
-    but the data is actually QWORD (bytes) so it's in 64Bx64 tiles (?).
-
 Test if p2 state can be worked around by using pure nvenc api and overwriting cuInit/cuCtxCreate* to not do anything. Cuda might be loaded when using nvenc but it might not be used, with certain record options? (such as h264 p5).
     nvenc uses cuda when using b frames and rgb->yuv conversion, so convert the image ourselves instead.-
 
@@ -103,8 +97,6 @@ Rotate cursor texture properly (around top left origin).
 Setup hardware video context so we can query constraints and capabilities for better default and better error messages.
 
 Use CAP_SYS_NICE in flatpak too on the main gpu screen recorder binary. It makes recording smoother, especially with constant framerate.
-
-Show error when using compressed kms plane which isn't supported. Also do that in the gui.
 
 Modify ffmpeg to accept opengl texture for nvenc encoding. Removes extra buffers and copies.
 
@@ -145,8 +137,6 @@ To test vulkan encode on amd set the environment variable RADV_PERFTEST=video_en
 Support hevc/av1 for software encoder and hdr support at the same time. Need support for yuv420p shader for that. Use libx265 for hevc and libsvtav1 for av1 (libsvtav1 is the fastest software av1 video encoder). Also support vp8/vp9 since we are not limited by hardware.
 
 Cleanup pipewire code and add more error checks.
-
-Detect if recording monitor on intel and plane is compressed. In that case give an error and tell the user to use -w portal instead.
 
 Make dbus code and pipewire setup non blocking.
 

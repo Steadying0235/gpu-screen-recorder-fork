@@ -253,24 +253,6 @@ static vec2i swap_vec2i(vec2i value) {
     return value;
 }
 
-static bool is_plane_compressed(uint64_t modifier) {
-    switch(modifier) {
-        case I915_FORMAT_MOD_Y_TILED_CCS:
-        case I915_FORMAT_MOD_Yf_TILED_CCS:
-        case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS:
-        case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
-        case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
-        case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS:
-        case I915_FORMAT_MOD_4_TILED_DG2_MC_CCS:
-        case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
-        case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS:
-        case I915_FORMAT_MOD_4_TILED_MTL_MC_CCS:
-        case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS_CC:
-            return true;
-    }
-    return false;
-}
-
 static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
     gsr_capture_kms *self = cap->priv;
     const bool cursor_texture_id_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
@@ -319,14 +301,6 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
 
     if(drm_fd->has_hdr_metadata && self->params.hdr && hdr_metadata_is_supported_format(&drm_fd->hdr_metadata))
         gsr_kms_set_hdr_metadata(self, drm_fd);
-
-    if(is_plane_compressed(drm_fd->modifier)) {
-        static bool compressed_plane_warning_shown = false;
-        if(!compressed_plane_warning_shown) {
-            compressed_plane_warning_shown = true;
-            fprintf(stderr, "gsr warning: gsr_capture_kms_capture: the monitor plane is compressed. The video will likely be glitched/black. Try recording on X11 instead (maybe capturing a single window) or use the \"-w portal\" capture option on Wayland.\n");
-        }
-    }
 
     // TODO: This causes a crash sometimes on steam deck, why? is it a driver bug? a vaapi pure version doesn't cause a crash.
     // Even ffmpeg kmsgrab causes this crash. The error is:

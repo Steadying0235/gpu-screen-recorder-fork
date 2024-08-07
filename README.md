@@ -157,7 +157,7 @@ It seems like ffmpeg earlier than version 6.1 has some type of bug. Install ffmp
 Browsers and discord don't support hevc video codec at the moment. Choose h264 video codec instead with the -k h264 option.
 Note that websites such as youtube support hevc so there is no need to choose h264 video codec if you intend to upload the video to youtube or if you want to play the video locally or if you intend to
 edit the video with a video editor. Hevc allows for better video quality (especially at lower file sizes) so hevc (or av1) is recommended for source videos.
-## I get a black bar/distorted colors on the right/bottom in the video
+## I get a black bar/distorted colors on the sides in the video
 This is mostly an issue on AMD. For av1 it's a hardware issue, see: https://gitlab.freedesktop.org/mesa/mesa/-/issues/9185. For hevc it's a software issue in the AMD driver that hasn't been fixed yet. This issue happens at certain video resolutions. If you get this issue then a workaround is to record with h264 video codec instead (using the -k h264 option).
 ## The video doesn't display or has a green/yellow overlay
 This can happen if your video player is missing the H264/HEVC video codecs. Either install the codecs or use mpv.

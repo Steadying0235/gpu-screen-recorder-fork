@@ -379,7 +379,7 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     }
     //codec_context->chroma_sample_location = AVCHROMA_LOC_CENTER;
     if(codec->id == AV_CODEC_ID_HEVC)
-        codec_context->codec_tag = MKTAG('h', 'v', 'c', '1');
+        codec_context->codec_tag = MKTAG('h', 'v', 'c', '1'); // QuickTime on MacOS requires this or the video wont be playable
     switch(video_quality) {
         case VideoQuality::MEDIUM:
             //codec_context->qmin = 35;
@@ -1004,7 +1004,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr|vp8|vp9] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [-h|--help]\n", program_name);
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|hevc_hdr|av1|av1_hdr|vp8|vp9] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [-h|--help]\n", program_name);
 }
 
 // TODO: Update with portal info
@@ -1087,6 +1087,12 @@ static void usage_full() {
     fprintf(stderr, "  -restore-portal-session\n");
     fprintf(stderr, "        If GPU Screen Recorder should use the same capture option as the last time. Using this option removes the popup asking what you want to record the next time you record with '-w portal' if you selected the option to save session (token) in the desktop portal screencast popup.\n");
     fprintf(stderr, "        This option may not have any effect on your Wayland compositor and your systems desktop portal needs to support ScreenCast version 5 or later. Optional, set to 'no' by default.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  -portal-session-token-filepath\n");
+    fprintf(stderr, "        This option is used together with -restore-portal-session option to specify the file path to save/restore the portal session token to/from.\n");
+    fprintf(stderr, "        This can be used to remember different portal capture options depending on different recording option (such as recording/replay).\n");
+    fprintf(stderr, "        Optional, set to \"$XDG_CONFIG_HOME/gpu-screen-recorder/restore_token\" by default ($XDG_CONFIG_HOME defaults to \"$HOME/.config\").\n");
+    fprintf(stderr, "        Note: the directory to the portal session token file is created automatically if it doesn't exist.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -encoder\n");
     fprintf(stderr, "        Which device should be used for video encoding. Should either be 'gpu' or 'cpu'. Does currently only work with h264 codec option (-k).\n");
@@ -1819,7 +1825,7 @@ static void list_audio_devices_command() {
     _exit(0);
 }
 
-static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl *egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range, bool record_cursor, bool track_damage, bool use_software_video_encoder, bool restore_portal_session) {
+static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl *egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range, bool record_cursor, bool track_damage, bool use_software_video_encoder, bool restore_portal_session, const char *portal_session_token_filepath) {
     vec2i region_size = { 0, 0 };
     Window src_window_id = None;
     bool follow_focused = false;
@@ -1865,6 +1871,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
         portal_params.color_range = color_range;
         portal_params.record_cursor = record_cursor;
         portal_params.restore_portal_session = restore_portal_session;
+        portal_params.portal_session_token_filepath = portal_session_token_filepath;
         capture = gsr_capture_portal_create(&portal_params);
         if(!capture)
             _exit(1);
@@ -2154,6 +2161,7 @@ int main(int argc, char **argv) {
         { "-cursor", Arg { {}, true, false } },
         { "-keyint", Arg { {}, true, false } },
         { "-restore-portal-session", Arg { {}, true, false } },
+        { "-portal-session-token-filepath", Arg { {}, true, false } },
         { "-encoder", Arg { {}, true, false } },
     };
 
@@ -2339,6 +2347,15 @@ int main(int argc, char **argv) {
     } else {
         fprintf(stderr, "Error: -restore-portal-session should either be either 'yes' or 'no', got: '%s'\n", restore_portal_session_str);
         usage();
+    }
+
+    const char *portal_session_token_filepath = args["-portal-session-token-filepath"].value();
+    if(portal_session_token_filepath) {
+        int len = strlen(portal_session_token_filepath);
+        if(len > 0 && portal_session_token_filepath[len - 1] == '/') {
+            fprintf(stderr, "Error: -portal-session-token-filepath should be a path to a file but it ends with a /: %s\n", portal_session_token_filepath);
+            _exit(1);
+        }
     }
 
     const char *recording_saved_script = args["-sc"].value();
@@ -2795,7 +2812,7 @@ int main(int argc, char **argv) {
         _exit(2);
     }
 
-    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, &egl, fps, overclock, video_codec, color_range, record_cursor, framerate_mode == FramerateMode::CONTENT, use_software_video_encoder, restore_portal_session);
+    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, &egl, fps, overclock, video_codec, color_range, record_cursor, framerate_mode == FramerateMode::CONTENT, use_software_video_encoder, restore_portal_session, portal_session_token_filepath);
 
     // (Some?) livestreaming services require at least one audio track to work.
     // If not audio is provided then create one silent audio track.

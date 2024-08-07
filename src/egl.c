@@ -12,7 +12,7 @@
 #include <unistd.h>
 #include <sys/capability.h>
 
-// TODO: rename gsr_egl to something else since this includes both egl and eglx and in the future maybe vulkan too
+// TODO: rename gsr_egl to something else since this includes both egl and glx and in the future maybe vulkan too
 
 // TODO: Move this shit to a separate wayland file, and have a separate file for x11.
 
@@ -251,6 +251,7 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
     }
 
     if(wayland) {
+        // TODO: Error check?
         self->wayland.surface = wl_compositor_create_surface(self->wayland.compositor);
         self->wayland.window = wl_egl_window_create(self->wayland.surface, 16, 16);
         self->egl_surface = self->eglCreateWindowSurface(self->egl_display, ecfg, (EGLNativeWindowType)self->wayland.window, NULL);

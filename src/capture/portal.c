@@ -78,19 +78,7 @@ static void gsr_capture_portal_create_input_textures(gsr_capture_portal *self) {
     self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-static void get_gpu_screen_recorder_config_directory_path(char *buffer, size_t buffer_size) {
-    const char *xdg_config_home = getenv("XDG_CONFIG_HOME");
-    if(xdg_config_home) {
-        snprintf(buffer, buffer_size, "%s/gpu-screen-recorder", xdg_config_home);
-    } else {
-        const char *home = getenv("HOME");
-        if(!home)
-            home = "/tmp";
-        snprintf(buffer, buffer_size, "%s/.config/gpu-screen-recorder", home);
-    }
-}
-
-static void get_gpu_screen_recorder_restore_token_path(char *buffer, size_t buffer_size) {
+static void get_default_gpu_screen_recorder_restore_token_path(char *buffer, size_t buffer_size) {
     const char *xdg_config_home = getenv("XDG_CONFIG_HOME");
     if(xdg_config_home) {
         snprintf(buffer, buffer_size, "%s/gpu-screen-recorder/restore_token", xdg_config_home);
@@ -102,19 +90,32 @@ static void get_gpu_screen_recorder_restore_token_path(char *buffer, size_t buff
     }
 }
 
-static void gsr_capture_portal_save_restore_token(const char *restore_token) {
-    char config_path[PATH_MAX];
-    config_path[0] = '\0';
-    get_gpu_screen_recorder_config_directory_path(config_path, sizeof(config_path));
+static bool create_directory_to_file(const char *filepath) {
+    char dir[PATH_MAX];
+    dir[0] = '\0';
 
-    if(create_directory_recursive(config_path) != 0) {
-        fprintf(stderr, "gsr warning: gsr_capture_portal_save_restore_token: failed to create directory (%s) for restore token\n", config_path);
-        return;
+    const char *split = strrchr(filepath, '/');
+    if(!split) /* Assuming it's the current directory (for example if filepath is "restore_token"), which doesn't need to be created */
+        return true;
+
+    snprintf(dir, sizeof(dir), "%.*s", (int)(split - filepath), filepath);
+    if(create_directory_recursive(dir) != 0) {
+        fprintf(stderr, "gsr warning: gsr_capture_portal_save_restore_token: failed to create directory (%s) for restore token\n", dir);
+        return false;
     }
+    return true;
+}
 
+static void gsr_capture_portal_save_restore_token(const char *restore_token, const char *portal_session_token_filepath) {
     char restore_token_path[PATH_MAX];
     restore_token_path[0] = '\0';
-    get_gpu_screen_recorder_restore_token_path(restore_token_path, sizeof(restore_token_path));
+    if(portal_session_token_filepath)
+        snprintf(restore_token_path, sizeof(restore_token_path), "%s", portal_session_token_filepath);
+    else
+        get_default_gpu_screen_recorder_restore_token_path(restore_token_path, sizeof(restore_token_path));
+
+    if(!create_directory_to_file(restore_token_path))
+        return;
 
     FILE *f = fopen(restore_token_path, "wb");
     if(!f) {
@@ -133,13 +134,16 @@ static void gsr_capture_portal_save_restore_token(const char *restore_token) {
     fclose(f);
 }
 
-static void gsr_capture_portal_get_restore_token_from_cache(char *buffer, size_t buffer_size) {
+static void gsr_capture_portal_get_restore_token_from_cache(char *buffer, size_t buffer_size, const char *portal_session_token_filepath) {
     assert(buffer_size > 0);
     buffer[0] = '\0';
 
     char restore_token_path[PATH_MAX];
     restore_token_path[0] = '\0';
-    get_gpu_screen_recorder_restore_token_path(restore_token_path, sizeof(restore_token_path));
+    if(portal_session_token_filepath)
+        snprintf(restore_token_path, sizeof(restore_token_path), "%s", portal_session_token_filepath);
+    else
+        get_default_gpu_screen_recorder_restore_token_path(restore_token_path, sizeof(restore_token_path));
 
     FILE *f = fopen(restore_token_path, "rb");
     if(!f) {
@@ -173,7 +177,7 @@ static int gsr_capture_portal_setup_dbus(gsr_capture_portal *self, int *pipewire
     char restore_token[1024];
     restore_token[0] = '\0';
     if(self->params.restore_portal_session)
-        gsr_capture_portal_get_restore_token_from_cache(restore_token, sizeof(restore_token));
+        gsr_capture_portal_get_restore_token_from_cache(restore_token, sizeof(restore_token), self->params.portal_session_token_filepath);
 
     if(!gsr_dbus_init(&self->dbus, restore_token))
         return -1;
@@ -201,7 +205,7 @@ static int gsr_capture_portal_setup_dbus(gsr_capture_portal *self, int *pipewire
 
     const char *screencast_restore_token = gsr_dbus_screencast_get_restore_token(&self->dbus);
     if(screencast_restore_token)
-        gsr_capture_portal_save_restore_token(screencast_restore_token);
+        gsr_capture_portal_save_restore_token(screencast_restore_token, self->params.portal_session_token_filepath);
 
     fprintf(stderr, "gsr info: gsr_capture_portal_setup_dbus: OpenPipeWireRemote\n");
     if(!gsr_dbus_screencast_open_pipewire_remote(&self->dbus, self->session_handle, pipewire_fd)) {

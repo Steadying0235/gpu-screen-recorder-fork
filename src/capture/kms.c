@@ -338,6 +338,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
 
     if(self->no_modifiers_fallback) {
         setup_dma_buf_attrs(img_attr, drm_fd->pixel_format, drm_fd->width, drm_fd->height, fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs, false);
+        image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
     } else {
         setup_dma_buf_attrs(img_attr, drm_fd->pixel_format, drm_fd->width, drm_fd->height, fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs, true);
         while(self->params.egl->eglGetError() != EGL_SUCCESS){}

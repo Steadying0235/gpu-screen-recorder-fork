@@ -649,6 +649,7 @@ bool gsr_pipewire_map_texture(gsr_pipewire *self, unsigned int texture_id, unsig
     if(self->no_modifiers_fallback) {
         setup_dma_buf_attrs(img_attr, spa_video_format_to_drm_format(self->format.info.raw.format), self->format.info.raw.size.width, self->format.info.raw.size.height,
             fds, offsets, pitches, modifiers, self->dmabuf_num_planes, false);
+        image = self->egl->eglCreateImage(self->egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
     } else {
         setup_dma_buf_attrs(img_attr, spa_video_format_to_drm_format(self->format.info.raw.format), self->format.info.raw.size.width, self->format.info.raw.size.height,
             fds, offsets, pitches, modifiers, self->dmabuf_num_planes, true);

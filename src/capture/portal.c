@@ -320,18 +320,20 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
         (vec2i){region.x, region.y}, self->capture_size,
         0.0f, false);
 
-    const vec2i cursor_pos = {
-        target_x + cursor_region.x,
-        target_y + cursor_region.y
-    };
+    if(self->params.record_cursor) {
+        const vec2i cursor_pos = {
+            target_x + cursor_region.x,
+            target_y + cursor_region.y
+        };
 
-    self->params.egl->glEnable(GL_SCISSOR_TEST);
-    self->params.egl->glScissor(target_x, target_y, self->capture_size.x, self->capture_size.y);
-    gsr_color_conversion_draw(color_conversion, self->cursor_texture_id,
-        (vec2i){cursor_pos.x, cursor_pos.y}, (vec2i){cursor_region.width, cursor_region.height},
-        (vec2i){0, 0}, (vec2i){cursor_region.width, cursor_region.height},
-        0.0f, false);
-    self->params.egl->glDisable(GL_SCISSOR_TEST);
+        self->params.egl->glEnable(GL_SCISSOR_TEST);
+        self->params.egl->glScissor(target_x, target_y, self->capture_size.x, self->capture_size.y);
+        gsr_color_conversion_draw(color_conversion, self->cursor_texture_id,
+            (vec2i){cursor_pos.x, cursor_pos.y}, (vec2i){cursor_region.width, cursor_region.height},
+            (vec2i){0, 0}, (vec2i){cursor_region.width, cursor_region.height},
+            0.0f, false);
+        self->params.egl->glDisable(GL_SCISSOR_TEST);
+    }
 
     //self->params.egl->glFlush();
     //self->params.egl->glFinish();

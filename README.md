@@ -19,7 +19,7 @@ Supported audio codecs:
 * AAC
 
 ## Note
-This software works on x11 and wayland.
+This software works on x11 and wayland on AMD, Intel and NVIDIA.
 ### TEMPORARY ISSUES
 1) screen-direct capture has been temporary disabled as it causes issues with stuttering. This might be a nvfbc bug.
 2) Videos are in variable framerate format. Use MPV to play such videos, otherwise you might experience stuttering in the video if you are using a buggy video player. You can try saving the video into a .mkv file instead as some software may have better support for .mkv files (such as kdenlive). You can use the "-fm cfr" option to to use constant framerate mode.

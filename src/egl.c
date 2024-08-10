@@ -503,10 +503,6 @@ bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland, bool is_monitor_cap
     }
 
     self->glx_library = dlopen("libGLX.so.0", RTLD_LAZY);
-    if(!self->glx_library) {
-        fprintf(stderr, "gsr error: gsr_egl_load: failed to load libGLX.so.0, error: %s\n", dlerror());
-        goto fail;
-    }
 
     self->gl_library = dlopen("libGL.so.1", RTLD_LAZY);
     if(!self->egl_library) {
@@ -517,7 +513,8 @@ bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland, bool is_monitor_cap
     if(!gsr_egl_load_egl(self, self->egl_library))
         goto fail;
 
-    if(!gsr_egl_load_glx(self, self->glx_library))
+    /* In some distros (alpine for example libGLX doesn't exist, but libGL can be used instead) */
+    if(!gsr_egl_load_glx(self, self->glx_library ? self->glx_library : self->gl_library))
         goto fail;
 
     if(!gsr_egl_load_gl(self, self->gl_library))

@@ -42,7 +42,9 @@ typedef void(*__GLXextFuncPtr)(void);
 #define EGL_BUFFER_SIZE                         0x3020
 #define EGL_RENDERABLE_TYPE                     0x3040
 #define EGL_OPENGL_API                          0x30A2
+#define EGL_OPENGL_ES_API                       0x30A0
 #define EGL_OPENGL_BIT                          0x0008
+#define EGL_OPENGL_ES_BIT                       0x0001
 #define EGL_NONE                                0x3038
 #define EGL_CONTEXT_CLIENT_VERSION              0x3098
 #define EGL_BACK_BUFFER                         0x3084

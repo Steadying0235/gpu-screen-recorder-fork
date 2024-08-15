@@ -640,7 +640,6 @@ static bool gsr_pipewire_bind_image_to_texture(gsr_pipewire *self, EGLImage imag
     self->egl->glBindTexture(texture_target, texture_id);
     self->egl->glEGLImageTargetTexture2DOES(texture_target, image);
     const bool success = self->egl->glGetError() == 0;
-    self->egl->eglDestroyImage(self->egl->egl_display, image);
     self->egl->glBindTexture(texture_target, 0);
     return success;
 }
@@ -693,12 +692,8 @@ bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, g
         }
     }
 
-    const int texture_target = self->external_texture_fallback ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
-    while(self->egl->glGetError() != 0){}
-    self->egl->glBindTexture(texture_target, texture_map.texture_id);
-    self->egl->glEGLImageTargetTexture2DOES(texture_target, image);
-    self->egl->eglDestroyImage(self->egl->egl_display, image);
-    self->egl->glBindTexture(texture_target, 0);
+    if(image)
+        self->egl->eglDestroyImage(self->egl->egl_display, image);
 
     if(self->cursor.data) {
         self->egl->glBindTexture(GL_TEXTURE_2D, texture_map.cursor_texture_id);

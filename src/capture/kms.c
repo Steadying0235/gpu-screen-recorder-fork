@@ -287,7 +287,6 @@ static bool gsr_capture_kms_bind_image_to_texture(gsr_capture_kms *self, EGLImag
     self->params.egl->glBindTexture(texture_target, texture_id);
     self->params.egl->glEGLImageTargetTexture2DOES(texture_target, image);
     const bool success = self->params.egl->glGetError() == 0;
-    self->params.egl->eglDestroyImage(self->params.egl->egl_display, image);
     self->params.egl->glBindTexture(texture_target, 0);
     return success;
 }
@@ -388,11 +387,14 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         gsr_capture_kms_bind_image_to_texture(self, image, self->external_input_texture_id, true);
     } else {
         if(!gsr_capture_kms_bind_image_to_texture(self, image, self->input_texture_id, false)) {
-            fprintf(stderr, "gsr error: gsr_pipewire_map_texture: failed to bind image to texture, trying with external texture\n");
+            fprintf(stderr, "gsr error: gsr_capture_kms_capture: failed to bind image to texture, trying with external texture\n");
             self->external_texture_fallback = true;
             gsr_capture_kms_bind_image_to_texture(self, image, self->external_input_texture_id, true);
         }
     }
+
+    if(image)
+        self->params.egl->eglDestroyImage(self->params.egl->egl_display, image);
 
     vec2i capture_pos = self->capture_pos;
     if(!capture_is_combined_plane)
@@ -453,8 +455,10 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         const int target = cursor_texture_id_is_external ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
         self->params.egl->glBindTexture(target, self->cursor_texture_id);
         self->params.egl->glEGLImageTargetTexture2DOES(target, cursor_image);
-        self->params.egl->eglDestroyImage(self->params.egl->egl_display, cursor_image);
         self->params.egl->glBindTexture(target, 0);
+
+        if(cursor_image)
+            self->params.egl->eglDestroyImage(self->params.egl->egl_display, cursor_image);
 
         self->params.egl->glEnable(GL_SCISSOR_TEST);
         self->params.egl->glScissor(target_x, target_y, self->capture_size.x, self->capture_size.y);

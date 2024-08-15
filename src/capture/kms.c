@@ -80,12 +80,12 @@ static int max_int(int a, int b) {
 
 static void gsr_capture_kms_create_input_texture_ids(gsr_capture_kms *self) {
     self->params.egl->glGenTextures(1, &self->input_texture_id);
-    self->params.egl->glBindTexture(GL_TEXTURE_2D, self->input_texture_id);
-    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
+    self->params.egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, self->input_texture_id);
+    self->params.egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    self->params.egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    self->params.egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    self->params.egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    self->params.egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
 
     const bool cursor_texture_id_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
     const int cursor_texture_id_target = cursor_texture_id_is_external ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
@@ -351,18 +351,19 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         }
     }
 
-    if(self->params.egl->eglGetError() != EGL_SUCCESS)
+    while(self->params.egl->glGetError() != 0){}
+    if(self->params.egl->glGetError() != 0)
         fprintf(stderr, "kms error 1\n");
-    self->params.egl->glBindTexture(GL_TEXTURE_2D, self->input_texture_id);
-    if(self->params.egl->eglGetError() != EGL_SUCCESS)
+    self->params.egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, self->input_texture_id);
+    if(self->params.egl->glGetError() != 0)
         fprintf(stderr, "kms error 2\n");
-    self->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
-    if(self->params.egl->eglGetError() != EGL_SUCCESS)
+    self->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, image);
+    if(self->params.egl->glGetError() != 0)
         fprintf(stderr, "kms error 3\n");
     self->params.egl->eglDestroyImage(self->params.egl->egl_display, image);
-    if(self->params.egl->eglGetError() != EGL_SUCCESS)
+    if(self->params.egl->glGetError() != 0)
         fprintf(stderr, "kms error 4\n");
-    self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
+    self->params.egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
 
     vec2i capture_pos = self->capture_pos;
     if(!capture_is_combined_plane)
@@ -376,7 +377,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     gsr_color_conversion_draw(color_conversion, self->input_texture_id,
         (vec2i){target_x, target_y}, self->capture_size,
         capture_pos, self->capture_size,
-        texture_rotation, false);
+        texture_rotation, true);
 
     if(self->params.record_cursor && cursor_drm_fd) {
         const vec2i cursor_size = {cursor_drm_fd->width, cursor_drm_fd->height};
@@ -462,7 +463,7 @@ static gsr_source_color gsr_capture_kms_get_source_color(gsr_capture *cap) {
 
 static bool gsr_capture_kms_uses_external_image(gsr_capture *cap) {
     gsr_capture_kms *self = cap->priv;
-    return self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
+    return true;
 }
 
 static bool gsr_capture_kms_set_hdr_metadata(gsr_capture *cap, AVMasteringDisplayMetadata *mastering_display_metadata, AVContentLightMetadata *light_metadata) {

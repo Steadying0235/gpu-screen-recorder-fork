@@ -351,9 +351,17 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         }
     }
 
+    if(self->params.egl->eglGetError() != EGL_SUCCESS)
+        fprintf(stderr, "kms error 1\n");
     self->params.egl->glBindTexture(GL_TEXTURE_2D, self->input_texture_id);
+    if(self->params.egl->eglGetError() != EGL_SUCCESS)
+        fprintf(stderr, "kms error 2\n");
     self->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+    if(self->params.egl->eglGetError() != EGL_SUCCESS)
+        fprintf(stderr, "kms error 3\n");
     self->params.egl->eglDestroyImage(self->params.egl->egl_display, image);
+    if(self->params.egl->eglGetError() != EGL_SUCCESS)
+        fprintf(stderr, "kms error 4\n");
     self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
     vec2i capture_pos = self->capture_pos;

@@ -157,3 +157,5 @@ Explicit sync is done with the drm property IN_FENCE_FD (see https://drmdb.emers
 The update fps appear to be lower when recording a monitor instead of using portal on intel. Does this reflect in game framerate?
 
 Recording a monitor belonging to another gpu might be possible by using GL_TEXTURE_EXTERNAL_OES instead for the texture.
+
+Fix glitches when using prime-run with desktop portal. It happens when moving a window around. It's probably a syncing issue.

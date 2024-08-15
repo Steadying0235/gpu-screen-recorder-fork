@@ -1654,6 +1654,18 @@ static bool is_xwayland(Display *display) {
     return xwayland_found;
 }
 
+static bool is_using_prime_run() {
+    const char *prime_render_offload = getenv("__NV_PRIME_RENDER_OFFLOAD");
+    return prime_render_offload && strcmp(prime_render_offload, "1") == 0;
+}
+
+static void disable_prime_run() {
+    unsetenv("__NV_PRIME_RENDER_OFFLOAD");
+    unsetenv("__NV_PRIME_RENDER_OFFLOAD_PROVIDER");
+    unsetenv("__GLX_VENDOR_LIBRARY_NAME");
+    unsetenv("__VK_LAYER_NV_optimus");
+}
+
 static void list_system_info(bool wayland) {
     printf("display_server %s\n", wayland ? "wayland" : "x11");
 }
@@ -1767,10 +1779,7 @@ static void info_command() {
         // Disable prime-run and similar options as it doesn't work, the monitor to capture has to be run on the same device.
         // This is fine on wayland since nvidia uses drm interface there and the monitor query checks the monitors connected
         // to the drm device.
-        unsetenv("__NV_PRIME_RENDER_OFFLOAD");
-        unsetenv("__NV_PRIME_RENDER_OFFLOAD_PROVIDER");
-        unsetenv("__GLX_VENDOR_LIBRARY_NAME");
-        unsetenv("__VK_LAYER_NV_optimus");
+        disable_prime_run();
     }
 
     gsr_egl egl;
@@ -2459,10 +2468,12 @@ int main(int argc, char **argv) {
         // Disable prime-run and similar options as it doesn't work, the monitor to capture has to be run on the same device.
         // This is fine on wayland since nvidia uses drm interface there and the monitor query checks the monitors connected
         // to the drm device.
-        unsetenv("__NV_PRIME_RENDER_OFFLOAD");
-        unsetenv("__NV_PRIME_RENDER_OFFLOAD_PROVIDER");
-        unsetenv("__GLX_VENDOR_LIBRARY_NAME");
-        unsetenv("__VK_LAYER_NV_optimus");
+        disable_prime_run();
+    }
+
+    if(strcmp(window_str, "portal") == 0 && is_using_prime_run()) {
+        fprintf(stderr, "Warning: use of prime-run with -w portal option is currently not supported. Disabling prime-run\n");
+        disable_prime_run();
     }
 
     if(video_codec_is_hdr(video_codec) && !wayland) {

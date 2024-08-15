@@ -185,9 +185,10 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
     EGLConfig  ecfg;
     int32_t    num_config = 0;
 
+    // TODO: Use EGL_OPENGL_ES_BIT as amd requires that for external texture, but that breaks software encoding
     const int32_t attr[] = {
         EGL_BUFFER_SIZE, 24,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES_BIT,
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
         EGL_NONE, EGL_NONE
     };
 
@@ -226,7 +227,8 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
         }
     }
 
-    self->eglBindAPI(EGL_OPENGL_ES_API);
+    // TODO: Use EGL_OPENGL_ES_API as amd requires that for external texture, but that breaks software encoding
+    self->eglBindAPI(EGL_OPENGL_API);
 
     self->egl_display = self->eglGetDisplay(self->wayland.dpy ? (EGLNativeDisplayType)self->wayland.dpy : (EGLNativeDisplayType)self->x11.dpy);
     if(!self->egl_display) {

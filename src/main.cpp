@@ -2571,7 +2571,7 @@ int main(int argc, char **argv) {
         } else {
             if(replay_buffer_size_secs == -1) {
                 char directory_buf[PATH_MAX];
-                strcpy(directory_buf, filename);
+                snprintf(directory_buf, sizeof(directory_buf), "%s", filename);
                 char *directory = dirname(directory_buf);
                 if(strcmp(directory, ".") != 0 && strcmp(directory, "/") != 0) {
                     if(create_directory_recursive(directory) != 0) {

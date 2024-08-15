@@ -155,3 +155,5 @@ Add the option to specify a path to desktop portal session token, to allow diffe
 Explicit sync is done with the drm property IN_FENCE_FD (see https://drmdb.emersion.fr/properties/4008636142/IN_FENCE_FD). Check if this needs to be used on wayland (especially on nvidia) when capturing a monitor directly without desktop portal.
 
 The update fps appear to be lower when recording a monitor instead of using portal on intel. Does this reflect in game framerate?
+
+Recording a monitor belonging to another gpu might be possible by using GL_TEXTURE_EXTERNAL_OES instead for the texture.

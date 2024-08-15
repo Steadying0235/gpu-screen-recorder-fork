@@ -37,9 +37,11 @@ typedef struct {
     gsr_monitor_rotation monitor_rotation;
 
     unsigned int input_texture_id;
+    unsigned int external_input_texture_id;
     unsigned int cursor_texture_id;
 
     bool no_modifiers_fallback;
+    bool external_texture_fallback;
 
     struct hdr_output_metadata hdr_metadata;
     bool hdr_metadata_set;
@@ -65,6 +67,11 @@ static void gsr_capture_kms_stop(gsr_capture_kms *self) {
         self->input_texture_id = 0;
     }
 
+    if(self->external_input_texture_id) {
+        self->params.egl->glDeleteTextures(1, &self->external_input_texture_id);
+        self->external_input_texture_id = 0;
+    }
+
     if(self->cursor_texture_id) {
         self->params.egl->glDeleteTextures(1, &self->cursor_texture_id);
         self->cursor_texture_id = 0;
@@ -80,12 +87,20 @@ static int max_int(int a, int b) {
 
 static void gsr_capture_kms_create_input_texture_ids(gsr_capture_kms *self) {
     self->params.egl->glGenTextures(1, &self->input_texture_id);
-    self->params.egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, self->input_texture_id);
-    self->params.egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    self->params.egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    self->params.egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    self->params.egl->glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    self->params.egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+    self->params.egl->glBindTexture(GL_TEXTURE_2D, self->input_texture_id);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
+
+    self->params.egl->glGenTextures(1, &self->external_input_texture_id);
+    self->params.egl->glBindTexture(GL_TEXTURE_2D, self->external_input_texture_id);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
     const bool cursor_texture_id_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
     const int cursor_texture_id_target = cursor_texture_id_is_external ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
@@ -253,6 +268,30 @@ static vec2i swap_vec2i(vec2i value) {
     return value;
 }
 
+static EGLImage gsr_capture_kms_create_egl_image(gsr_capture_kms *self, gsr_kms_response_item *drm_fd, const int *fds, const uint32_t *offsets, const uint32_t *pitches, const uint64_t *modifiers, bool use_modifiers) {
+    intptr_t img_attr[44];
+    setup_dma_buf_attrs(img_attr, drm_fd->pixel_format, drm_fd->width, drm_fd->height, fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs, use_modifiers);
+    while(self->params.egl->eglGetError() != EGL_SUCCESS){}
+    EGLImage image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+    if(!image || self->params.egl->eglGetError() != EGL_SUCCESS) {
+        if(image)
+            self->params.egl->eglDestroyImage(self->params.egl->egl_display, image);
+        return NULL;
+    }
+    return image;
+}
+
+static bool gsr_capture_kms_bind_image_to_texture(gsr_capture_kms *self, EGLImage image, unsigned int texture_id, bool external_texture) {
+    const int texture_target = external_texture ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
+    while(self->params.egl->glGetError() != 0){}
+    self->params.egl->glBindTexture(texture_target, texture_id);
+    self->params.egl->glEGLImageTargetTexture2DOES(texture_target, image);
+    const bool success = self->params.egl->glGetError() == 0;
+    self->params.egl->eglDestroyImage(self->params.egl->egl_display, image);
+    self->params.egl->glBindTexture(texture_target, 0);
+    return success;
+}
+
 static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
     gsr_capture_kms *self = cap->priv;
     const bool cursor_texture_id_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
@@ -334,36 +373,26 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     }
 
     EGLImage image = NULL;
-    intptr_t img_attr[44];
-
     if(self->no_modifiers_fallback) {
-        setup_dma_buf_attrs(img_attr, drm_fd->pixel_format, drm_fd->width, drm_fd->height, fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs, false);
-        image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+        image = gsr_capture_kms_create_egl_image(self, drm_fd, fds, offsets, pitches, modifiers, false);
     } else {
-        setup_dma_buf_attrs(img_attr, drm_fd->pixel_format, drm_fd->width, drm_fd->height, fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs, true);
-        while(self->params.egl->eglGetError() != EGL_SUCCESS){}
-        image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
-        if(!image || self->params.egl->eglGetError() != EGL_SUCCESS) {
+        image = gsr_capture_kms_create_egl_image(self, drm_fd, fds, offsets, pitches, modifiers, true);
+        if(!image) {
             fprintf(stderr, "gsr error: gsr_capture_kms_capture: failed to create egl image with modifiers, trying without modifiers\n");
             self->no_modifiers_fallback = true;
-            setup_dma_buf_attrs(img_attr, drm_fd->pixel_format, drm_fd->width, drm_fd->height, fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs, false);
-            image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr);
+            image = gsr_capture_kms_create_egl_image(self, drm_fd, fds, offsets, pitches, modifiers, false);
         }
     }
 
-    while(self->params.egl->glGetError() != 0){}
-    if(self->params.egl->glGetError() != 0)
-        fprintf(stderr, "kms error 1\n");
-    self->params.egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, self->input_texture_id);
-    if(self->params.egl->glGetError() != 0)
-        fprintf(stderr, "kms error 2\n");
-    self->params.egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, image);
-    if(self->params.egl->glGetError() != 0)
-        fprintf(stderr, "kms error 3\n");
-    self->params.egl->eglDestroyImage(self->params.egl->egl_display, image);
-    if(self->params.egl->glGetError() != 0)
-        fprintf(stderr, "kms error 4\n");
-    self->params.egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+    if(self->external_texture_fallback) {
+        gsr_capture_kms_bind_image_to_texture(self, image, self->external_input_texture_id, true);
+    } else {
+        if(!gsr_capture_kms_bind_image_to_texture(self, image, self->input_texture_id, false)) {
+            fprintf(stderr, "gsr error: gsr_pipewire_map_texture: failed to bind image to texture, trying with external texture\n");
+            self->external_texture_fallback = true;
+            gsr_capture_kms_bind_image_to_texture(self, image, self->external_input_texture_id, true);
+        }
+    }
 
     vec2i capture_pos = self->capture_pos;
     if(!capture_is_combined_plane)
@@ -374,10 +403,10 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     const int target_x = max_int(0, frame->width / 2 - self->capture_size.x / 2);
     const int target_y = max_int(0, frame->height / 2 - self->capture_size.y / 2);
 
-    gsr_color_conversion_draw(color_conversion, self->input_texture_id,
+    gsr_color_conversion_draw(color_conversion, self->external_texture_fallback ? self->external_input_texture_id : self->input_texture_id,
         (vec2i){target_x, target_y}, self->capture_size,
         capture_pos, self->capture_size,
-        texture_rotation, true);
+        texture_rotation, self->external_texture_fallback);
 
     if(self->params.record_cursor && cursor_drm_fd) {
         const vec2i cursor_size = {cursor_drm_fd->width, cursor_drm_fd->height};
@@ -462,7 +491,7 @@ static gsr_source_color gsr_capture_kms_get_source_color(gsr_capture *cap) {
 }
 
 static bool gsr_capture_kms_uses_external_image(gsr_capture *cap) {
-    gsr_capture_kms *self = cap->priv;
+    (void)cap;
     return true;
 }
 

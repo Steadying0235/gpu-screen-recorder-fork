@@ -43,6 +43,12 @@ typedef struct {
 } gsr_video_format;
 
 typedef struct {
+    unsigned int texture_id;
+    unsigned int external_texture_id;
+    unsigned int cursor_texture_id;
+} gsr_texture_map;
+
+typedef struct {
     gsr_egl *egl;
     int fd;
     uint32_t node;
@@ -85,6 +91,7 @@ typedef struct {
     bool started;
     bool stopped;
     bool no_modifiers_fallback;
+    bool external_texture_fallback;
 
     uint64_t modifiers[GSR_PIPEWIRE_MAX_MODIFIERS];
     size_t num_modifiers;
@@ -98,8 +105,8 @@ typedef struct {
 bool gsr_pipewire_init(gsr_pipewire *self, int pipewire_fd, uint32_t pipewire_node, int fps, bool capture_cursor, gsr_egl *egl);
 void gsr_pipewire_deinit(gsr_pipewire *self);
 
-/* |plane_fds| should be at GSR_PIPEWIRE_DMABUF_MAX_PLANES in size */
-bool gsr_pipewire_map_texture(gsr_pipewire *self, unsigned int texture_id, unsigned int cursor_texture_id, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region, int *plane_fds, int *num_plane_fds);
+/* |plane_fds| should be at least GSR_PIPEWIRE_DMABUF_MAX_PLANES in size */
+bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region, int *plane_fds, int *num_plane_fds, bool *using_external_image);
 bool gsr_pipewire_recording_stopped(gsr_pipewire *self);
 
 #endif /* GSR_PIPEWIRE_H */

@@ -1782,8 +1782,8 @@ static void info_command() {
     egl.card_path[0] = '\0';
     if(monitor_capture_use_drm(&egl, wayland)) {
         // TODO: Allow specifying another card, and in other places
-        if(!gsr_get_valid_card_path(&egl, egl.card_path, true)) {
-            fprintf(stderr, "Error: no /dev/dri/cardX device found. Make sure that you have at least one monitor connected or record a single window instead on X11\n");
+        if(!gsr_get_valid_card_path(&egl, egl.card_path, false)) {
+            fprintf(stderr, "Error: no /dev/dri/cardX device found. Make sure that you have at least one monitor connected\n");
             _exit(23);
         }
     }
@@ -2470,7 +2470,7 @@ int main(int argc, char **argv) {
         _exit(1);
     }
 
-    const bool is_monitor_capture = strcmp(window_str, "focused") != 0 && contains_non_hex_number(window_str);
+    const bool is_monitor_capture = strcmp(window_str, "focused") != 0 && strcmp(window_str, "portal") != 0 && contains_non_hex_number(window_str);
     gsr_egl egl;
     if(!gsr_egl_load(&egl, dpy, wayland, is_monitor_capture)) {
         fprintf(stderr, "gsr error: failed to load opengl\n");
@@ -2498,7 +2498,7 @@ int main(int argc, char **argv) {
     if(monitor_capture_use_drm(&egl, wayland)) {
         // TODO: Allow specifying another card, and in other places
         if(!gsr_get_valid_card_path(&egl, egl.card_path, is_monitor_capture)) {
-            fprintf(stderr, "Error: no /dev/dri/cardX device found. Make sure that you have at least one monitor connected or record a single window instead on X11\n");
+            fprintf(stderr, "Error: no /dev/dri/cardX device found. Make sure that you have at least one monitor connected or record a single window instead on X11 or record with the -w portal option\n");
             _exit(2);
         }
     }

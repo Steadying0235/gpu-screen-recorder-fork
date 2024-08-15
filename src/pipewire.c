@@ -649,7 +649,7 @@ bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, g
         plane_fds[i] = -1;
     }
     *num_plane_fds = 0;
-    *using_external_image = false;
+    *using_external_image = self->external_texture_fallback;
     pthread_mutex_lock(&self->mutex);
 
     if(!self->negotiated || self->dmabuf_data[0].fd <= 0) {

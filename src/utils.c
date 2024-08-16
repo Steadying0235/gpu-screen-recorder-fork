@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <assert.h>
+#include <dirent.h>
 
 #include <xf86drmMode.h>
 #include <xf86drm.h>
@@ -22,6 +23,16 @@ double clock_get_monotonic_seconds(void) {
     ts.tv_nsec = 0;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (double)ts.tv_sec + (double)ts.tv_nsec * 0.000000001;
+}
+
+static gsr_monitor_rotation wayland_transform_to_gsr_rotation(int32_t rot) {
+    switch(rot) {
+        case 0: return GSR_MONITOR_ROT_0;
+        case 1: return GSR_MONITOR_ROT_90;
+        case 2: return GSR_MONITOR_ROT_180;
+        case 3: return GSR_MONITOR_ROT_270;
+    }
+    return GSR_MONITOR_ROT_0;
 }
 
 static const XRRModeInfo* get_mode_info(const XRRScreenResources *sr, RRMode id) {
@@ -42,16 +53,6 @@ static gsr_monitor_rotation x11_rotation_to_gsr_rotation(int rot) {
     return GSR_MONITOR_ROT_0;
 }
 
-static gsr_monitor_rotation wayland_transform_to_gsr_rotation(int32_t rot) {
-    switch(rot) {
-        case 0: return GSR_MONITOR_ROT_0;
-        case 1: return GSR_MONITOR_ROT_90;
-        case 2: return GSR_MONITOR_ROT_180;
-        case 3: return GSR_MONITOR_ROT_270;
-    }
-    return GSR_MONITOR_ROT_0;
-}
-
 static uint32_t x11_output_get_connector_id(Display *dpy, RROutput output, Atom randr_connector_id_atom) {
     Atom type = 0;
     int format = 0;
@@ -68,7 +69,7 @@ static uint32_t x11_output_get_connector_id(Display *dpy, RROutput output, Atom 
     return result;
 }
 
-void for_each_active_monitor_output_x11(Display *display, active_monitor_callback callback, void *userdata) {
+void for_each_active_monitor_output_x11_not_cached(Display *display, active_monitor_callback callback, void *userdata) {
     XRRScreenResources *screen_res = XRRGetScreenResources(display, DefaultRootWindow(display));
     if(!screen_res)
         return;
@@ -83,15 +84,12 @@ void for_each_active_monitor_output_x11(Display *display, active_monitor_callbac
             if(crt_info && crt_info->mode) {
                 const XRRModeInfo *mode_info = get_mode_info(screen_res, crt_info->mode);
                 if(mode_info && out_info->nameLen < (int)sizeof(display_name)) {
-                    memcpy(display_name, out_info->name, out_info->nameLen);
-                    display_name[out_info->nameLen] = '\0';
-
+                    snprintf(display_name, sizeof(display_name), "%.*s", (int)out_info->nameLen, out_info->name);
                     const gsr_monitor monitor = {
                         .name = display_name,
                         .name_len = out_info->nameLen,
                         .pos = { .x = crt_info->x, .y = crt_info->y },
                         .size = { .x = (int)crt_info->width, .y = (int)crt_info->height },
-                        .crt_info = crt_info,
                         .connector_id = x11_output_get_connector_id(display, screen_res->outputs[i], randr_connector_id_atom),
                         .rotation = x11_rotation_to_gsr_rotation(crt_info->rotation),
                         .monitor_identifier = 0
@@ -107,6 +105,22 @@ void for_each_active_monitor_output_x11(Display *display, active_monitor_callbac
     }    
 
     XRRFreeScreenResources(screen_res);
+}
+
+void for_each_active_monitor_output_x11(const gsr_egl *egl, active_monitor_callback callback, void *userdata) {
+    for(int i = 0; i < egl->x11.num_outputs; ++i) {
+        const gsr_x11_output *output = &egl->x11.outputs[i];
+        const gsr_monitor monitor = {
+            .name = output->name,
+            .name_len = strlen(output->name),
+            .pos = output->pos,
+            .size = output->size,
+            .connector_id = output->connector_id,
+            .rotation = output->rotation,
+            .monitor_identifier = 0
+        };
+        callback(&monitor, userdata);
+    }
 }
 
 typedef struct {
@@ -192,7 +206,6 @@ static void for_each_active_monitor_output_wayland(const gsr_egl *egl, active_mo
             .name_len = strlen(output->name),
             .pos = { .x = output->pos.x, .y = output->pos.y },
             .size = { .x = output->size.x, .y = output->size.y },
-            .crt_info = NULL,
             .connector_id = 0,
             .rotation = wayland_transform_to_gsr_rotation(output->transform),
             .monitor_identifier = connector_type ? monitor_identifier_from_type_and_count(connector_type_index, connector_type->count_active) : 0
@@ -240,12 +253,11 @@ static void for_each_active_monitor_output_drm(const gsr_egl *egl, active_monito
             if(connector_type && crtc_id > 0 && crtc && connection_name_len + 5 < (int)sizeof(display_name)) {
                 const int display_name_len = snprintf(display_name, sizeof(display_name), "%s-%d", connection_name, connector_type->count);
                 const int connector_type_index_name = get_connector_type_by_name(display_name);
-                const gsr_monitor monitor = {
+                gsr_monitor monitor = {
                     .name = display_name,
                     .name_len = display_name_len,
                     .pos = { .x = crtc->x, .y = crtc->y },
                     .size = { .x = (int)crtc->width, .y = (int)crtc->height },
-                    .crt_info = NULL,
                     .connector_id = connector->connector_id,
                     .rotation = GSR_MONITOR_ROT_0,
                     .monitor_identifier = connector_type_index_name != -1 ? monitor_identifier_from_type_and_count(connector_type_index_name, connector_type->count_active) : 0
@@ -267,7 +279,7 @@ static void for_each_active_monitor_output_drm(const gsr_egl *egl, active_monito
 void for_each_active_monitor_output(const gsr_egl *egl, gsr_connection_type connection_type, active_monitor_callback callback, void *userdata) {
     switch(connection_type) {
         case GSR_CONNECTION_X11:
-            for_each_active_monitor_output_x11(egl->x11.dpy, callback, userdata);
+            for_each_active_monitor_output_x11(egl, callback, userdata);
             break;
         case GSR_CONNECTION_WAYLAND:
             for_each_active_monitor_output_wayland(egl, callback, userdata);
@@ -329,7 +341,7 @@ static void get_monitor_by_connector_id_callback(const gsr_monitor *monitor, voi
 }
 
 gsr_monitor_rotation drm_monitor_get_display_server_rotation(const gsr_egl *egl, const gsr_monitor *monitor) {
-    if(egl->wayland.dpy) {
+    if(gsr_egl_get_display_server(egl) == GSR_DISPLAY_SERVER_WAYLAND) {
         {
             get_monitor_by_connector_id_userdata userdata;
             userdata.monitor = monitor;
@@ -352,7 +364,7 @@ gsr_monitor_rotation drm_monitor_get_display_server_rotation(const gsr_egl *egl,
         userdata.monitor = monitor;
         userdata.rotation = GSR_MONITOR_ROT_0;
         userdata.match_found = false;
-        for_each_active_monitor_output_x11(egl->x11.dpy, get_monitor_by_connector_id_callback, &userdata);
+        for_each_active_monitor_output_x11(egl, get_monitor_by_connector_id_callback, &userdata);
         return userdata.rotation;
     }
 

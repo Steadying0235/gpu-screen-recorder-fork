@@ -151,8 +151,18 @@ typedef int (*FUNC_eglQueryDmaBufModifiersEXT)(EGLDisplay dpy, int32_t format, i
 #define GSR_MAX_OUTPUTS 32
 
 typedef struct {
+    char *name;
+    vec2i pos;
+    vec2i size;
+    uint32_t connector_id;
+    gsr_monitor_rotation rotation;
+} gsr_x11_output;
+
+typedef struct {
     Display *dpy;
     Window window;
+    gsr_x11_output outputs[GSR_MAX_OUTPUTS];
+    int num_outputs;
 } gsr_x11;
 
 typedef struct {
@@ -178,6 +188,11 @@ typedef enum {
     GSR_GL_CONTEXT_TYPE_EGL,
     GSR_GL_CONTEXT_TYPE_GLX
 } gsr_gl_context_type;
+
+typedef enum {
+    GSR_DISPLAY_SERVER_X11,
+    GSR_DISPLAY_SERVER_WAYLAND
+} gsr_display_server;
 
 typedef struct gsr_egl gsr_egl;
 struct gsr_egl {
@@ -301,5 +316,7 @@ void gsr_egl_unload(gsr_egl *self);
 void gsr_egl_update(gsr_egl *self);
 /* Does opengl swap with egl or glx, depending on which one is active */
 void gsr_egl_swap_buffers(gsr_egl *self);
+
+gsr_display_server gsr_egl_get_display_server(const gsr_egl *egl);
 
 #endif /* GSR_EGL_H */

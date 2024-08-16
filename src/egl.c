@@ -1,16 +1,17 @@
 #include "../include/egl.h"
 #include "../include/library_loader.h"
 #include "../include/utils.h"
+
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <dlfcn.h>
 #include <assert.h>
+#include <unistd.h>
+#include <sys/capability.h>
 
 #include <wayland-client.h>
 #include <wayland-egl.h>
-#include <unistd.h>
-#include <sys/capability.h>
 
 // TODO: rename gsr_egl to something else since this includes both egl and glx and in the future maybe vulkan too
 
@@ -93,7 +94,7 @@ static void registry_add_object(void *data, struct wl_registry *registry, uint32
         }
 
         if(egl->wayland.num_outputs == GSR_MAX_OUTPUTS) {
-            fprintf(stderr, "gsr warning: reached maximum outputs (32), ignoring output %u\n", name);
+            fprintf(stderr, "gsr warning: reached maximum outputs (%d), ignoring output %u\n", GSR_MAX_OUTPUTS, name);
             return;
         }
 
@@ -132,6 +133,26 @@ static void reset_cap_nice(void) {
     cap_set_flag(caps, CAP_PERMITTED, 1, &cap_to_remove, CAP_CLEAR);
     cap_set_proc(caps);
     cap_free(caps);
+}
+
+static void store_x11_monitor(const gsr_monitor *monitor, void *userdata) {
+    gsr_egl *egl = userdata;
+    if(egl->x11.num_outputs == GSR_MAX_OUTPUTS) {
+        fprintf(stderr, "gsr warning: reached maximum outputs (%d), ignoring output %s\n", GSR_MAX_OUTPUTS, monitor->name);
+        return;
+    }
+
+    char *monitor_name = strdup(monitor->name);
+    if(!monitor_name)
+        return;
+
+    const int index = egl->x11.num_outputs;
+    egl->x11.outputs[index].name = monitor_name;
+    egl->x11.outputs[index].pos = monitor->pos;
+    egl->x11.outputs[index].size = monitor->size;
+    egl->x11.outputs[index].connector_id = monitor->connector_id;
+    egl->x11.outputs[index].rotation = monitor->rotation;
+    ++egl->x11.num_outputs;
 }
 
 #define GLX_DRAWABLE_TYPE        0x8010
@@ -269,6 +290,11 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
     if(!self->eglMakeCurrent(self->egl_display, self->egl_surface, self->egl_surface, self->egl_context)) {
         fprintf(stderr, "gsr error: gsr_egl_create_window failed: failed to make egl context current\n");
         goto fail;
+    }
+
+    if(!wayland) {
+        self->x11.num_outputs = 0;
+        for_each_active_monitor_output_x11_not_cached(self->x11.dpy, store_x11_monitor, self);
     }
 
     reset_cap_nice();
@@ -587,6 +613,14 @@ void gsr_egl_unload(gsr_egl *self) {
         self->x11.window = None;
     }
 
+    for(int i = 0; i < self->x11.num_outputs; ++i) {
+        if(self->x11.outputs[i].name) {
+            free(self->x11.outputs[i].name);
+            self->x11.outputs[i].name = NULL;
+        }
+    }
+    self->x11.num_outputs = 0;
+
     if(self->wayland.window) {
         wl_egl_window_destroy(self->wayland.window);
         self->wayland.window = NULL;
@@ -657,4 +691,11 @@ void gsr_egl_swap_buffers(gsr_egl *self) {
     } else if(self->x11.window) {
         self->glXSwapBuffers(self->x11.dpy, self->x11.window);
     }
+}
+
+gsr_display_server gsr_egl_get_display_server(const gsr_egl *egl) {
+    if(egl->wayland.dpy)
+        return GSR_DISPLAY_SERVER_WAYLAND;
+    else
+        return GSR_DISPLAY_SERVER_X11;
 }

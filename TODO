@@ -6,9 +6,6 @@ Allow setting a different output resolution than the input resolution.
 Use mov+faststart.
 Allow recording all monitors/selected monitor without nvfbc by recording the compositor proxy window and only recording the part that matches the monitor(s).
 Allow recording a region by recording the compositor proxy window / nvfbc window and copying part of it.
-Use nvenc directly, which allows removing the use of cuda.
-Handle xrandr monitor change in nvfbc.
-Implement follow focused in drm.
 Support amf and qsv.
 Disable flipping on nvidia? this might fix some stuttering issues on some setups. See NvCtrlGetAttribute/NvCtrlSetAttributeAndGetStatus NV_CTRL_SYNC_TO_VBLANK https://github.com/NVIDIA/nvidia-settings/blob/d5f022976368cbceb2f20b838ddb0bf992f0cfb9/src/gtk%2B-2.x/ctkopengl.c.
 Replays seem to have some issues with audio/video. Why?
@@ -31,7 +28,6 @@ https://djdallmann.github.io/GamingPCSetup/CONTENT/RESEARCH/FINDINGS/registrykey
 The video output will be black if if the system is suspended on nvidia and NVreg_PreserveVideoMemoryAllocations is not set to 1. This happens because I think that the driver invalidates textures/cuda buffers? To fix this we could try and recreate gsr capture when gsr_capture_capture fails (with timeout to retry again).
 
 NVreg_RegistryDwords.
-Restore nvfbc screen recording on monitor reconfiguration.
 Window capture doesn't work properly in _control_ game after going from pause menu to in-game (and back to pause menu). There might be some x11 event we need to catch. Same for vr-video-player.
 
 Monitor capture on steam deck is slightly below the game fps, but only when capturing on the steam deck screen. If capturing on another monitor, there is no issue.
@@ -150,12 +146,8 @@ Show rotated window size in monitor list when using incorrect monitor name.
 
 Desktop portal capture on kde plasma makes notifications not show up unless the notification is set as urgent. How to fix this? do we have to make our own notification system?
 
-Add the option to specify a path to desktop portal session token, to allow different recording modes (streaming, recording, replay) to restore with different setup.
-
 Explicit sync is done with the drm property IN_FENCE_FD (see https://drmdb.emersion.fr/properties/4008636142/IN_FENCE_FD). Check if this needs to be used on wayland (especially on nvidia) when capturing a monitor directly without desktop portal.
 
 The update fps appear to be lower when recording a monitor instead of using portal on intel. Does this reflect in game framerate?
-
-Recording a monitor belonging to another gpu might be possible by using GL_TEXTURE_EXTERNAL_OES instead for the texture.
 
 Fix glitches when using prime-run with desktop portal. It happens when moving a window around. It's probably a syncing issue.

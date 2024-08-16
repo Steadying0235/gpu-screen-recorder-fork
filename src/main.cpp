@@ -1650,7 +1650,7 @@ static bool is_xwayland(Display *display) {
         return true;
 
     bool xwayland_found = false;
-    for_each_active_monitor_output_x11(display, xwayland_check_callback, &xwayland_found);
+    for_each_active_monitor_output_x11_not_cached(display, xwayland_check_callback, &xwayland_found);
     return xwayland_found;
 }
 
@@ -1716,7 +1716,7 @@ typedef struct {
 
 static void output_monitor_info(const gsr_monitor *monitor, void *userdata) {
     const capture_options_callback *options = (capture_options_callback*)userdata;
-    if(monitor_capture_use_drm(options->egl, options->wayland)) {
+    if(options->wayland && monitor_capture_use_drm(options->egl, options->wayland)) {
         vec2i monitor_size = monitor->size;
         const gsr_monitor_rotation rot = drm_monitor_get_display_server_rotation(options->egl, monitor);
         if(rot == GSR_MONITOR_ROT_90 || rot == GSR_MONITOR_ROT_270)
@@ -1737,7 +1737,9 @@ static void list_supported_capture_options(gsr_egl *egl, bool wayland) {
     options.wayland = wayland;
     options.egl = egl;
     if(monitor_capture_use_drm(egl, wayland)) {
-        for_each_active_monitor_output(egl, GSR_CONNECTION_DRM, output_monitor_info, &options);
+        const bool is_x11 = gsr_egl_get_display_server(egl) == GSR_DISPLAY_SERVER_X11;
+        const gsr_connection_type connection_type = is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
+        for_each_active_monitor_output(egl, connection_type, output_monitor_info, &options);
     } else {
         puts("screen"); // All monitors in one, only available on Nvidia X11
         for_each_active_monitor_output(egl, GSR_CONNECTION_X11, output_monitor_info, &options);
@@ -1775,10 +1777,11 @@ static void info_command() {
     if(!wayland)
         wayland = is_xwayland(dpy);
 
-    if(!wayland) {
+    if(!wayland && is_using_prime_run()) {
         // Disable prime-run and similar options as it doesn't work, the monitor to capture has to be run on the same device.
         // This is fine on wayland since nvidia uses drm interface there and the monitor query checks the monitors connected
         // to the drm device.
+        fprintf(stderr, "Warning: use of prime-run on X11 is not supported. Disabling prime-run\n");
         disable_prime_run();
     }
 
@@ -1890,10 +1893,13 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
 #endif
     } else if(contains_non_hex_number(window_str)) {
         if(monitor_capture_use_drm(egl, wayland)) {
+            const bool is_x11 = gsr_egl_get_display_server(egl) == GSR_DISPLAY_SERVER_X11;
+            const gsr_connection_type connection_type = is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
+
             if(strcmp(window_str, "screen") == 0) {
                 FirstOutputCallback first_output;
                 first_output.output_name = NULL;
-                for_each_active_monitor_output(egl, GSR_CONNECTION_DRM, get_first_output, &first_output);
+                for_each_active_monitor_output(egl, connection_type, get_first_output, &first_output);
 
                 if(first_output.output_name) {
                     window_str = first_output.output_name;
@@ -1901,14 +1907,14 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                     fprintf(stderr, "Error: no usable output found\n");
                     _exit(1);
                 }
-            }
-
-            gsr_monitor gmon;
-            if(!get_monitor_by_name(egl, GSR_CONNECTION_DRM, window_str, &gmon)) {
-                fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
-                fprintf(stderr, "    \"screen\"\n");
-                for_each_active_monitor_output(egl, GSR_CONNECTION_DRM, monitor_output_callback_print, NULL);
-                _exit(1);
+            } else {
+                gsr_monitor gmon;
+                if(!get_monitor_by_name(egl, connection_type, window_str, &gmon)) {
+                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
+                    fprintf(stderr, "    \"screen\"\n");
+                    for_each_active_monitor_output(egl, connection_type, monitor_output_callback_print, NULL);
+                    _exit(1);
+                }
             }
         } else {
             if(strcmp(window_str, "screen") != 0 && strcmp(window_str, "screen-direct") != 0 && strcmp(window_str, "screen-direct-force") != 0) {
@@ -2464,10 +2470,11 @@ int main(int argc, char **argv) {
     if(!wayland)
         wayland = is_xwayland(dpy);
 
-    if(!wayland) {
+    if(!wayland && is_using_prime_run()) {
         // Disable prime-run and similar options as it doesn't work, the monitor to capture has to be run on the same device.
         // This is fine on wayland since nvidia uses drm interface there and the monitor query checks the monitors connected
         // to the drm device.
+        fprintf(stderr, "Warning: use of prime-run on X11 is not supported. Disabling prime-run\n");
         disable_prime_run();
     }
 

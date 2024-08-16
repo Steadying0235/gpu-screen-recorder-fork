@@ -325,11 +325,6 @@ static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_
     const int target_x = max_int(0, frame->width / 2 - self->texture_size.x / 2);
     const int target_y = max_int(0, frame->height / 2 - self->texture_size.y / 2);
 
-    const vec2i cursor_pos = {
-        target_x + self->cursor.position.x - self->cursor.hotspot.x,
-        target_y + self->cursor.position.y - self->cursor.hotspot.y
-    };
-
     gsr_color_conversion_draw(color_conversion, window_texture_get_opengl_texture_id(&self->window_texture),
         (vec2i){target_x, target_y}, self->texture_size,
         (vec2i){0, 0}, self->texture_size,
@@ -337,6 +332,11 @@ static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_
 
     if(self->params.record_cursor && self->cursor.visible) {
         gsr_cursor_tick(&self->cursor, self->window);
+
+        const vec2i cursor_pos = {
+            target_x + self->cursor.position.x - self->cursor.hotspot.x,
+            target_y + self->cursor.position.y - self->cursor.hotspot.y
+        };
 
         self->params.egl->glEnable(GL_SCISSOR_TEST);
         self->params.egl->glScissor(target_x, target_y, self->texture_size.x, self->texture_size.y);

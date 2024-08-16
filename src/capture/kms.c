@@ -1,8 +1,10 @@
 #include "../../include/capture/kms.h"
 #include "../../include/utils.h"
 #include "../../include/color_conversion.h"
+#include "../../include/cursor.h"
 #include "../../kms/client/kms_client.h"
 
+#include <X11/Xlib.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -45,6 +47,9 @@ typedef struct {
 
     struct hdr_output_metadata hdr_metadata;
     bool hdr_metadata_set;
+
+    gsr_cursor x11_cursor;
+    XEvent xev;
 } gsr_capture_kms;
 
 static void gsr_capture_kms_cleanup_kms_fds(gsr_capture_kms *self) {
@@ -79,6 +84,7 @@ static void gsr_capture_kms_stop(gsr_capture_kms *self) {
 
     gsr_capture_kms_cleanup_kms_fds(self);
     gsr_kms_client_deinit(&self->kms_client);
+    gsr_cursor_deinit(&self->x11_cursor);
 }
 
 static int max_int(int a, int b) {
@@ -151,14 +157,19 @@ static int gsr_capture_kms_start(gsr_capture *cap, AVCodecContext *video_codec_c
     if(kms_init_res != 0)
         return kms_init_res;
 
+    const bool is_x11 = gsr_egl_get_display_server(self->params.egl) == GSR_DISPLAY_SERVER_X11;
+    const gsr_connection_type connection_type = is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
+    if(is_x11)
+        gsr_cursor_init(&self->x11_cursor, self->params.egl, self->params.egl->x11.dpy);
+
     MonitorCallbackUserdata monitor_callback_userdata = {
         &self->monitor_id,
         self->params.display_to_capture, strlen(self->params.display_to_capture),
         0,
     };
-    for_each_active_monitor_output(self->params.egl, GSR_CONNECTION_DRM, monitor_callback, &monitor_callback_userdata);
+    for_each_active_monitor_output(self->params.egl, connection_type, monitor_callback, &monitor_callback_userdata);
 
-    if(!get_monitor_by_name(self->params.egl, GSR_CONNECTION_DRM, self->params.display_to_capture, &monitor)) {
+    if(!get_monitor_by_name(self->params.egl, connection_type, self->params.display_to_capture, &monitor)) {
         fprintf(stderr, "gsr error: gsr_capture_kms_start: failed to find monitor by name \"%s\"\n", self->params.display_to_capture);
         gsr_capture_kms_stop(self);
         return -1;
@@ -168,7 +179,8 @@ static int gsr_capture_kms_start(gsr_capture *cap, AVCodecContext *video_codec_c
     self->monitor_rotation = drm_monitor_get_display_server_rotation(self->params.egl, &monitor);
 
     self->capture_pos = monitor.pos;
-    if(self->monitor_rotation == GSR_MONITOR_ROT_90 || self->monitor_rotation == GSR_MONITOR_ROT_270) {
+    /* Monitor size is already rotated on x11 when the monitor is rotated, no need to apply it ourselves */
+    if(!is_x11 && (self->monitor_rotation == GSR_MONITOR_ROT_90 || self->monitor_rotation == GSR_MONITOR_ROT_270)) {
         self->capture_size.x = monitor.size.y;
         self->capture_size.y = monitor.size.x;
     } else {
@@ -184,6 +196,16 @@ static int gsr_capture_kms_start(gsr_capture *cap, AVCodecContext *video_codec_c
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
     return 0;
+}
+
+static void gsr_capture_kms_tick(gsr_capture *cap, AVCodecContext *video_codec_context) {
+    (void)video_codec_context;
+    gsr_capture_kms *self = cap->priv;
+
+    while(XPending(self->params.egl->x11.dpy)) {
+        XNextEvent(self->params.egl->x11.dpy, &self->xev);
+        gsr_cursor_update(&self->x11_cursor, &self->xev);
+    }
 }
 
 static float monitor_rotation_to_radians(gsr_monitor_rotation rot) {
@@ -238,12 +260,16 @@ static gsr_kms_response_item* find_largest_drm(gsr_kms_response *kms_response) {
     return largest_drm;
 }
 
-static gsr_kms_response_item* find_cursor_drm(gsr_kms_response *kms_response) {
+static gsr_kms_response_item* find_cursor_drm(gsr_kms_response *kms_response, uint32_t connector_id) {
+    gsr_kms_response_item *cursor_drm = NULL;
     for(int i = 0; i < kms_response->num_items; ++i) {
-        if(kms_response->items[i].is_cursor)
-            return &kms_response->items[i];
+        if(kms_response->items[i].is_cursor) {
+            cursor_drm = &kms_response->items[i];
+            if(kms_response->items[i].connector_id == connector_id)
+                break;
+        }
     }
-    return NULL;
+    return cursor_drm;
 }
 
 static bool hdr_metadata_is_supported_format(const struct hdr_output_metadata *hdr_metadata) {
@@ -329,12 +355,16 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         capture_is_combined_plane = true;
     }
 
-    cursor_drm_fd = find_cursor_drm(&self->kms_response);
+    cursor_drm_fd = find_cursor_drm(&self->kms_response, drm_fd->connector_id);
 
     if(!drm_fd)
         return -1;
 
     if(!capture_is_combined_plane && cursor_drm_fd && cursor_drm_fd->connector_id != drm_fd->connector_id)
+        cursor_drm_fd = NULL;
+
+    const bool is_x11 = gsr_egl_get_display_server(self->params.egl) == GSR_DISPLAY_SERVER_X11;
+    if(is_x11)
         cursor_drm_fd = NULL;
 
     if(drm_fd->has_hdr_metadata && self->params.hdr && hdr_metadata_is_supported_format(&drm_fd->hdr_metadata))
@@ -471,6 +501,25 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         self->params.egl->glDisable(GL_SCISSOR_TEST);
     }
 
+    if(self->params.record_cursor && !cursor_drm_fd && is_x11) {
+        gsr_cursor_tick(&self->x11_cursor, DefaultRootWindow(self->params.egl->x11.dpy));
+
+        const vec2i cursor_pos = {
+            target_x + self->x11_cursor.position.x - self->x11_cursor.hotspot.x - capture_pos.x,
+            target_y + self->x11_cursor.position.y - self->x11_cursor.hotspot.y - capture_pos.y
+        };
+
+        self->params.egl->glEnable(GL_SCISSOR_TEST);
+        self->params.egl->glScissor(target_x, target_y, self->capture_size.x, self->capture_size.y);
+
+        gsr_color_conversion_draw(color_conversion, self->x11_cursor.texture_id,
+            cursor_pos, self->x11_cursor.size,
+            (vec2i){0, 0}, self->x11_cursor.size,
+            0.0f, false);
+
+        self->params.egl->glDisable(GL_SCISSOR_TEST);
+    }
+
     //self->params.egl->glFlush();
     //self->params.egl->glFinish();
 
@@ -566,7 +615,7 @@ gsr_capture* gsr_capture_kms_create(const gsr_capture_kms_params *params) {
     
     *cap = (gsr_capture) {
         .start = gsr_capture_kms_start,
-        .tick = NULL,
+        .tick = gsr_capture_kms_tick,
         .should_stop = gsr_capture_kms_should_stop,
         .capture = gsr_capture_kms_capture,
         .capture_end = gsr_capture_kms_capture_end,

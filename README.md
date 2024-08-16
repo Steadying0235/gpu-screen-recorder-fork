@@ -25,10 +25,10 @@ This software works on X11 and Wayland on AMD, Intel and NVIDIA.
 2) Videos are in variable framerate format. Use MPV to play such videos, otherwise you might experience stuttering in the video if you are using a buggy video player. You can try saving the video into a .mkv file instead as some software may have better support for .mkv files (such as kdenlive). You can use the "-fm cfr" option to to use constant framerate mode.
 3) FLAC audio codec is disabled at the moment because of temporary issues.
 ### AMD/Intel/Wayland root permission
-When recording a window under AMD/Intel no special user permission is required, however when recording a monitor (or when using wayland) the program needs root permission (to access KMS).\
+When recording a window or when using the `-w portal` option under AMD/Intel no special user permission is required,
+however when recording a monitor (or when using wayland) the program needs root permission (to access KMS).\
 This is safe in GPU Screen Recorder as the part that needs root access has been moved to its own small program that only does one thing.\
-For you as a user this only means that if you installed GPU Screen Recorder as a flatpak then a prompt asking for root password will show up when you start recording.\
-Note that this only applies to when recording a monitor. On Wayland you can use the `-w portal` option to record a monitor without root permission.
+For you as a user this only means that if you installed GPU Screen Recorder as a flatpak then a prompt asking for root password will show up when you start recording.
 # Performance
 On a system with a i5 4690k CPU and a GTX 1080 GPU:\
 When recording Legend of Zelda Breath of the Wild at 4k, fps drops from 30 to 7 when using OBS Studio + nvenc, however when using this screen recorder the fps remains at 30.\

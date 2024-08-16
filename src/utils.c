@@ -9,7 +9,6 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <assert.h>
-#include <dirent.h>
 
 #include <xf86drmMode.h>
 #include <xf86drm.h>

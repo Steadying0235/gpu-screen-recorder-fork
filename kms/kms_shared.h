@@ -5,7 +5,8 @@
 #include <stdbool.h>
 #include <drm_mode.h>
 
-#define GSR_KMS_PROTOCOL_VERSION 3
+#define GSR_KMS_PROTOCOL_VERSION 4
+
 #define GSR_KMS_MAX_ITEMS 8
 #define GSR_KMS_MAX_DMA_BUFS 4
 
@@ -46,7 +47,6 @@ struct gsr_kms_response_item {
     uint32_t pixel_format;
     uint64_t modifier;
     uint32_t connector_id; /* 0 if unknown */
-    bool is_combined_plane;
     bool is_cursor;
     bool has_hdr_metadata;
     int x;

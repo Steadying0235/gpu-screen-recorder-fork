@@ -48,6 +48,7 @@ typedef struct {
     struct hdr_output_metadata hdr_metadata;
     bool hdr_metadata_set;
 
+    bool is_x11;
     gsr_cursor x11_cursor;
     XEvent xev;
 } gsr_capture_kms;
@@ -157,9 +158,9 @@ static int gsr_capture_kms_start(gsr_capture *cap, AVCodecContext *video_codec_c
     if(kms_init_res != 0)
         return kms_init_res;
 
-    const bool is_x11 = gsr_egl_get_display_server(self->params.egl) == GSR_DISPLAY_SERVER_X11;
-    const gsr_connection_type connection_type = is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
-    if(is_x11)
+    self->is_x11 = gsr_egl_get_display_server(self->params.egl) == GSR_DISPLAY_SERVER_X11;
+    const gsr_connection_type connection_type = self->is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
+    if(self->is_x11)
         gsr_cursor_init(&self->x11_cursor, self->params.egl, self->params.egl->x11.dpy);
 
     MonitorCallbackUserdata monitor_callback_userdata = {
@@ -180,7 +181,7 @@ static int gsr_capture_kms_start(gsr_capture *cap, AVCodecContext *video_codec_c
 
     self->capture_pos = monitor.pos;
     /* Monitor size is already rotated on x11 when the monitor is rotated, no need to apply it ourselves */
-    if(!is_x11 && (self->monitor_rotation == GSR_MONITOR_ROT_90 || self->monitor_rotation == GSR_MONITOR_ROT_270)) {
+    if(!self->is_x11 && (self->monitor_rotation == GSR_MONITOR_ROT_90 || self->monitor_rotation == GSR_MONITOR_ROT_270)) {
         self->capture_size.x = monitor.size.y;
         self->capture_size.y = monitor.size.x;
     } else {
@@ -218,27 +219,9 @@ static float monitor_rotation_to_radians(gsr_monitor_rotation rot) {
     return 0.0f;
 }
 
-/* Prefer non combined planes */
 static gsr_kms_response_item* find_drm_by_connector_id(gsr_kms_response *kms_response, uint32_t connector_id) {
-    int index_combined = -1;
     for(int i = 0; i < kms_response->num_items; ++i) {
-        if(kms_response->items[i].connector_id == connector_id && !kms_response->items[i].is_cursor) {
-            if(kms_response->items[i].is_combined_plane)
-                index_combined = i;
-            else
-                return &kms_response->items[i];
-        }
-    }
-
-    if(index_combined != -1)
-        return &kms_response->items[index_combined];
-    else
-        return NULL;
-}
-
-static gsr_kms_response_item* find_first_combined_drm(gsr_kms_response *kms_response) {
-    for(int i = 0; i < kms_response->num_items; ++i) {
-        if(kms_response->items[i].is_combined_plane && !kms_response->items[i].is_cursor)
+        if(kms_response->items[i].connector_id == connector_id && !kms_response->items[i].is_cursor)
             return &kms_response->items[i];
     }
     return NULL;
@@ -279,7 +262,7 @@ static bool hdr_metadata_is_supported_format(const struct hdr_output_metadata *h
 }
 
 // TODO: Check if this hdr data can be changed after the call to av_packet_side_data_add
-static void gsr_kms_set_hdr_metadata(gsr_capture_kms *self, gsr_kms_response_item *drm_fd) {
+static void gsr_kms_set_hdr_metadata(gsr_capture_kms *self, const gsr_kms_response_item *drm_fd) {
     if(self->hdr_metadata_set)
         return;
 
@@ -294,7 +277,7 @@ static vec2i swap_vec2i(vec2i value) {
     return value;
 }
 
-static EGLImage gsr_capture_kms_create_egl_image(gsr_capture_kms *self, gsr_kms_response_item *drm_fd, const int *fds, const uint32_t *offsets, const uint32_t *pitches, const uint64_t *modifiers, bool use_modifiers) {
+static EGLImage gsr_capture_kms_create_egl_image(gsr_capture_kms *self, const gsr_kms_response_item *drm_fd, const int *fds, const uint32_t *offsets, const uint32_t *pitches, const uint64_t *modifiers, bool use_modifiers) {
     intptr_t img_attr[44];
     setup_dma_buf_attrs(img_attr, drm_fd->pixel_format, drm_fd->width, drm_fd->height, fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs, use_modifiers);
     while(self->params.egl->eglGetError() != EGL_SUCCESS){}
@@ -307,69 +290,7 @@ static EGLImage gsr_capture_kms_create_egl_image(gsr_capture_kms *self, gsr_kms_
     return image;
 }
 
-static bool gsr_capture_kms_bind_image_to_texture(gsr_capture_kms *self, EGLImage image, unsigned int texture_id, bool external_texture) {
-    const int texture_target = external_texture ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
-    while(self->params.egl->glGetError() != 0){}
-    self->params.egl->glBindTexture(texture_target, texture_id);
-    self->params.egl->glEGLImageTargetTexture2DOES(texture_target, image);
-    const bool success = self->params.egl->glGetError() == 0;
-    self->params.egl->glBindTexture(texture_target, 0);
-    return success;
-}
-
-static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
-    gsr_capture_kms *self = cap->priv;
-    const bool cursor_texture_id_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
-
-    gsr_capture_kms_cleanup_kms_fds(self);
-
-    gsr_kms_response_item *drm_fd = NULL;
-    gsr_kms_response_item *cursor_drm_fd = NULL;
-    bool capture_is_combined_plane = false;
-
-    if(gsr_kms_client_get_kms(&self->kms_client, &self->kms_response) != 0) {
-        fprintf(stderr, "gsr error: gsr_capture_kms_capture: failed to get kms, error: %d (%s)\n", self->kms_response.result, self->kms_response.err_msg);
-        return -1;
-    }
-
-    if(self->kms_response.num_items == 0) {
-        static bool error_shown = false;
-        if(!error_shown) {
-            error_shown = true;
-            fprintf(stderr, "gsr error: no drm found, capture will fail\n");
-        }
-        return -1;
-    }
-
-    for(int i = 0; i < self->monitor_id.num_connector_ids; ++i) {
-        drm_fd = find_drm_by_connector_id(&self->kms_response, self->monitor_id.connector_ids[i]);
-        if(drm_fd)
-            break;
-    }
-
-    // Will never happen on wayland unless the target monitor has been disconnected
-    if(!drm_fd) {
-        drm_fd = find_first_combined_drm(&self->kms_response);
-        if(!drm_fd)
-            drm_fd = find_largest_drm(&self->kms_response);
-        capture_is_combined_plane = true;
-    }
-
-    cursor_drm_fd = find_cursor_drm(&self->kms_response, drm_fd->connector_id);
-
-    if(!drm_fd)
-        return -1;
-
-    if(!capture_is_combined_plane && cursor_drm_fd && cursor_drm_fd->connector_id != drm_fd->connector_id)
-        cursor_drm_fd = NULL;
-
-    const bool is_x11 = gsr_egl_get_display_server(self->params.egl) == GSR_DISPLAY_SERVER_X11;
-    if(is_x11)
-        cursor_drm_fd = NULL;
-
-    if(drm_fd->has_hdr_metadata && self->params.hdr && hdr_metadata_is_supported_format(&drm_fd->hdr_metadata))
-        gsr_kms_set_hdr_metadata(self, drm_fd);
-
+static EGLImage gsr_capture_kms_create_egl_image_with_fallback(gsr_capture_kms *self, const gsr_kms_response_item *drm_fd) {
     // TODO: This causes a crash sometimes on steam deck, why? is it a driver bug? a vaapi pure version doesn't cause a crash.
     // Even ffmpeg kmsgrab causes this crash. The error is:
     // amdgpu: Failed to allocate a buffer:
@@ -407,12 +328,25 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     } else {
         image = gsr_capture_kms_create_egl_image(self, drm_fd, fds, offsets, pitches, modifiers, true);
         if(!image) {
-            fprintf(stderr, "gsr error: gsr_capture_kms_capture: failed to create egl image with modifiers, trying without modifiers\n");
+            fprintf(stderr, "gsr error: gsr_capture_kms_create_egl_image_with_fallback: failed to create egl image with modifiers, trying without modifiers\n");
             self->no_modifiers_fallback = true;
             image = gsr_capture_kms_create_egl_image(self, drm_fd, fds, offsets, pitches, modifiers, false);
         }
     }
+    return image;
+}
 
+static bool gsr_capture_kms_bind_image_to_texture(gsr_capture_kms *self, EGLImage image, unsigned int texture_id, bool external_texture) {
+    const int texture_target = external_texture ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
+    while(self->params.egl->glGetError() != 0){}
+    self->params.egl->glBindTexture(texture_target, texture_id);
+    self->params.egl->glEGLImageTargetTexture2DOES(texture_target, image);
+    const bool success = self->params.egl->glGetError() == 0;
+    self->params.egl->glBindTexture(texture_target, 0);
+    return success;
+}
+
+static void gsr_capture_kms_bind_image_to_input_texture_with_fallback(gsr_capture_kms *self, EGLImage image) {
     if(self->external_texture_fallback) {
         gsr_capture_kms_bind_image_to_texture(self, image, self->external_input_texture_id, true);
     } else {
@@ -422,102 +356,173 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
             gsr_capture_kms_bind_image_to_texture(self, image, self->external_input_texture_id, true);
         }
     }
+}
 
-    if(image)
+static gsr_kms_response_item* find_monitor_drm(gsr_capture_kms *self, bool *capture_is_combined_plane) {
+    *capture_is_combined_plane = false;
+    gsr_kms_response_item *drm_fd = NULL;
+
+    for(int i = 0; i < self->monitor_id.num_connector_ids; ++i) {
+        drm_fd = find_drm_by_connector_id(&self->kms_response, self->monitor_id.connector_ids[i]);
+        if(drm_fd)
+            break;
+    }
+
+    // Will never happen on wayland unless the target monitor has been disconnected
+    if(!drm_fd) {
+        drm_fd = find_largest_drm(&self->kms_response);
+        *capture_is_combined_plane = true;
+    }
+
+    return drm_fd;
+}
+
+static gsr_kms_response_item* find_cursor_drm_if_on_monitor(gsr_capture_kms *self, uint32_t monitor_connector_id, bool capture_is_combined_plane) {
+    gsr_kms_response_item *cursor_drm_fd = find_cursor_drm(&self->kms_response, monitor_connector_id);
+    if(!capture_is_combined_plane && cursor_drm_fd && cursor_drm_fd->connector_id != monitor_connector_id)
+        cursor_drm_fd = NULL;
+    return cursor_drm_fd;
+}
+
+static void render_drm_cursor(gsr_capture_kms *self, gsr_color_conversion *color_conversion, const gsr_kms_response_item *cursor_drm_fd, int target_x, int target_y, float texture_rotation) {
+    const bool cursor_texture_id_is_external = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA;
+    const vec2i cursor_size = {cursor_drm_fd->width, cursor_drm_fd->height};
+
+    vec2i cursor_pos = {cursor_drm_fd->x, cursor_drm_fd->y};
+    switch(self->monitor_rotation) {
+        case GSR_MONITOR_ROT_0:
+            break;
+        case GSR_MONITOR_ROT_90:
+            cursor_pos = swap_vec2i(cursor_pos);
+            cursor_pos.x = self->capture_size.x - cursor_pos.x;
+            // TODO: Remove this horrible hack
+            cursor_pos.x -= cursor_size.x;
+            break;
+        case GSR_MONITOR_ROT_180:
+            cursor_pos.x = self->capture_size.x - cursor_pos.x;
+            cursor_pos.y = self->capture_size.y - cursor_pos.y;
+            // TODO: Remove this horrible hack
+            cursor_pos.x -= cursor_size.x;
+            cursor_pos.y -= cursor_size.y;
+            break;
+        case GSR_MONITOR_ROT_270:
+            cursor_pos = swap_vec2i(cursor_pos);
+            cursor_pos.y = self->capture_size.y - cursor_pos.y;
+            // TODO: Remove this horrible hack
+            cursor_pos.y -= cursor_size.y;
+            break;
+    }
+
+    cursor_pos.x += target_x;
+    cursor_pos.y += target_y;
+
+    int fds[GSR_KMS_MAX_DMA_BUFS];
+    uint32_t offsets[GSR_KMS_MAX_DMA_BUFS];
+    uint32_t pitches[GSR_KMS_MAX_DMA_BUFS];
+    uint64_t modifiers[GSR_KMS_MAX_DMA_BUFS];
+
+    for(int i = 0; i < cursor_drm_fd->num_dma_bufs; ++i) {
+        fds[i] = cursor_drm_fd->dma_buf[i].fd;
+        offsets[i] = cursor_drm_fd->dma_buf[i].offset;
+        pitches[i] = cursor_drm_fd->dma_buf[i].pitch;
+        modifiers[i] = cursor_drm_fd->modifier;
+    }
+
+    intptr_t img_attr_cursor[44];
+    setup_dma_buf_attrs(img_attr_cursor, cursor_drm_fd->pixel_format, cursor_drm_fd->width, cursor_drm_fd->height,
+        fds, offsets, pitches, modifiers, cursor_drm_fd->num_dma_bufs, true);
+
+    EGLImage cursor_image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr_cursor);
+    const int target = cursor_texture_id_is_external ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
+    self->params.egl->glBindTexture(target, self->cursor_texture_id);
+    self->params.egl->glEGLImageTargetTexture2DOES(target, cursor_image);
+    self->params.egl->glBindTexture(target, 0);
+
+    if(cursor_image)
+        self->params.egl->eglDestroyImage(self->params.egl->egl_display, cursor_image);
+
+    self->params.egl->glEnable(GL_SCISSOR_TEST);
+    self->params.egl->glScissor(target_x, target_y, self->capture_size.x, self->capture_size.y);
+
+    gsr_color_conversion_draw(color_conversion, self->cursor_texture_id,
+        cursor_pos, cursor_size,
+        (vec2i){0, 0}, cursor_size,
+        texture_rotation, cursor_texture_id_is_external);
+
+    self->params.egl->glDisable(GL_SCISSOR_TEST);
+}
+
+static void render_x11_cursor(gsr_capture_kms *self, gsr_color_conversion *color_conversion, vec2i capture_pos, int target_x, int target_y) {
+    gsr_cursor_tick(&self->x11_cursor, DefaultRootWindow(self->params.egl->x11.dpy));
+
+    const vec2i cursor_pos = {
+        target_x + self->x11_cursor.position.x - self->x11_cursor.hotspot.x - capture_pos.x,
+        target_y + self->x11_cursor.position.y - self->x11_cursor.hotspot.y - capture_pos.y
+    };
+
+    self->params.egl->glEnable(GL_SCISSOR_TEST);
+    self->params.egl->glScissor(target_x, target_y, self->capture_size.x, self->capture_size.y);
+
+    gsr_color_conversion_draw(color_conversion, self->x11_cursor.texture_id,
+        cursor_pos, self->x11_cursor.size,
+        (vec2i){0, 0}, self->x11_cursor.size,
+        0.0f, false);
+
+    self->params.egl->glDisable(GL_SCISSOR_TEST);
+}
+
+static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
+    gsr_capture_kms *self = cap->priv;
+
+    gsr_capture_kms_cleanup_kms_fds(self);
+
+    if(gsr_kms_client_get_kms(&self->kms_client, &self->kms_response) != 0) {
+        fprintf(stderr, "gsr error: gsr_capture_kms_capture: failed to get kms, error: %d (%s)\n", self->kms_response.result, self->kms_response.err_msg);
+        return -1;
+    }
+
+    if(self->kms_response.num_items == 0) {
+        static bool error_shown = false;
+        if(!error_shown) {
+            error_shown = true;
+            fprintf(stderr, "gsr error: no drm found, capture will fail\n");
+        }
+        return -1;
+    }
+
+    bool capture_is_combined_plane = false;
+    const gsr_kms_response_item *drm_fd = find_monitor_drm(self, &capture_is_combined_plane);
+    if(!drm_fd)
+        return -1;
+
+    if(drm_fd->has_hdr_metadata && self->params.hdr && hdr_metadata_is_supported_format(&drm_fd->hdr_metadata))
+        gsr_kms_set_hdr_metadata(self, drm_fd);
+
+    EGLImage image = gsr_capture_kms_create_egl_image_with_fallback(self, drm_fd);
+    if(image) {
+        gsr_capture_kms_bind_image_to_input_texture_with_fallback(self, image);
         self->params.egl->eglDestroyImage(self->params.egl->egl_display, image);
+    }
+
+    const float texture_rotation = monitor_rotation_to_radians(self->monitor_rotation);
+    const int target_x = max_int(0, frame->width / 2 - self->capture_size.x / 2);
+    const int target_y = max_int(0, frame->height / 2 - self->capture_size.y / 2);
 
     vec2i capture_pos = self->capture_pos;
     if(!capture_is_combined_plane)
         capture_pos = (vec2i){drm_fd->x, drm_fd->y};
-
-    const float texture_rotation = monitor_rotation_to_radians(self->monitor_rotation);
-
-    const int target_x = max_int(0, frame->width / 2 - self->capture_size.x / 2);
-    const int target_y = max_int(0, frame->height / 2 - self->capture_size.y / 2);
 
     gsr_color_conversion_draw(color_conversion, self->external_texture_fallback ? self->external_input_texture_id : self->input_texture_id,
         (vec2i){target_x, target_y}, self->capture_size,
         capture_pos, self->capture_size,
         texture_rotation, self->external_texture_fallback);
 
-    if(self->params.record_cursor && cursor_drm_fd) {
-        const vec2i cursor_size = {cursor_drm_fd->width, cursor_drm_fd->height};
-        vec2i cursor_pos = {cursor_drm_fd->x, cursor_drm_fd->y};
-        switch(self->monitor_rotation) {
-            case GSR_MONITOR_ROT_0:
-                break;
-            case GSR_MONITOR_ROT_90:
-                cursor_pos = swap_vec2i(cursor_pos);
-                cursor_pos.x = self->capture_size.x - cursor_pos.x;
-                // TODO: Remove this horrible hack
-                cursor_pos.x -= cursor_size.x;
-                break;
-            case GSR_MONITOR_ROT_180:
-                cursor_pos.x = self->capture_size.x - cursor_pos.x;
-                cursor_pos.y = self->capture_size.y - cursor_pos.y;
-                // TODO: Remove this horrible hack
-                cursor_pos.x -= cursor_size.x;
-                cursor_pos.y -= cursor_size.y;
-                break;
-            case GSR_MONITOR_ROT_270:
-                cursor_pos = swap_vec2i(cursor_pos);
-                cursor_pos.y = self->capture_size.y - cursor_pos.y;
-                // TODO: Remove this horrible hack
-                cursor_pos.y -= cursor_size.y;
-                break;
-        }
-
-        cursor_pos.x += target_x;
-        cursor_pos.y += target_y;
-
-        for(int i = 0; i < cursor_drm_fd->num_dma_bufs; ++i) {
-            fds[i] = cursor_drm_fd->dma_buf[i].fd;
-            offsets[i] = cursor_drm_fd->dma_buf[i].offset;
-            pitches[i] = cursor_drm_fd->dma_buf[i].pitch;
-            modifiers[i] = cursor_drm_fd->modifier;
-        }
-
-        intptr_t img_attr_cursor[44];
-        setup_dma_buf_attrs(img_attr_cursor, cursor_drm_fd->pixel_format, cursor_drm_fd->width, cursor_drm_fd->height,
-            fds, offsets, pitches, modifiers, cursor_drm_fd->num_dma_bufs, true);
-
-        EGLImage cursor_image = self->params.egl->eglCreateImage(self->params.egl->egl_display, 0, EGL_LINUX_DMA_BUF_EXT, NULL, img_attr_cursor);
-        const int target = cursor_texture_id_is_external ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
-        self->params.egl->glBindTexture(target, self->cursor_texture_id);
-        self->params.egl->glEGLImageTargetTexture2DOES(target, cursor_image);
-        self->params.egl->glBindTexture(target, 0);
-
-        if(cursor_image)
-            self->params.egl->eglDestroyImage(self->params.egl->egl_display, cursor_image);
-
-        self->params.egl->glEnable(GL_SCISSOR_TEST);
-        self->params.egl->glScissor(target_x, target_y, self->capture_size.x, self->capture_size.y);
-
-        gsr_color_conversion_draw(color_conversion, self->cursor_texture_id,
-            cursor_pos, cursor_size,
-            (vec2i){0, 0}, cursor_size,
-            texture_rotation, cursor_texture_id_is_external);
-
-        self->params.egl->glDisable(GL_SCISSOR_TEST);
-    }
-
-    if(self->params.record_cursor && !cursor_drm_fd && is_x11) {
-        gsr_cursor_tick(&self->x11_cursor, DefaultRootWindow(self->params.egl->x11.dpy));
-
-        const vec2i cursor_pos = {
-            target_x + self->x11_cursor.position.x - self->x11_cursor.hotspot.x - capture_pos.x,
-            target_y + self->x11_cursor.position.y - self->x11_cursor.hotspot.y - capture_pos.y
-        };
-
-        self->params.egl->glEnable(GL_SCISSOR_TEST);
-        self->params.egl->glScissor(target_x, target_y, self->capture_size.x, self->capture_size.y);
-
-        gsr_color_conversion_draw(color_conversion, self->x11_cursor.texture_id,
-            cursor_pos, self->x11_cursor.size,
-            (vec2i){0, 0}, self->x11_cursor.size,
-            0.0f, false);
-
-        self->params.egl->glDisable(GL_SCISSOR_TEST);
+    if(self->params.record_cursor) {
+        gsr_kms_response_item *cursor_drm_fd = find_cursor_drm_if_on_monitor(self, drm_fd->connector_id, capture_is_combined_plane);
+        if(self->is_x11)
+            render_x11_cursor(self, color_conversion, capture_pos, target_x, target_y);
+        else if(cursor_drm_fd)
+            render_drm_cursor(self, color_conversion, cursor_drm_fd, target_x, target_y, texture_rotation);
     }
 
     //self->params.egl->glFlush();

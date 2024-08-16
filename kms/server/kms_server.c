@@ -360,7 +360,6 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
         response->items[item_index].modifier = drmfb->modifier;
         response->items[item_index].connector_id = crtc_pair ? crtc_pair->connector_id : 0;
         response->items[item_index].is_cursor = property_mask & PLANE_PROPERTY_IS_CURSOR;
-        response->items[item_index].is_combined_plane = false;
         if(property_mask & PLANE_PROPERTY_IS_CURSOR) {
             response->items[item_index].x = x;
             response->items[item_index].y = y;

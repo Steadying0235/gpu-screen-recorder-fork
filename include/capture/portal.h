@@ -5,8 +5,8 @@
 
 typedef struct {
     gsr_egl *egl;
+    gsr_color_depth color_depth;
     gsr_color_range color_range;
-    bool hdr;
     bool record_cursor;
     bool restore_portal_session;
     /* If this is set to NULL then this defaults to $XDG_CONFIG_HOME/gpu-screen-recorder/restore_token ($XDG_CONFIG_HOME defaults to $HOME/.config) */

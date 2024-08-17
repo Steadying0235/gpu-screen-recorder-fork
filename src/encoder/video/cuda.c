@@ -44,7 +44,7 @@ static bool gsr_video_encoder_cuda_setup_context(gsr_video_encoder_cuda *self, A
     AVHWFramesContext *hw_frame_context = (AVHWFramesContext*)frame_context->data;
     hw_frame_context->width = video_codec_context->width;
     hw_frame_context->height = video_codec_context->height;
-    hw_frame_context->sw_format = self->params.hdr ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12;
+    hw_frame_context->sw_format = self->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12;
     hw_frame_context->format = video_codec_context->pix_fmt;
     hw_frame_context->device_ref = device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
@@ -108,7 +108,7 @@ static bool gsr_video_encoder_cuda_setup_textures(gsr_video_encoder_cuda *self, 
     const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
 
     for(int i = 0; i < 2; ++i) {
-        self->target_textures[i] = gl_create_texture(self->params.egl, video_codec_context->width / div[i], video_codec_context->height / div[i], !self->params.hdr ? internal_formats_nv12[i] : internal_formats_p010[i], formats[i]);
+        self->target_textures[i] = gl_create_texture(self->params.egl, video_codec_context->width / div[i], video_codec_context->height / div[i], self->params.color_depth == GSR_COLOR_DEPTH_8_BITS ? internal_formats_nv12[i] : internal_formats_p010[i], formats[i]);
         if(self->target_textures[i] == 0) {
             fprintf(stderr, "gsr error: gsr_video_encoder_cuda_setup_textures: failed to create opengl texture\n");
             return false;
@@ -187,7 +187,7 @@ static void gsr_video_encoder_cuda_copy_textures_to_frame(gsr_video_encoder *enc
         memcpy_struct.srcPitch = frame->width / div[i];
         memcpy_struct.dstDevice = (CUdeviceptr)frame->data[i];
         memcpy_struct.dstPitch = frame->linesize[i];
-        memcpy_struct.WidthInBytes = frame->width * (encoder_cuda->params.hdr ? 2 : 1);
+        memcpy_struct.WidthInBytes = frame->width * (encoder_cuda->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? 2 : 1);
         memcpy_struct.Height = frame->height / div[i];
         // TODO: Remove this copy if possible
         encoder_cuda->cuda.cuMemcpy2DAsync_v2(&memcpy_struct, encoder_cuda->cuda_stream);
@@ -202,7 +202,7 @@ static void gsr_video_encoder_cuda_get_textures(gsr_video_encoder *encoder, unsi
     textures[0] = encoder_cuda->target_textures[0];
     textures[1] = encoder_cuda->target_textures[1];
     *num_textures = 2;
-    *destination_color = encoder_cuda->params.hdr ? GSR_DESTINATION_COLOR_P010 : GSR_DESTINATION_COLOR_NV12;
+    *destination_color = encoder_cuda->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? GSR_DESTINATION_COLOR_P010 : GSR_DESTINATION_COLOR_NV12;
 }
 
 static void gsr_video_encoder_cuda_destroy(gsr_video_encoder *encoder, AVCodecContext *video_codec_context) {

@@ -12,6 +12,7 @@ typedef struct {
     gsr_color_range color_range;
     bool record_cursor;
     bool track_damage;
+    gsr_color_depth color_depth;
 } gsr_capture_xcomposite_params;
 
 gsr_capture* gsr_capture_xcomposite_create(const gsr_capture_xcomposite_params *params);

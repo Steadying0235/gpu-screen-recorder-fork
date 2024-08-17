@@ -6,6 +6,7 @@
 typedef struct {
     gsr_egl *egl;
     const char *display_to_capture; /* if this is "screen", then the first monitor is captured. A copy is made of this */
+    gsr_color_depth color_depth;
     gsr_color_range color_range;
     bool hdr;
     bool record_cursor;

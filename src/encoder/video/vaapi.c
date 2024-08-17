@@ -43,7 +43,7 @@ static bool gsr_video_encoder_vaapi_setup_context(gsr_video_encoder_vaapi *self,
         (AVHWFramesContext *)frame_context->data;
     hw_frame_context->width = video_codec_context->width;
     hw_frame_context->height = video_codec_context->height;
-    hw_frame_context->sw_format = self->params.hdr ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12;
+    hw_frame_context->sw_format = self->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12;
     hw_frame_context->format = video_codec_context->pix_fmt;
     hw_frame_context->device_ref = device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
@@ -211,7 +211,7 @@ static void gsr_video_encoder_vaapi_get_textures(gsr_video_encoder *encoder, uns
     textures[0] = encoder_vaapi->target_textures[0];
     textures[1] = encoder_vaapi->target_textures[1];
     *num_textures = 2;
-    *destination_color = encoder_vaapi->params.hdr ? GSR_DESTINATION_COLOR_P010 : GSR_DESTINATION_COLOR_NV12;
+    *destination_color = encoder_vaapi->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? GSR_DESTINATION_COLOR_P010 : GSR_DESTINATION_COLOR_NV12;
 }
 
 static void gsr_video_encoder_vaapi_destroy(gsr_video_encoder *encoder, AVCodecContext *video_codec_context) {

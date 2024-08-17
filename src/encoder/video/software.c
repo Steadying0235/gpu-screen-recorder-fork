@@ -48,7 +48,7 @@ static bool gsr_video_encoder_software_setup_textures(gsr_video_encoder_software
     const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
 
     for(int i = 0; i < 2; ++i) {
-        self->target_textures[i] = gl_create_texture(self->params.egl, video_codec_context->width / div[i], video_codec_context->height / div[i], !self->params.hdr ? internal_formats_nv12[i] : internal_formats_p010[i], formats[i]);
+        self->target_textures[i] = gl_create_texture(self->params.egl, video_codec_context->width / div[i], video_codec_context->height / div[i], self->params.color_depth == GSR_COLOR_DEPTH_8_BITS ? internal_formats_nv12[i] : internal_formats_p010[i], formats[i]);
         if(self->target_textures[i] == 0) {
             fprintf(stderr, "gsr error: gsr_capture_kms_setup_cuda_textures: failed to create opengl texture\n");
             return false;
@@ -103,7 +103,7 @@ static void gsr_video_encoder_software_get_textures(gsr_video_encoder *encoder, 
     textures[0] = encoder_software->target_textures[0];
     textures[1] = encoder_software->target_textures[1];
     *num_textures = 2;
-    *destination_color = encoder_software->params.hdr ? GSR_DESTINATION_COLOR_P010 : GSR_DESTINATION_COLOR_NV12;
+    *destination_color = encoder_software->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? GSR_DESTINATION_COLOR_P010 : GSR_DESTINATION_COLOR_NV12;
 }
 
 static void gsr_video_encoder_software_destroy(gsr_video_encoder *encoder, AVCodecContext *video_codec_context) {

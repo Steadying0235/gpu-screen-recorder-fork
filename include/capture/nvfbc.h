@@ -12,7 +12,7 @@ typedef struct {
     vec2i size;
     bool direct_capture;
     bool overclock;
-    bool hdr;
+    gsr_color_depth color_depth;
     gsr_color_range color_range;
     bool record_cursor;
     bool use_software_video_encoder;

@@ -151,3 +151,11 @@ Explicit sync is done with the drm property IN_FENCE_FD (see https://drmdb.emers
 The update fps appear to be lower when recording a monitor instead of using portal on intel. Does this reflect in game framerate?
 
 Fix glitches when using prime-run with desktop portal. It happens when moving a window around. It's probably a syncing issue.
+
+Allow prime-run on x11 if monitor capture and the prime gpu is not nvidia.
+
+Enable 2-pass encoding.
+
+Add even higher quality option or make ultra quality much higher quality. Check with vlc to see artifacts better, mpv masks them.
+
+Verify 10 bit works on x11 nvidia.

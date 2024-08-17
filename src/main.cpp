@@ -1158,9 +1158,9 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  --list-audio-devices\n");
     fprintf(stderr, "        List audio devices (for use by GPU Screen Recorder UI). Lists audio devices in the following format (prints them to stdout and exits):\n");
-    fprintf(stderr, "          <audio_device_name> <audio_device_name_in_human_readable_format>\n");
+    fprintf(stderr, "          <audio_device_name>|<audio_device_name_in_human_readable_format>\n");
     fprintf(stderr, "        For example:\n");
-    fprintf(stderr, "          bluez_input.88:C9:E8:66:A2:27 WH-1000XM4\n");
+    fprintf(stderr, "          bluez_input.88:C9:E8:66:A2:27|WH-1000XM4\n");
     fprintf(stderr, "        The <audio_device_name> is the name to pass to GPU Screen Recorder in a -a option.\n");
     fprintf(stderr, "\n");
     //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, set to 'yuv420' by default\n");
@@ -1719,19 +1719,19 @@ static void disable_prime_run() {
 }
 
 static void list_system_info(bool wayland) {
-    printf("display_server %s\n", wayland ? "wayland" : "x11");
+    printf("display_server|%s\n", wayland ? "wayland" : "x11");
 }
 
 static void list_gpu_info(gsr_egl *egl) {
     switch(egl->gpu_info.vendor) {
         case GSR_GPU_VENDOR_AMD:
-            printf("vendor amd\n");
+            printf("vendor|amd\n");
             break;
         case GSR_GPU_VENDOR_INTEL:
-            printf("vendor intel\n");
+            printf("vendor|intel\n");
             break;
         case GSR_GPU_VENDOR_NVIDIA:
-            printf("vendor nvidia\n");
+            printf("vendor|nvidia\n");
             break;
     }
 }
@@ -1775,9 +1775,9 @@ static void output_monitor_info(const gsr_monitor *monitor, void *userdata) {
         const gsr_monitor_rotation rot = drm_monitor_get_display_server_rotation(options->egl, monitor);
         if(rot == GSR_MONITOR_ROT_90 || rot == GSR_MONITOR_ROT_270)
             std::swap(monitor_size.x, monitor_size.y);
-        printf("%.*s %dx%d\n", monitor->name_len, monitor->name, monitor_size.x, monitor_size.y);
+        printf("%.*s|%dx%d\n", monitor->name_len, monitor->name, monitor_size.x, monitor_size.y);
     } else {
-        printf("%.*s %dx%d\n", monitor->name_len, monitor->name, monitor->size.x, monitor->size.y);
+        printf("%.*s|%dx%d\n", monitor->name_len, monitor->name, monitor->size.x, monitor->size.y);
     }
 }
 
@@ -1878,13 +1878,13 @@ static void list_audio_devices_command() {
     const AudioDevices audio_devices = get_pulseaudio_inputs();
 
     if(!audio_devices.default_output.empty())
-        puts("default_output Default output");
+        puts("default_output|Default output");
 
     if(!audio_devices.default_input.empty())
-        puts("default_input Default input");
+        puts("default_input|Default input");
 
     for(const auto &audio_input : audio_devices.audio_inputs) {
-        printf("%s %s\n", audio_input.name.c_str(), audio_input.description.c_str());
+        printf("%s|%s\n", audio_input.name.c_str(), audio_input.description.c_str());
     }
 
     fflush(stdout);

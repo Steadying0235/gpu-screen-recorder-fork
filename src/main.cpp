@@ -135,10 +135,8 @@ static bool video_codec_is_hdr(VideoCodec video_codec) {
 
 static gsr_color_depth video_codec_to_bit_depth(VideoCodec video_codec) {
     switch(video_codec) {
-        case VideoCodec::HEVC:
         case VideoCodec::HEVC_HDR:
         case VideoCodec::HEVC_10BIT:
-        case VideoCodec::AV1:
         case VideoCodec::AV1_HDR:
         case VideoCodec::AV1_10BIT:
             return GSR_COLOR_DEPTH_10_BITS;

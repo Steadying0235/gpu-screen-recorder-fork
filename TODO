@@ -155,3 +155,5 @@ Fix glitches when using prime-run with desktop portal. It happens when moving a 
 Allow prime-run on x11 if monitor capture and the prime gpu is not nvidia.
 
 Enable 2-pass encoding.
+
+Add vbr/cbr option.

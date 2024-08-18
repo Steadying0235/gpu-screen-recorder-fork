@@ -146,8 +146,10 @@ void gsr_cursor_deinit(gsr_cursor *self) {
         self->texture_id = 0;
     }
 
-    XISelectEvents(self->display, DefaultRootWindow(self->display), NULL, 0);
-    XFixesSelectCursorInput(self->display, DefaultRootWindow(self->display), 0);
+    if(self->display) {
+        XISelectEvents(self->display, DefaultRootWindow(self->display), NULL, 0);
+        XFixesSelectCursorInput(self->display, DefaultRootWindow(self->display), 0);
+    }
 
     self->display = NULL;
     self->egl = NULL;

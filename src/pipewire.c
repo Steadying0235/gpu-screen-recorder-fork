@@ -627,29 +627,7 @@ static EGLImage gsr_pipewire_create_egl_image(gsr_pipewire *self, const int *fds
     return image;
 }
 
-static bool gsr_pipewire_bind_image_to_texture(gsr_pipewire *self, EGLImage image, unsigned int texture_id, bool external_texture) {
-    const int texture_target = external_texture ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
-    while(self->egl->glGetError() != 0){}
-    self->egl->glBindTexture(texture_target, texture_id);
-    self->egl->glEGLImageTargetTexture2DOES(texture_target, image);
-    const bool success = self->egl->glGetError() == 0;
-    self->egl->glBindTexture(texture_target, 0);
-    return success;
-}
-
-bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region, int *plane_fds, int *num_plane_fds, bool *using_external_image) {
-    for(int i = 0; i < GSR_PIPEWIRE_DMABUF_MAX_PLANES; ++i) {
-        plane_fds[i] = -1;
-    }
-    *num_plane_fds = 0;
-    *using_external_image = self->external_texture_fallback;
-    pthread_mutex_lock(&self->mutex);
-
-    if(!self->negotiated || self->dmabuf_data[0].fd <= 0) {
-        pthread_mutex_unlock(&self->mutex);
-        return false;
-    }
-
+static EGLImage gsr_pipewire_create_egl_image_with_fallback(gsr_pipewire *self) {
     int fds[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
     uint32_t offsets[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
     uint32_t pitches[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
@@ -667,12 +645,25 @@ bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, g
     } else {
         image = gsr_pipewire_create_egl_image(self, fds, offsets, pitches, modifiers, true);
         if(!image) {
-            fprintf(stderr, "gsr error: gsr_pipewire_map_texture: failed to create egl image with modifiers, trying without modifiers\n");
+            fprintf(stderr, "gsr error: gsr_pipewire_create_egl_image_with_fallback: failed to create egl image with modifiers, trying without modifiers\n");
             self->no_modifiers_fallback = true;
             image = gsr_pipewire_create_egl_image(self, fds, offsets, pitches, modifiers, false);
         }
     }
+    return image;
+}
 
+static bool gsr_pipewire_bind_image_to_texture(gsr_pipewire *self, EGLImage image, unsigned int texture_id, bool external_texture) {
+    const int texture_target = external_texture ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
+    while(self->egl->glGetError() != 0){}
+    self->egl->glBindTexture(texture_target, texture_id);
+    self->egl->glEGLImageTargetTexture2DOES(texture_target, image);
+    const bool success = self->egl->glGetError() == 0;
+    self->egl->glBindTexture(texture_target, 0);
+    return success;
+}
+
+static void gsr_pipewire_bind_image_to_texture_with_fallback(gsr_pipewire *self, gsr_texture_map texture_map, EGLImage image, bool *using_external_image) {
     if(self->external_texture_fallback) {
         gsr_pipewire_bind_image_to_texture(self, image, texture_map.external_texture_id, true);
         *using_external_image = true;
@@ -684,23 +675,45 @@ bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, g
             *using_external_image = true;
         }
     }
+}
 
-    if(image)
-        self->egl->eglDestroyImage(self->egl->egl_display, image);
+static void gsr_pipewire_update_cursor_texture(gsr_pipewire *self, gsr_texture_map texture_map) {
+    if(!self->cursor.data)
+        return;
 
-    if(self->cursor.data) {
-        self->egl->glBindTexture(GL_TEXTURE_2D, texture_map.cursor_texture_id);
-        // TODO: glTextureSubImage2D if same size
-        self->egl->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, self->cursor.width, self->cursor.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, self->cursor.data);
-        self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        self->egl->glBindTexture(GL_TEXTURE_2D, 0);
-        
-        free(self->cursor.data);
-        self->cursor.data = NULL;
+    self->egl->glBindTexture(GL_TEXTURE_2D, texture_map.cursor_texture_id);
+    // TODO: glTextureSubImage2D if same size
+    self->egl->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, self->cursor.width, self->cursor.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, self->cursor.data);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    self->egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    self->egl->glBindTexture(GL_TEXTURE_2D, 0);
+
+    free(self->cursor.data);
+    self->cursor.data = NULL;
+}
+
+bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region, int *plane_fds, int *num_plane_fds, bool *using_external_image) {
+    for(int i = 0; i < GSR_PIPEWIRE_DMABUF_MAX_PLANES; ++i) {
+        plane_fds[i] = -1;
     }
+    *num_plane_fds = 0;
+    *using_external_image = self->external_texture_fallback;
+    pthread_mutex_lock(&self->mutex);
+
+    if(!self->negotiated || self->dmabuf_data[0].fd <= 0) {
+        pthread_mutex_unlock(&self->mutex);
+        return false;
+    }
+
+    EGLImage image = gsr_pipewire_create_egl_image_with_fallback(self);
+    if(image) {
+        gsr_pipewire_bind_image_to_texture_with_fallback(self, texture_map, image, using_external_image);
+        self->egl->eglDestroyImage(self->egl->egl_display, image);
+    }
+
+    gsr_pipewire_update_cursor_texture(self, texture_map);
 
     region->x = 0;
     region->y = 0;

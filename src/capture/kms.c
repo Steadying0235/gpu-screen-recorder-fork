@@ -203,6 +203,9 @@ static void gsr_capture_kms_tick(gsr_capture *cap, AVCodecContext *video_codec_c
     (void)video_codec_context;
     gsr_capture_kms *self = cap->priv;
 
+    if(!self->is_x11)
+        return;
+
     while(XPending(self->params.egl->x11.dpy)) {
         XNextEvent(self->params.egl->x11.dpy, &self->xev);
         gsr_cursor_update(&self->x11_cursor, &self->xev);

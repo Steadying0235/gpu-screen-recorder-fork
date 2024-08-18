@@ -72,7 +72,7 @@ executable('gsr-kms-server', 'kms/server/kms_server.c', dependencies : dependenc
 executable('gpu-screen-recorder', src, dependencies : dep, install : true)
 
 if get_option('systemd') == true
-    install_data(files('extra/gpu-screen-recorder.service'), install_dir : '/usr/lib/systemd/user')
+    install_data(files('extra/gpu-screen-recorder.service'), install_dir : 'lib/systemd/user')
 endif
 
 if get_option('capabilities') == true
@@ -80,5 +80,5 @@ if get_option('capabilities') == true
 endif
 
 if get_option('nvidia_suspend_fix') == true
-    install_data(files('extra/gsr-nvidia.conf'), install_dir : '/etc/modprobe.d')
+    install_data(files('extra/gsr-nvidia.conf'), install_dir : 'lib/modprobe.d')
 endif

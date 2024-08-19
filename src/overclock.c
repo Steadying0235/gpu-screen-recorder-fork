@@ -4,11 +4,9 @@
 #include <string.h>
 #include <stdlib.h>
 
-// HACK!!!: When a program uses cuda (including nvenc) then the nvidia driver drops to performance level 2 (memory transfer rate is dropped and possibly graphics clock).
+// HACK!!!: When a program uses cuda (including nvenc) then the nvidia driver drops to max performance level - 1 (memory transfer rate is dropped and possibly graphics clock).
 // Nvidia does this because in some very extreme cases of cuda there can be memory corruption when running at max memory transfer rate.
 // So to get around this we overclock memory transfer rate (maybe this should also be done for graphics clock?) to the best performance level while GPU Screen Recorder is running.
-
-// TODO: Does it always drop to performance level 2?
 
 static int min_int(int a, int b) {
     return a < b ? a : b;

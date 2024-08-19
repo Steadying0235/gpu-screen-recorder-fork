@@ -11,6 +11,7 @@
 # process and if the session token is stolen by another application then it will ignore the session token as it wasn't that
 # application that created the session token.
 # ---
-# This is needed to allow gpu screen recorder to run faster than a heavy games fps, for example when trying to record at 60 fps
-# but the game drops to 45 fps in some place. That would also make gpu screen recorder drop to 45 fps unless this setcap is used.
+# This is needed (for EGL_CONTEXT_PRIORITY_HIGH_IMG) to allow gpu screen recorder to run faster than the heaviest application on AMD.
+# For example when trying to record a game at 60 fps and the game drops to 45 fps in some place that would also make gpu screen recorder
+# drop to 45 fps unless this setcap is used.
 #/usr/sbin/setcap cap_sys_nice+ep ${MESON_INSTALL_DESTDIR_PREFIX}/bin/gpu-screen-recorder

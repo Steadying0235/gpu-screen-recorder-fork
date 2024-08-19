@@ -522,6 +522,8 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
 
     if(self->params.record_cursor) {
         gsr_kms_response_item *cursor_drm_fd = find_cursor_drm_if_on_monitor(self, drm_fd->connector_id, capture_is_combined_plane);
+        // The cursor is handled by x11 on x11 instead of using the cursor drm plane because on prime systems with a dedicated nvidia gpu
+        // the cursor plane is not available when the cursor is on the monitor controlled by the nvidia device.
         if(self->is_x11)
             render_x11_cursor(self, color_conversion, capture_pos, target_x, target_y);
         else if(cursor_drm_fd)

@@ -1,6 +1,8 @@
 #ifndef GSR_DEFS_H
 #define GSR_DEFS_H
 
+#include <stdbool.h>
+
 typedef enum {
     GSR_GPU_VENDOR_AMD,
     GSR_GPU_VENDOR_INTEL,
@@ -10,6 +12,7 @@ typedef enum {
 typedef struct {
     gsr_gpu_vendor vendor;
     int gpu_version; /* 0 if unknown */
+    bool is_known_broken_driver;
 } gsr_gpu_info;
 
 typedef enum {

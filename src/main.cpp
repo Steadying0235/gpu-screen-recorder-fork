@@ -1843,6 +1843,11 @@ static void info_command() {
         _exit(22);
     }
 
+    if(egl.gpu_info.is_known_broken_driver) {
+        fprintf(stderr, "gsr error: recording is not supported on your device because your device has broken drivers\n");
+        _exit(14);
+    }
+
     egl.card_path[0] = '\0';
     if(monitor_capture_use_drm(&egl, wayland)) {
         // TODO: Allow specifying another card, and in other places
@@ -2756,6 +2761,11 @@ int main(int argc, char **argv) {
     if(!gsr_egl_load(&egl, dpy, wayland, is_monitor_capture)) {
         fprintf(stderr, "gsr error: failed to load opengl\n");
         _exit(1);
+    }
+
+    if(egl.gpu_info.is_known_broken_driver) {
+        fprintf(stderr, "gsr error: recording is not supported on your device because your device has broken drivers\n");
+        _exit(14);
     }
 
     bool very_old_gpu = false;

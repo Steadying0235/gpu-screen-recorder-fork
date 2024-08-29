@@ -1686,6 +1686,39 @@ static int init_filter_graph(AVCodecContext *audio_codec_context, AVFilterGraph 
     return 0;
 }
 
+static gsr_video_encoder* create_video_encoder(gsr_egl *egl, bool overclock, gsr_color_depth color_depth, bool use_software_video_encoder) {
+    gsr_video_encoder *video_encoder = nullptr;
+
+    if(use_software_video_encoder) {
+        gsr_video_encoder_software_params params;
+        params.egl = egl;
+        params.color_depth = color_depth;
+        video_encoder = gsr_video_encoder_software_create(&params);
+        return video_encoder;
+    }
+
+    switch(egl->gpu_info.vendor) {
+        case GSR_GPU_VENDOR_AMD:
+        case GSR_GPU_VENDOR_INTEL: {
+            gsr_video_encoder_vaapi_params params;
+            params.egl = egl;
+            params.color_depth = color_depth;
+            video_encoder = gsr_video_encoder_vaapi_create(&params);
+            break;
+        }
+        case GSR_GPU_VENDOR_NVIDIA: {
+            gsr_video_encoder_cuda_params params;
+            params.egl = egl;
+            params.overclock = overclock;
+            params.color_depth = color_depth;
+            video_encoder = gsr_video_encoder_cuda_create(&params);
+            break;
+        }
+    }
+
+    return video_encoder;
+}
+
 static void xwayland_check_callback(const gsr_monitor *monitor, void *userdata) {
     bool *xwayland_found = (bool*)userdata;
     if(monitor->name_len >= 8 && strncmp(monitor->name, "XWAYLAND", 8) == 0)
@@ -1735,6 +1768,7 @@ static void list_gpu_info(gsr_egl *egl) {
 }
 
 static void list_supported_video_codecs(gsr_egl *egl, bool wayland) {
+#if 1
     if(find_h264_encoder(egl->gpu_info.vendor, egl->card_path))
         puts("h264");
     if(find_h264_software_encoder())
@@ -1755,6 +1789,34 @@ static void list_supported_video_codecs(gsr_egl *egl, bool wayland) {
         puts("vp8");
     if(find_vp9_encoder(egl->gpu_info.vendor, egl->card_path))
         puts("vp9");
+#else
+    // Dont clean it up on purpose to increase shutdown speed
+    gsr_video_encoder *video_encoder = create_video_encoder(egl, false, GSR_COLOR_DEPTH_8_BITS, false);
+    if(!video_encoder)
+        return;
+    
+    const gsr_supported_video_codecs supported_video_codecs = gsr_video_encoder_get_supported_codecs(video_encoder, false);
+    if(supported_video_codecs.h264)
+        puts("h264");
+    if(find_h264_software_encoder())
+        puts("h264_software");
+    if(supported_video_codecs.hevc) {
+        puts("hevc");
+        if(wayland)
+            puts("hevc_hdr"); // TODO: Verify if it's actually supported
+        puts("hevc_10bit"); // TODO: Verify if it's actually supported
+    }
+    if(supported_video_codecs.av1) {
+        puts("av1");
+        if(wayland)
+            puts("av1_hdr"); // TODO: Verify if it's actually supported
+        puts("av1_10bit"); // TODO: Verify if it's actually supported
+    }
+    if(supported_video_codecs.vp8)
+        puts("vp8");
+    if(supported_video_codecs.vp9)
+        puts("vp9");
+#endif
 }
 
 static bool monitor_capture_use_drm(gsr_egl *egl, bool wayland) {
@@ -1870,9 +1932,10 @@ static void info_command() {
 
     fflush(stdout);
 
-    gsr_egl_unload(&egl);
-    if(dpy)
-        XCloseDisplay(dpy);
+    // Not needed as this will just slow down shutdown
+    //gsr_egl_unload(&egl);
+    //if(dpy)
+    //    XCloseDisplay(dpy);
 
     _exit(0);
 }
@@ -2064,39 +2127,6 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
     }
 
     return capture;
-}
-
-static gsr_video_encoder* create_video_encoder(gsr_egl *egl, bool overclock, gsr_color_depth color_depth, bool use_software_video_encoder) {
-    gsr_video_encoder *video_encoder = nullptr;
-
-    if(use_software_video_encoder) {
-        gsr_video_encoder_software_params params;
-        params.egl = egl;
-        params.color_depth = color_depth;
-        video_encoder = gsr_video_encoder_software_create(&params);
-        return video_encoder;
-    }
-
-    switch(egl->gpu_info.vendor) {
-        case GSR_GPU_VENDOR_AMD:
-        case GSR_GPU_VENDOR_INTEL: {
-            gsr_video_encoder_vaapi_params params;
-            params.egl = egl;
-            params.color_depth = color_depth;
-            video_encoder = gsr_video_encoder_vaapi_create(&params);
-            break;
-        }
-        case GSR_GPU_VENDOR_NVIDIA: {
-            gsr_video_encoder_cuda_params params;
-            params.egl = egl;
-            params.overclock = overclock;
-            params.color_depth = color_depth;
-            video_encoder = gsr_video_encoder_cuda_create(&params);
-            break;
-        }
-    }
-
-    return video_encoder;
 }
 
 static AVPixelFormat get_pixel_format(gsr_gpu_vendor vendor, bool use_software_video_encoder) {

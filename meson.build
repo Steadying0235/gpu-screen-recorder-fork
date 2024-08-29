@@ -46,6 +46,7 @@ dep = [
     dependency('libswresample'),
     dependency('libavfilter'),
     dependency('libva'),
+    dependency('libva-drm'),
     dependency('libcap'),
     dependency('libdrm'),
     dependency('wayland-egl'),

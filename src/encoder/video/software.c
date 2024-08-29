@@ -58,6 +58,22 @@ static bool gsr_video_encoder_software_setup_textures(gsr_video_encoder_software
     return true;
 }
 
+static gsr_supported_video_codecs gsr_video_encoder_software_get_supported_codecs(gsr_video_encoder *encoder, bool cleanup) {
+    (void)encoder;
+    (void)cleanup;
+    return (gsr_supported_video_codecs) {
+        .h264 = true,
+        .hevc = false,
+        .hevc_hdr = false,
+        .hevc_10bit = false,
+        .av1 = false,
+        .av1_hdr = false,
+        .av1_10bit = false,
+        .vp8 = false,
+        .vp9 = false
+    };
+}
+
 static void gsr_video_encoder_software_stop(gsr_video_encoder_software *self, AVCodecContext *video_codec_context);
 
 static bool gsr_video_encoder_software_start(gsr_video_encoder *encoder, AVCodecContext *video_codec_context, AVFrame *frame) {
@@ -126,6 +142,7 @@ gsr_video_encoder* gsr_video_encoder_software_create(const gsr_video_encoder_sof
     encoder_software->params = *params;
 
     *encoder = (gsr_video_encoder) {
+        .get_supported_codecs = gsr_video_encoder_software_get_supported_codecs,
         .start = gsr_video_encoder_software_start,
         .copy_textures_to_frame = gsr_video_encoder_software_copy_textures_to_frame,
         .get_textures = gsr_video_encoder_software_get_textures,

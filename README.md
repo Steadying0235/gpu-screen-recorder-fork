@@ -55,43 +55,41 @@ from one of the official sources before reporting it as an issue.
 If you install GPU Screen Recorder flatpak, which is the gtk gui version then you can still run GPU Screen Recorder command line by using the flatpak command option, for example `flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder -w screen -f 60 -o video.mp4`. Note that if you want to record your monitor on AMD/Intel then you need to install the flatpak system-wide (like so: `flatpak install flathub --system com.dec05eba.gpu_screen_recorder`).
 
 # Dependencies
-GPU Screen Recorder uses meson build system so you need to install `meson`. There are additional dependencies depending on your graphics card:
-## AMD
-libglvnd (which provides libgl and libegl)\
-mesa\
-ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)\
-x11 (libx11, libxcomposite, libxrandr, libxfixes, libxdamage, libxi)\
-libpulse\
-vaapi (libva, libva-mesa-driver)\
-libdrm\
-libcap\
-wayland-client
-## Intel
-libglvnd (which provides libgl and libegl)\
-mesa\
-ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)\
-x11 (libx11, libxcomposite, libxrandr, libxfixes, libxdamage, libxi)\
-libpulse\
-vaapi (libva, intel-media-driver/libva-intel-driver)\
-libdrm\
-libcap\
-wayland-client
-## NVIDIA
-libglvnd (which provides libgl and libegl)\
-ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)\
-x11 (libx11, libxcomposite, libxrandr, libxfixes, libxdamage, libxi)\
-libpulse\
-cuda runtime (libcuda.so.1) (libnvidia-compute)\
-nvenc (libnvidia-encode)\
-libva\
-libdrm\
-libcap\
-wayland-client\
-nvfbc (libnvidia-fbc1, when recording the screen on x11)\
-xnvctrl (libxnvctrl0, when using the `-oc` option)
-## Optional dependencies when compiling with portal support (default option)
-dbus\
-libpipewire (and libspa which is usually part of libpipewire)
+GPU Screen Recorder uses meson build system so you need to install `meson` to build GPU Screen Recorder:
+
+## Build dependencies
+These are the dependencies needed to build GPU Screen Recorder:
+
+* libglvnd (which provides libgl and libegl)
+* ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)
+* x11 (libx11, libxcomposite, libxrandr, libxfixes, libxdamage, libxi)
+* libpulse
+* libva (and libva-drm)
+* libdrm
+* libcap
+* wayland-client
+
+## Runtime dependencies
+There are also additional dependencies needed at runtime depending on your GPU vendor:
+
+### AMD
+* mesa
+* vaapi (libva-mesa-driver)
+
+### Intel
+* mesa
+* vaapi (intel-media-driver/libva-intel-driver/linux-firmware, depending on which intel iGPU you have)
+
+### NVIDIA
+* cuda runtime (libcuda.so.1) (libnvidia-compute)
+* nvenc (libnvidia-encode)
+* nvfbc (libnvidia-fbc1, when recording the screen on x11)
+* xnvctrl (libxnvctrl0, when using the `-oc` option)
+
+## Optional dependencies
+When compiling GPU Screen Recorder with portal support (`-Dportal=true`, which is enabled by default) these dependencies are also needed:
+* libdbus
+* libpipewire (and libspa which is usually part of libpipewire)
 
 # How to use
 Run `gpu-screen-recorder --help` to see all options and also examples.

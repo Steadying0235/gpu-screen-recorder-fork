@@ -122,6 +122,24 @@ static bool gsr_video_encoder_cuda_setup_textures(gsr_video_encoder_cuda *self, 
     return true;
 }
 
+static gsr_supported_video_codecs gsr_video_encoder_cuda_get_supported_codecs(gsr_video_encoder *encoder, bool cleanup) {
+    (void)encoder;
+    (void)cleanup;
+    //gsr_video_encoder_cuda *encoder_cuda = encoder->priv;
+    // TODO: Query support
+    return (gsr_supported_video_codecs) {
+        .h264 = true,
+        .hevc = true,
+        .hevc_hdr = true,
+        .hevc_10bit = true,
+        .av1 = true,
+        .av1_hdr = true,
+        .av1_10bit = true,
+        .vp8 = false,
+        .vp9 = false
+    };
+}
+
 static void gsr_video_encoder_cuda_stop(gsr_video_encoder_cuda *self, AVCodecContext *video_codec_context);
 
 static bool gsr_video_encoder_cuda_start(gsr_video_encoder *encoder, AVCodecContext *video_codec_context, AVFrame *frame) {
@@ -225,6 +243,7 @@ gsr_video_encoder* gsr_video_encoder_cuda_create(const gsr_video_encoder_cuda_pa
     encoder_cuda->params = *params;
 
     *encoder = (gsr_video_encoder) {
+        .get_supported_codecs = gsr_video_encoder_cuda_get_supported_codecs,
         .start = gsr_video_encoder_cuda_start,
         .copy_textures_to_frame = gsr_video_encoder_cuda_copy_textures_to_frame,
         .get_textures = gsr_video_encoder_cuda_get_textures,

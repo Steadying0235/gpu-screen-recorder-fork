@@ -60,7 +60,7 @@ GPU Screen Recorder uses meson build system so you need to install `meson` to bu
 ## Build dependencies
 These are the dependencies needed to build GPU Screen Recorder:
 
-* libglvnd (which provides libgl and libegl)
+* libglvnd (which provides libgl, libglx and libegl)
 * ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)
 * x11 (libx11, libxcomposite, libxrandr, libxfixes, libxdamage, libxi)
 * libpulse

@@ -377,7 +377,7 @@ bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info) {
     const unsigned char *gl_renderer = egl->glGetString(GL_RENDERER);
 
     info->gpu_version = 0;
-    info->is_known_broken_driver = false;
+    info->is_steam_deck = false;
 
     if(!gl_vendor) {
         fprintf(stderr, "gsr error: failed to get gpu vendor\n");
@@ -410,7 +410,7 @@ bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info) {
     if(gl_renderer) {
         if(info->vendor == GSR_GPU_VENDOR_NVIDIA)
             sscanf((const char*)gl_renderer, "%*s %*s %*s %d", &info->gpu_version);
-        info->is_known_broken_driver = strstr((const char*)gl_renderer, "vangogh") != NULL;
+        info->is_steam_deck = strstr((const char*)gl_renderer, "vangogh") != NULL;
     }
 
     end:

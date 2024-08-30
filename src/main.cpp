@@ -115,6 +115,11 @@ enum class FramerateMode {
     CONTENT
 };
 
+enum class BitrateMode {
+    QP,
+    VBR
+};
+
 static int x11_error_handler(Display*, XErrorEvent*) {
     return 0;
 }
@@ -370,10 +375,62 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
     return codec_context;
 }
 
+static int vbr_get_quality_parameter(AVCodecContext *codec_context, VideoQuality video_quality, bool hdr) {
+    // 8 bit / 10 bit = 80%
+    const float qp_multiply = hdr ? 8.0f/10.0f : 1.0f;
+    if(codec_context->codec_id == AV_CODEC_ID_AV1) {
+        switch(video_quality) {
+            case VideoQuality::MEDIUM:
+                return 160 * qp_multiply;
+            case VideoQuality::HIGH:
+                return 130 * qp_multiply;
+            case VideoQuality::VERY_HIGH:
+                return 110 * qp_multiply;
+            case VideoQuality::ULTRA:
+                return 90 * qp_multiply;
+        }
+    } else if(codec_context->codec_id == AV_CODEC_ID_H264) {
+        switch(video_quality) {
+            case VideoQuality::MEDIUM:
+                return 35 * qp_multiply;
+            case VideoQuality::HIGH:
+                return 30 * qp_multiply;
+            case VideoQuality::VERY_HIGH:
+                return 25 * qp_multiply;
+            case VideoQuality::ULTRA:
+                return 22 * qp_multiply;
+        }
+    } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
+        switch(video_quality) {
+            case VideoQuality::MEDIUM:
+                return 35 * qp_multiply;
+            case VideoQuality::HIGH:
+                return 30 * qp_multiply;
+            case VideoQuality::VERY_HIGH:
+                return 25 * qp_multiply;
+            case VideoQuality::ULTRA:
+                return 22 * qp_multiply;
+        }
+    } else if(codec_context->codec_id == AV_CODEC_ID_VP8 || codec_context->codec_id == AV_CODEC_ID_VP9) {
+        switch(video_quality) {
+            case VideoQuality::MEDIUM:
+                return 35 * qp_multiply;
+            case VideoQuality::HIGH:
+                return 30 * qp_multiply;
+            case VideoQuality::VERY_HIGH:
+                return 25 * qp_multiply;
+            case VideoQuality::ULTRA:
+                return 22 * qp_multiply;
+        }
+    }
+    assert(false);
+    return 22 * qp_multiply;
+}
+
 static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
                             VideoQuality video_quality,
                             int fps, const AVCodec *codec, bool low_latency, gsr_gpu_vendor vendor, FramerateMode framerate_mode,
-                            bool hdr, gsr_color_range color_range, float keyint, bool use_software_video_encoder) {
+                            bool hdr, gsr_color_range color_range, float keyint, bool use_software_video_encoder, BitrateMode bitrate_mode) {
 
     AVCodecContext *codec_context = avcodec_alloc_context3(codec);
 
@@ -416,54 +473,44 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     //codec_context->chroma_sample_location = AVCHROMA_LOC_CENTER;
     if(codec->id == AV_CODEC_ID_HEVC)
         codec_context->codec_tag = MKTAG('h', 'v', 'c', '1'); // QuickTime on MacOS requires this or the video wont be playable
-    switch(video_quality) {
-        case VideoQuality::MEDIUM:
-            //codec_context->qmin = 35;
-            //codec_context->qmax = 35;
-            codec_context->bit_rate = 100000;//4500000 + (codec_context->width * codec_context->height)*0.75;
-            break;
-        case VideoQuality::HIGH:
-            //codec_context->qmin = 34;
-            //codec_context->qmax = 34;
-            codec_context->bit_rate = 100000;//10000000-9000000 + (codec_context->width * codec_context->height)*0.75;
-            break;
-        case VideoQuality::VERY_HIGH:
-            //codec_context->qmin = 28;
-            //codec_context->qmax = 28;
-            codec_context->bit_rate = 100000;//10000000-9000000 + (codec_context->width * codec_context->height)*0.75;
-            break;
-        case VideoQuality::ULTRA:
-            //codec_context->qmin = 22;
-            //codec_context->qmax = 22;
-            codec_context->bit_rate = 100000;//10000000-9000000 + (codec_context->width * codec_context->height)*0.75;
-            break;
+
+    if(bitrate_mode == BitrateMode::VBR) {
+        const int quality = vbr_get_quality_parameter(codec_context, video_quality, hdr);
+        switch(video_quality) {
+            case VideoQuality::MEDIUM:
+                codec_context->qmin = quality;
+                codec_context->qmax = quality;
+                codec_context->bit_rate = 100000;//4500000 + (codec_context->width * codec_context->height)*0.75;
+                break;
+            case VideoQuality::HIGH:
+                codec_context->qmin = quality;
+                codec_context->qmax = quality;
+                codec_context->bit_rate = 100000;//10000000-9000000 + (codec_context->width * codec_context->height)*0.75;
+                break;
+            case VideoQuality::VERY_HIGH:
+                codec_context->qmin = quality;
+                codec_context->qmax = quality;
+                codec_context->bit_rate = 100000;//10000000-9000000 + (codec_context->width * codec_context->height)*0.75;
+                break;
+            case VideoQuality::ULTRA:
+                codec_context->qmin = quality;
+                codec_context->qmax = quality;
+                codec_context->bit_rate = 100000;//10000000-9000000 + (codec_context->width * codec_context->height)*0.75;
+                break;
+        }
+
+        codec_context->rc_max_rate = codec_context->bit_rate;
+        codec_context->rc_min_rate = codec_context->bit_rate;
+        codec_context->rc_buffer_size = codec_context->bit_rate;//codec_context->bit_rate / 10;
+        codec_context->rc_initial_buffer_occupancy = 100000;//codec_context->bit_rate * 1000;
     }
     //codec_context->profile = FF_PROFILE_H264_MAIN;
     if (codec_context->codec_id == AV_CODEC_ID_MPEG1VIDEO)
         codec_context->mb_decision = 2;
 
-    // stream->time_base = codec_context->time_base;
-    // codec_context->ticks_per_frame = 30;
-    //av_opt_set(codec_context->priv_data, "tune", "hq", 0);
-    // TODO: Do this for better file size? also allows setting qmin, qmax per frame? which can then be used to dynamically set bitrate to reduce quality
-    // if live streaming is slow or if the users harddrive is cant handle writing megabytes of data per second.
-    #if 0
-    char qmin_str[32];
-    snprintf(qmin_str, sizeof(qmin_str), "%d", codec_context->qmin);
-
-    char qmax_str[32];
-    snprintf(qmax_str, sizeof(qmax_str), "%d", codec_context->qmax);
-
-    av_opt_set(codec_context->priv_data, "cq", qmax_str, 0);
-    av_opt_set(codec_context->priv_data, "rc", "vbr", 0);
-    av_opt_set(codec_context->priv_data, "qmin", qmin_str, 0);
-    av_opt_set(codec_context->priv_data, "qmax", qmax_str, 0);
-    codec_context->bit_rate = 0;
-    #endif
-
-    // 8 bit / 10 bit = 80%, and increase it even more
-    const float quality_multiply = hdr ? (8.0f/10.0f * 0.7f) : 1.0f;
     if(!use_software_video_encoder && vendor != GSR_GPU_VENDOR_NVIDIA) {
+        // 8 bit / 10 bit = 80%, and increase it even more
+        const float quality_multiply = hdr ? (8.0f/10.0f * 0.7f) : 1.0f;
         if(codec_context->codec_id == AV_CODEC_ID_AV1 || codec_context->codec_id == AV_CODEC_ID_H264 || codec_context->codec_id == AV_CODEC_ID_HEVC) {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
@@ -518,18 +565,15 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     if(vendor != GSR_GPU_VENDOR_NVIDIA) {
         // TODO: More options, better options
         //codec_context->bit_rate = codec_context->width * codec_context->height;
-        av_opt_set(codec_context->priv_data, "rc_mode", "CQP", 0);
+        if(bitrate_mode == BitrateMode::QP)
+            av_opt_set(codec_context->priv_data, "rc_mode", "CQP", 0);
+        else
+            av_opt_set(codec_context->priv_data, "rc_mode", "VBR", 0);
         //codec_context->global_quality = 4;
         //codec_context->compression_level = 2;
     }
 
     //av_opt_set(codec_context->priv_data, "bsf", "hevc_metadata=colour_primaries=9:transfer_characteristics=16:matrix_coefficients=9", 0);
-
-    //codec_context->rc_max_rate = codec_context->bit_rate;
-    //codec_context->rc_min_rate = codec_context->bit_rate;
-    //codec_context->rc_buffer_size = codec_context->bit_rate / 10;
-    // TODO: Do this when not using cqp
-    //codec_context->rc_initial_buffer_occupancy = codec_context->bit_rate * 1000;
 
     codec_context->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
@@ -582,7 +626,7 @@ static bool vaapi_create_codec_context(AVCodecContext *video_codec_context, cons
 
 static bool check_if_codec_valid_for_hardware(const AVCodec *codec, gsr_gpu_vendor vendor, const char *card_path) {
     // Do not use AV_PIX_FMT_CUDA because we dont want to do full check with hardware context
-    AVCodecContext *codec_context = create_video_codec_context(vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_YUV420P : AV_PIX_FMT_VAAPI, VideoQuality::VERY_HIGH, 60, codec, false, vendor, FramerateMode::CONSTANT, false, GSR_COLOR_RANGE_LIMITED, 2, false);
+    AVCodecContext *codec_context = create_video_codec_context(vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_YUV420P : AV_PIX_FMT_VAAPI, VideoQuality::VERY_HIGH, 60, codec, false, vendor, FramerateMode::CONSTANT, false, GSR_COLOR_RANGE_LIMITED, 2, false, BitrateMode::QP);
     if(!codec_context)
         return false;
 
@@ -738,57 +782,63 @@ static AVFrame* create_audio_frame(AVCodecContext *audio_codec_context) {
     return frame;
 }
 
-static void open_video_software(AVCodecContext *codec_context, VideoQuality video_quality, PixelFormat pixel_format, bool hdr, gsr_color_depth color_depth) {
-    (void)pixel_format; // TODO:
-    AVDictionary *options = nullptr;
-
+static void video_software_set_qp(AVCodecContext *codec_context, VideoQuality video_quality, bool hdr, AVDictionary **options) {
+    // 8 bit / 10 bit = 80%
     const float qp_multiply = hdr ? 8.0f/10.0f : 1.0f;
     if(codec_context->codec_id == AV_CODEC_ID_AV1) {
         switch(video_quality) {
             case VideoQuality::MEDIUM:
-                av_dict_set_int(&options, "qp", 35 * qp_multiply, 0);
+                av_dict_set_int(options, "qp", 35 * qp_multiply, 0);
                 break;
             case VideoQuality::HIGH:
-                av_dict_set_int(&options, "qp", 30 * qp_multiply, 0);
+                av_dict_set_int(options, "qp", 30 * qp_multiply, 0);
                 break;
             case VideoQuality::VERY_HIGH:
-                av_dict_set_int(&options, "qp", 25 * qp_multiply, 0);
+                av_dict_set_int(options, "qp", 25 * qp_multiply, 0);
                 break;
             case VideoQuality::ULTRA:
-                av_dict_set_int(&options, "qp", 22 * qp_multiply, 0);
+                av_dict_set_int(options, "qp", 22 * qp_multiply, 0);
                 break;
         }
     } else if(codec_context->codec_id == AV_CODEC_ID_H264) {
         switch(video_quality) {
             case VideoQuality::MEDIUM:
-                av_dict_set_int(&options, "qp", 34 * qp_multiply, 0);
+                av_dict_set_int(options, "qp", 34 * qp_multiply, 0);
                 break;
             case VideoQuality::HIGH:
-                av_dict_set_int(&options, "qp", 30 * qp_multiply, 0);
+                av_dict_set_int(options, "qp", 30 * qp_multiply, 0);
                 break;
             case VideoQuality::VERY_HIGH:
-                av_dict_set_int(&options, "qp", 23 * qp_multiply, 0);
+                av_dict_set_int(options, "qp", 23 * qp_multiply, 0);
                 break;
             case VideoQuality::ULTRA:
-                av_dict_set_int(&options, "qp", 20 * qp_multiply, 0);
+                av_dict_set_int(options, "qp", 20 * qp_multiply, 0);
                 break;
         }
     } else {
         switch(video_quality) {
             case VideoQuality::MEDIUM:
-                av_dict_set_int(&options, "qp", 35 * qp_multiply, 0);
+                av_dict_set_int(options, "qp", 35 * qp_multiply, 0);
                 break;
             case VideoQuality::HIGH:
-                av_dict_set_int(&options, "qp", 30 * qp_multiply, 0);
+                av_dict_set_int(options, "qp", 30 * qp_multiply, 0);
                 break;
             case VideoQuality::VERY_HIGH:
-                av_dict_set_int(&options, "qp", 25 * qp_multiply, 0);
+                av_dict_set_int(options, "qp", 25 * qp_multiply, 0);
                 break;
             case VideoQuality::ULTRA:
-                av_dict_set_int(&options, "qp", 22 * qp_multiply, 0);
+                av_dict_set_int(options, "qp", 22 * qp_multiply, 0);
                 break;
         }
     }
+}
+
+static void open_video_software(AVCodecContext *codec_context, VideoQuality video_quality, PixelFormat pixel_format, bool hdr, gsr_color_depth color_depth, BitrateMode bitrate_mode) {
+    (void)pixel_format; // TODO:
+    AVDictionary *options = nullptr;
+
+    if(bitrate_mode == BitrateMode::QP)
+        video_software_set_qp(codec_context, video_quality, hdr, &options);
 
     av_dict_set(&options, "preset", "medium", 0);
     if(color_depth == GSR_COLOR_DEPTH_10_BITS) {
@@ -812,117 +862,144 @@ static void open_video_software(AVCodecContext *codec_context, VideoQuality vide
     }
 }
 
-static void open_video_hardware(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu, gsr_gpu_vendor vendor, PixelFormat pixel_format, bool hdr, gsr_color_depth color_depth) {
-    (void)very_old_gpu;
-    AVDictionary *options = nullptr;
+static void video_hardware_set_qp(AVCodecContext *codec_context, VideoQuality video_quality, gsr_gpu_vendor vendor, bool hdr, AVDictionary **options) {
     // 8 bit / 10 bit = 80%
     const float qp_multiply = hdr ? 8.0f/10.0f : 1.0f;
     if(vendor == GSR_GPU_VENDOR_NVIDIA) {
-        // Disable setting preset since some nvidia gpus cant handle it nicely and greatly reduce encoding performance (from more than 60 fps to less than 45 fps) (such as Nvidia RTX A2000)
-        #if 0
-        bool supports_p4 = false;
-        bool supports_p5 = false;
-
-        const AVOption *opt = nullptr;
-        while((opt = av_opt_next(codec_context->priv_data, opt))) {
-            if(opt->type == AV_OPT_TYPE_CONST) {
-                if(strcmp(opt->name, "p4") == 0)
-                    supports_p4 = true;
-                else if(strcmp(opt->name, "p5") == 0)
-                    supports_p5 = true;
-            }
-        }
-        #endif
-
+        // TODO: Test if these should be in the same range as vaapi
         if(codec_context->codec_id == AV_CODEC_ID_AV1) {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 35 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 35 * qp_multiply, 0);
                     break;
                 case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 30 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 30 * qp_multiply, 0);
                     break;
                 case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 25 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 25 * qp_multiply, 0);
                     break;
                 case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 22 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 22 * qp_multiply, 0);
                     break;
             }
         } else if(codec_context->codec_id == AV_CODEC_ID_H264) {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 34 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 34 * qp_multiply, 0);
                     break;
                 case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 30 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 30 * qp_multiply, 0);
                     break;
                 case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 23 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 23 * qp_multiply, 0);
                     break;
                 case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 20 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 20 * qp_multiply, 0);
                     break;
             }
         } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 35 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 35 * qp_multiply, 0);
                     break;
                 case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 30 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 30 * qp_multiply, 0);
                     break;
                 case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 25 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 25 * qp_multiply, 0);
                     break;
                 case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 22 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 22 * qp_multiply, 0);
                     break;
             }
         } else if(codec_context->codec_id == AV_CODEC_ID_VP8 || codec_context->codec_id == AV_CODEC_ID_VP9) {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 35 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 35 * qp_multiply, 0);
                     break;
                 case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 30 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 30 * qp_multiply, 0);
                     break;
                 case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 25 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 25 * qp_multiply, 0);
                     break;
                 case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 22 * qp_multiply, 0);
+                    av_dict_set_int(options, "qp", 22 * qp_multiply, 0);
                     break;
             }
         }
 
-        #if 0
-        if(!supports_p4 && !supports_p5)
-            fprintf(stderr, "Info: your ffmpeg version is outdated. It's recommended that you use the flatpak version of gpu-screen-recorder version instead, which you can find at https://flathub.org/apps/details/com.dec05eba.gpu_screen_recorder\n");
+        av_dict_set(options, "rc", "constqp", 0);
+    } else {
+        if(codec_context->codec_id == AV_CODEC_ID_AV1) {
+            // Using global_quality option
+        } else if(codec_context->codec_id == AV_CODEC_ID_H264) {
+            switch(video_quality) {
+                case VideoQuality::MEDIUM:
+                    av_dict_set_int(options, "qp", 34 * qp_multiply, 0);
+                    break;
+                case VideoQuality::HIGH:
+                    av_dict_set_int(options, "qp", 30 * qp_multiply, 0);
+                    break;
+                case VideoQuality::VERY_HIGH:
+                    av_dict_set_int(options, "qp", 23 * qp_multiply, 0);
+                    break;
+                case VideoQuality::ULTRA:
+                    av_dict_set_int(options, "qp", 20 * qp_multiply, 0);
+                    break;
+            }
+        } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
+            switch(video_quality) {
+                case VideoQuality::MEDIUM:
+                    av_dict_set_int(options, "qp", 35 * qp_multiply, 0);
+                    break;
+                case VideoQuality::HIGH:
+                    av_dict_set_int(options, "qp", 30 * qp_multiply, 0);
+                    break;
+                case VideoQuality::VERY_HIGH:
+                    av_dict_set_int(options, "qp", 25 * qp_multiply, 0);
+                    break;
+                case VideoQuality::ULTRA:
+                    av_dict_set_int(options, "qp", 22 * qp_multiply, 0);
+                    break;
+            }
+        } else if(codec_context->codec_id == AV_CODEC_ID_VP8 || codec_context->codec_id == AV_CODEC_ID_VP9) {
+            switch(video_quality) {
+                case VideoQuality::MEDIUM:
+                    av_dict_set_int(options, "qp", 35 * qp_multiply, 0);
+                    break;
+                case VideoQuality::HIGH:
+                    av_dict_set_int(options, "qp", 30 * qp_multiply, 0);
+                    break;
+                case VideoQuality::VERY_HIGH:
+                    av_dict_set_int(options, "qp", 25 * qp_multiply, 0);
+                    break;
+                case VideoQuality::ULTRA:
+                    av_dict_set_int(options, "qp", 22 * qp_multiply, 0);
+                    break;
+            }
+        }
 
-        //if(is_livestream) {
-        //    av_dict_set_int(&options, "zerolatency", 1, 0);
-        //    //av_dict_set(&options, "preset", "llhq", 0);
-        //}
+        av_dict_set(options, "rc_mode", "CQP", 0);
+    }
+}
 
-        // I want to use a good preset for the gpu but all gpus prefer different
-        // presets. Nvidia and ffmpeg used to support "hq" preset that chose the best preset for the gpu
-        // with pretty good performance but you now have to choose p1-p7, which are gpu agnostic and on
-        // older gpus p5-p7 slow the gpu down to a crawl...
-        // "hq" is now just an alias for p7 in ffmpeg :(
-        // TODO: Temporary disable because of stuttering?
+static void open_video_hardware(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu, gsr_gpu_vendor vendor, PixelFormat pixel_format, bool hdr, gsr_color_depth color_depth, BitrateMode bitrate_mode) {
+    (void)very_old_gpu;
+    AVDictionary *options = nullptr;
 
-        // TODO: Preset is set to p5 for now but it should ideally be p6 or p7.
-        // This change is needed because for certain sizes of a window (or monitor?) such as 971x780 causes encoding to freeze
-        // when using h264 codec. This is a new(?) nvidia driver bug.
-        if(very_old_gpu)
-            av_dict_set(&options, "preset", supports_p4 ? "p4" : "medium", 0);
-        else
-            av_dict_set(&options, "preset", supports_p5 ? "p5" : "slow", 0);
-        #endif
+    if(bitrate_mode == BitrateMode::QP) {
+        video_hardware_set_qp(codec_context, video_quality, vendor, hdr, &options);
+    } else {
+        if(vendor == GSR_GPU_VENDOR_NVIDIA) {
+            av_dict_set(&options, "rc", "vbr", 0);
+        } else {
+            av_dict_set(&options, "rc_mode", "VBR", 0);
+        }
+    }
 
+    if(vendor == GSR_GPU_VENDOR_NVIDIA) {
         av_dict_set(&options, "tune", "hq", 0);
-        av_dict_set(&options, "rc", "constqp", 0);
 
         // TODO: Enable multipass
 
@@ -949,7 +1026,6 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
                     break;
             }
         } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
-            //av_dict_set(&options, "profile", "main10", 0);
             //av_dict_set(&options, "pix_fmt", "yuv420p16le", 0);
             if(color_depth == GSR_COLOR_DEPTH_10_BITS)
                 av_dict_set(&options, "profile", "main10", 0);
@@ -957,57 +1033,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
                 av_dict_set(&options, "profile", "main", 0);
         }
     } else {
-        if(codec_context->codec_id == AV_CODEC_ID_AV1) {
-            // Using global_quality option
-        } else if(codec_context->codec_id == AV_CODEC_ID_H264) {
-            switch(video_quality) {
-                case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 34 * qp_multiply, 0);
-                    break;
-                case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 30 * qp_multiply, 0);
-                    break;
-                case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 23 * qp_multiply, 0);
-                    break;
-                case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 20 * qp_multiply, 0);
-                    break;
-            }
-        } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
-            switch(video_quality) {
-                case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 35 * qp_multiply, 0);
-                    break;
-                case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 30 * qp_multiply, 0);
-                    break;
-                case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 25 * qp_multiply, 0);
-                    break;
-                case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 22 * qp_multiply, 0);
-                    break;
-            }
-        } else if(codec_context->codec_id == AV_CODEC_ID_VP8 || codec_context->codec_id == AV_CODEC_ID_VP9) {
-            switch(video_quality) {
-                case VideoQuality::MEDIUM:
-                    av_dict_set_int(&options, "qp", 35 * qp_multiply, 0);
-                    break;
-                case VideoQuality::HIGH:
-                    av_dict_set_int(&options, "qp", 30 * qp_multiply, 0);
-                    break;
-                case VideoQuality::VERY_HIGH:
-                    av_dict_set_int(&options, "qp", 25 * qp_multiply, 0);
-                    break;
-                case VideoQuality::ULTRA:
-                    av_dict_set_int(&options, "qp", 22 * qp_multiply, 0);
-                    break;
-            }
-        }
-
         // TODO: More quality options
-        av_dict_set(&options, "rc_mode", "CQP", 0);
         //av_dict_set_int(&options, "low_power", 1, 0);
 
         if(codec_context->codec_id == AV_CODEC_ID_H264) {
@@ -1050,7 +1076,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [-h|--help]\n", program_name);
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [-h|--help]\n", program_name);
 }
 
 // TODO: Update with portal info
@@ -1114,6 +1140,10 @@ static void usage_full() {
     fprintf(stderr, "  -fm   Framerate mode. Should be either 'cfr' (constant frame rate), 'vfr' (variable frame rate) or 'content'. Optional, set to 'vfr' by default.\n");
     fprintf(stderr, "        'vfr' is recommended for recording for less issue with very high system load but some applications such as video editors may not support it properly.\n");
     fprintf(stderr, "        'content' is currently only supported when recording a single window, on X11. The 'content' option matches the recording frame rate to the captured content.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  -bm   Bitrate mode. Should be either 'auto', 'qp' (constant quality) or 'vbr' (variable bitrate). Optional, set to 'auto' by default which defaults to 'qp' on all devices\n");
+    fprintf(stderr, "        except steam deck that has broken drivers and doesn't support qp.\n");
+    fprintf(stderr, "        'vbr' option is not supported when using '-encoder cpu' option.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -cr   Color range. Should be either 'limited' (aka mpeg) or 'full' (aka jpeg). Optional, set to 'limited' by default.\n");
     fprintf(stderr, "        Limited color range means that colors are in range 16-235 (4112-60395 for hdr) while full color range means that colors are in range 0-255 (0-65535 for hdr).\n");
@@ -1905,11 +1935,6 @@ static void info_command() {
         _exit(22);
     }
 
-    if(egl.gpu_info.is_known_broken_driver) {
-        fprintf(stderr, "gsr error: recording is not supported on your device because your device has broken drivers\n");
-        _exit(14);
-    }
-
     egl.card_path[0] = '\0';
     if(monitor_capture_use_drm(&egl, wayland)) {
         // TODO: Allow specifying another card, and in other places
@@ -1923,6 +1948,10 @@ static void info_command() {
 
     puts("section=system_info");
     list_system_info(wayland);
+    if(egl.gpu_info.is_steam_deck)
+        puts("is_steam_deck|yes");
+    else
+        puts("is_steam_deck|no");
     puts("section=gpu_info");
     list_gpu_info(&egl);
     puts("section=video_codecs");
@@ -2461,6 +2490,7 @@ int main(int argc, char **argv) {
         { "-ab", Arg { {}, true, false } },
         { "-oc", Arg { {}, true, false } },
         { "-fm", Arg { {}, true, false } },
+        { "-bm", Arg { {}, true, false } },
         { "-pixfmt", Arg { {}, true, false } },
         { "-v", Arg { {}, true, false } },
         { "-mf", Arg { {}, true, false } }, // TODO: Remove, this exists for backwards compatibility. -df should be used instead
@@ -2793,9 +2823,9 @@ int main(int argc, char **argv) {
         _exit(1);
     }
 
-    if(egl.gpu_info.is_known_broken_driver) {
-        fprintf(stderr, "gsr error: recording is not supported on your device because your device has broken drivers\n");
-        _exit(14);
+    if(egl.gpu_info.is_steam_deck) {
+        fprintf(stderr, "gsr warning: steam deck has multiple driver issues. One of them has been reported here: https://github.com/ValveSoftware/SteamOS/issues/1609\n"
+            "If you have issues with GPU Screen Recorder on steam deck that you don't have on a desktop computer then report the issue to Valve and/or AMD.\n");
     }
 
     bool very_old_gpu = false;
@@ -2846,6 +2876,30 @@ int main(int argc, char **argv) {
     if(framerate_mode == FramerateMode::CONTENT && (wayland || is_monitor_capture)) {
         fprintf(stderr, "Error: -fm 'content' is currently only supported on X11 and when capturing a single window.\n");
         usage();
+    }
+
+    BitrateMode bitrate_mode = BitrateMode::QP;
+    const char *bitrate_mode_str = args["-bm"].value();
+    if(!bitrate_mode_str)
+        bitrate_mode_str = "auto";
+
+    if(strcmp(bitrate_mode_str, "qp") == 0) {
+        bitrate_mode = BitrateMode::QP;
+    } else if(strcmp(bitrate_mode_str, "vbr") == 0) {
+        bitrate_mode = BitrateMode::VBR;
+    } else if(strcmp(bitrate_mode_str, "auto") != 0) {
+        fprintf(stderr, "Error: -bm should either be either 'auto', 'qp', 'vbr', got: '%s'\n", bitrate_mode_str);
+        usage();
+    }
+
+    if(strcmp(bitrate_mode_str, "auto") == 0) {
+        // QP is broken on steam deck, see https://github.com/ValveSoftware/SteamOS/issues/1609
+        bitrate_mode = egl.gpu_info.is_steam_deck ? BitrateMode::VBR : BitrateMode::QP;
+    }
+
+    if(use_software_video_encoder && bitrate_mode != BitrateMode::QP) {
+        fprintf(stderr, "Warning: bitrate mode has been forcefully set to qp because software encoding option doesn't support vbr option\n");
+        bitrate_mode = BitrateMode::QP;
     }
 
     gsr_color_range color_range = GSR_COLOR_RANGE_LIMITED;
@@ -2968,7 +3022,7 @@ int main(int argc, char **argv) {
     const bool hdr = video_codec_is_hdr(video_codec);
     const bool low_latency_recording = is_livestream || is_output_piped;
 
-    AVCodecContext *video_codec_context = create_video_codec_context(get_pixel_format(egl.gpu_info.vendor, use_software_video_encoder), quality, fps, video_codec_f, low_latency_recording, egl.gpu_info.vendor, framerate_mode, hdr, color_range, keyint, use_software_video_encoder);
+    AVCodecContext *video_codec_context = create_video_codec_context(get_pixel_format(egl.gpu_info.vendor, use_software_video_encoder), quality, fps, video_codec_f, low_latency_recording, egl.gpu_info.vendor, framerate_mode, hdr, color_range, keyint, use_software_video_encoder, bitrate_mode);
     if(replay_buffer_size_secs == -1)
         video_stream = create_stream(av_format_context, video_codec_context);
 
@@ -3020,9 +3074,9 @@ int main(int argc, char **argv) {
     gsr_color_conversion_clear(&color_conversion);
 
     if(use_software_video_encoder) {
-        open_video_software(video_codec_context, quality, pixel_format, hdr, color_depth);
+        open_video_software(video_codec_context, quality, pixel_format, hdr, color_depth, bitrate_mode);
     } else {
-        open_video_hardware(video_codec_context, quality, very_old_gpu, egl.gpu_info.vendor, pixel_format, hdr, color_depth);
+        open_video_hardware(video_codec_context, quality, very_old_gpu, egl.gpu_info.vendor, pixel_format, hdr, color_depth, bitrate_mode);
     }
     if(video_stream)
         avcodec_parameters_from_context(video_stream->codecpar, video_codec_context);

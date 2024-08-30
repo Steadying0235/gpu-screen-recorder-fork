@@ -48,6 +48,10 @@ extern "C" {
 #include <deque>
 #include <future>
 
+#ifndef GSR_VERSION
+#define GSR_VERSION "unknown"
+#endif
+
 // TODO: If options are not supported then they are returned (allocated) in the options. This should be free'd.
 
 // TODO: Remove LIBAVUTIL_VERSION_MAJOR checks in the future when ubuntu, pop os LTS etc update ffmpeg to >= 5.0
@@ -1076,7 +1080,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [-h|--help]\n", program_name);
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [--version] [-h|--help]\n", program_name);
 }
 
 // TODO: Update with portal info
@@ -1190,6 +1194,8 @@ static void usage_full() {
     fprintf(stderr, "        For example:\n");
     fprintf(stderr, "          bluez_input.88:C9:E8:66:A2:27|WH-1000XM4\n");
     fprintf(stderr, "        The <audio_device_name> is the name to pass to GPU Screen Recorder in a -a option.\n");
+    fprintf(stderr, "  --version\n");
+    fprintf(stderr, "        Print version (%s) and exit\n", GSR_VERSION);
     fprintf(stderr, "\n");
     //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, set to 'yuv420' by default\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r).\n");
@@ -2471,6 +2477,11 @@ int main(int argc, char **argv) {
 
     if(argc == 2 && strcmp(argv[1], "--list-audio-devices") == 0) {
         list_audio_devices_command();
+        _exit(0);
+    }
+
+    if(argc == 2 && strcmp(argv[1], "--version") == 0) {
+        puts(GSR_VERSION);
         _exit(0);
     }
 

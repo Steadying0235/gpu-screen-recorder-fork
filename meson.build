@@ -1,4 +1,4 @@
-project('gpu-screen-recorder', ['c', 'cpp'], version : '4.1.5', default_options : ['warning_level=2'])
+project('gpu-screen-recorder', ['c', 'cpp'], version : '4.1.6', default_options : ['warning_level=2'])
 
 add_project_arguments('-Wshadow', language : ['c', 'cpp'])
 if get_option('buildtype') == 'debug'
@@ -68,6 +68,8 @@ if get_option('portal') == true
 
     add_project_arguments('-DGSR_PORTAL', language : ['c', 'cpp'])
 endif
+
+add_project_arguments('-DGSR_VERSION="' + meson.project_version() + '"', language: ['c', 'cpp'])
 
 executable('gsr-kms-server', 'kms/server/kms_server.c', dependencies : dependency('libdrm'), c_args : '-fstack-protector-all', install : true)
 executable('gpu-screen-recorder', src, dependencies : dep, install : true)

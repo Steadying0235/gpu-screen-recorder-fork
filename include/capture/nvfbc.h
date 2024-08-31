@@ -11,7 +11,6 @@ typedef struct {
     vec2i pos;
     vec2i size;
     bool direct_capture;
-    bool overclock;
     gsr_color_depth color_depth;
     gsr_color_range color_range;
     bool record_cursor;

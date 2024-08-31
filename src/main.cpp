@@ -584,170 +584,6 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     return codec_context;
 }
 
-static bool vaapi_create_codec_context(AVCodecContext *video_codec_context, const char *card_path) {
-    char render_path[128];
-    if(!gsr_card_path_get_render_path(card_path, render_path)) {
-        fprintf(stderr, "gsr error: failed to get /dev/dri/renderDXXX file from %s\n", card_path);
-        return false;
-    }
-
-    AVBufferRef *device_ctx;
-    if(av_hwdevice_ctx_create(&device_ctx, AV_HWDEVICE_TYPE_VAAPI, render_path, NULL, 0) < 0) {
-        fprintf(stderr, "Error: Failed to create hardware device context\n");
-        return false;
-    }
-
-    AVBufferRef *frame_context = av_hwframe_ctx_alloc(device_ctx);
-    if(!frame_context) {
-        fprintf(stderr, "Error: Failed to create hwframe context\n");
-        av_buffer_unref(&device_ctx);
-        return false;
-    }
-
-    AVHWFramesContext *hw_frame_context =
-        (AVHWFramesContext *)frame_context->data;
-    hw_frame_context->width = video_codec_context->width;
-    hw_frame_context->height = video_codec_context->height;
-    hw_frame_context->sw_format = AV_PIX_FMT_NV12;
-    hw_frame_context->format = video_codec_context->pix_fmt;
-    hw_frame_context->device_ref = device_ctx;
-    hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
-
-    //hw_frame_context->initial_pool_size = 1;
-
-    if (av_hwframe_ctx_init(frame_context) < 0) {
-        fprintf(stderr, "Error: Failed to initialize hardware frame context "
-                        "(note: ffmpeg version needs to be > 4.0)\n");
-        av_buffer_unref(&device_ctx);
-        //av_buffer_unref(&frame_context);
-        return false;
-    }
-
-    video_codec_context->hw_device_ctx = av_buffer_ref(device_ctx);
-    video_codec_context->hw_frames_ctx = av_buffer_ref(frame_context);
-    return true;
-}
-
-static bool check_if_codec_valid_for_hardware(const AVCodec *codec, gsr_gpu_vendor vendor, const char *card_path) {
-    // Do not use AV_PIX_FMT_CUDA because we dont want to do full check with hardware context
-    AVCodecContext *codec_context = create_video_codec_context(vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_YUV420P : AV_PIX_FMT_VAAPI, VideoQuality::VERY_HIGH, 60, codec, false, vendor, FramerateMode::CONSTANT, false, GSR_COLOR_RANGE_LIMITED, 2, false, BitrateMode::QP);
-    if(!codec_context)
-        return false;
-
-    codec_context->width = 512;
-    codec_context->height = 512;
-
-    if(vendor != GSR_GPU_VENDOR_NVIDIA) {
-        if(!vaapi_create_codec_context(codec_context, card_path)) {
-            avcodec_free_context(&codec_context);
-            return false;
-        }
-    }
-
-    bool success = false;
-    success = avcodec_open2(codec_context, codec_context->codec, NULL) == 0;
-    if(codec_context->hw_device_ctx)
-        av_buffer_unref(&codec_context->hw_device_ctx);
-    if(codec_context->hw_frames_ctx)
-        av_buffer_unref(&codec_context->hw_frames_ctx);
-    avcodec_free_context(&codec_context);
-    return success;
-}
-
-static const AVCodec* find_h264_software_encoder() {
-    return avcodec_find_encoder_by_name("libx264");
-}
-
-static const AVCodec* find_h264_encoder(gsr_gpu_vendor vendor, const char *card_path) {
-    const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "h264_nvenc" : "h264_vaapi");
-    if(!codec)
-        codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "nvenc_h264" : "vaapi_h264");
-
-    if(!codec)
-        return nullptr;
-
-    static bool checked = false;
-    static bool checked_success = true;
-    if(!checked) {
-        checked = true;
-        if(!check_if_codec_valid_for_hardware(codec, vendor, card_path))
-            checked_success = false;
-    }
-    return checked_success ? codec : nullptr;
-}
-
-static const AVCodec* find_hevc_encoder(gsr_gpu_vendor vendor, const char *card_path) {
-    const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "hevc_nvenc" : "hevc_vaapi");
-    if(!codec)
-        codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "nvenc_hevc" : "vaapi_hevc");
-
-    if(!codec)
-        return nullptr;
-
-    static bool checked = false;
-    static bool checked_success = true;
-    if(!checked) {
-        checked = true;
-        if(!check_if_codec_valid_for_hardware(codec, vendor, card_path))
-            checked_success = false;
-    }
-    return checked_success ? codec : nullptr;
-}
-
-static const AVCodec* find_av1_encoder(gsr_gpu_vendor vendor, const char *card_path) {
-    // Workaround bug with av1 nvidia in older ffmpeg versions that causes the whole application to crash
-    // when avcodec_open2 is opened with av1_nvenc
-    if(vendor == GSR_GPU_VENDOR_NVIDIA && LIBAVCODEC_BUILD < AV_VERSION_INT(60, 30, 100)) {
-        return nullptr;
-    }
-
-    const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "av1_nvenc" : "av1_vaapi");
-    if(!codec)
-        codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "nvenc_av1" : "vaapi_av1");
-
-    if(!codec)
-        return nullptr;
-
-    static bool checked = false;
-    static bool checked_success = true;
-    if(!checked) {
-        checked = true;
-        if(!check_if_codec_valid_for_hardware(codec, vendor, card_path))
-            checked_success = false;
-    }
-    return checked_success ? codec : nullptr;
-}
-
-static const AVCodec* find_vp8_encoder(gsr_gpu_vendor vendor, const char *card_path) {
-    const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "vp8_nvenc" : "vp8_vaapi");
-    if(!codec)
-        return nullptr;
-
-    static bool checked = false;
-    static bool checked_success = true;
-    if(!checked) {
-        checked = true;
-        if(!check_if_codec_valid_for_hardware(codec, vendor, card_path))
-            checked_success = false;
-    }
-    return checked_success ? codec : nullptr;
-}
-
-static const AVCodec* find_vp9_encoder(gsr_gpu_vendor vendor, const char *card_path) {
-    const AVCodec *codec = avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "vp9_nvenc" : "vp9_vaapi");
-    if(!codec)
-        return nullptr;
-
-    static bool checked = false;
-    static bool checked_success = true;
-    if(!checked) {
-        checked = true;
-        if(!check_if_codec_valid_for_hardware(codec, vendor, card_path))
-            checked_success = false;
-    }
-    return checked_success ? codec : nullptr;
-}
-
 static void open_audio(AVCodecContext *audio_codec_context) {
     AVDictionary *options = nullptr;
     av_dict_set(&options, "strict", "experimental", 0);
@@ -1803,56 +1639,81 @@ static void list_gpu_info(gsr_egl *egl) {
     }
 }
 
+static const AVCodec* get_ffmpeg_video_codec(VideoCodec video_codec, gsr_gpu_vendor vendor) {
+    switch(video_codec) {
+        case VideoCodec::H264:
+            return avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "h264_nvenc" : "h264_vaapi");
+        case VideoCodec::HEVC:
+        case VideoCodec::HEVC_HDR:
+        case VideoCodec::HEVC_10BIT:
+            return avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "hevc_nvenc" : "hevc_vaapi");
+        case VideoCodec::AV1:
+        case VideoCodec::AV1_HDR:
+        case VideoCodec::AV1_10BIT:
+            return avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "av1_nvenc" : "av1_vaapi");
+        case VideoCodec::VP8:
+            return avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "vp8_nvenc" : "vp8_vaapi");
+        case VideoCodec::VP9:
+            return avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "vp9_nvenc" : "vp9_vaapi");
+    }
+    return nullptr;
+}
+
+static void set_supported_video_codecs_ffmpeg(gsr_supported_video_codecs *supported_video_codecs, gsr_gpu_vendor vendor) {
+    if(!get_ffmpeg_video_codec(VideoCodec::H264, vendor)) {
+        supported_video_codecs->h264 = false;
+    }
+
+    if(!get_ffmpeg_video_codec(VideoCodec::HEVC, vendor)) {
+        supported_video_codecs->hevc = false;
+        supported_video_codecs->hevc_hdr = false;
+        supported_video_codecs->hevc_10bit = false;
+    }
+
+    if(!get_ffmpeg_video_codec(VideoCodec::AV1, vendor)) {
+        supported_video_codecs->av1 = false;
+        supported_video_codecs->av1_hdr = false;
+        supported_video_codecs->av1_10bit = false;
+    }
+
+    if(!get_ffmpeg_video_codec(VideoCodec::VP8, vendor)) {
+        supported_video_codecs->vp8 = false;
+    }
+
+    if(!get_ffmpeg_video_codec(VideoCodec::VP9, vendor)) {
+        supported_video_codecs->vp9 = false;
+    }
+}
+
 static void list_supported_video_codecs(gsr_egl *egl, bool wayland) {
-#if 1
-    if(find_h264_encoder(egl->gpu_info.vendor, egl->card_path))
-        puts("h264");
-    if(find_h264_software_encoder())
-        puts("h264_software");
-    if(find_hevc_encoder(egl->gpu_info.vendor, egl->card_path)) {
-        puts("hevc");
-        if(wayland)
-            puts("hevc_hdr"); // TODO: Verify if it's actually supported
-        puts("hevc_10bit"); // TODO: Verify if it's actually supported
-    }
-    if(find_av1_encoder(egl->gpu_info.vendor, egl->card_path)) {
-        puts("av1");
-        if(wayland)
-            puts("av1_hdr"); // TODO: Verify if it's actually supported
-        puts("av1_10bit"); // TODO: Verify if it's actually supported
-    }
-    if(find_vp8_encoder(egl->gpu_info.vendor, egl->card_path))
-        puts("vp8");
-    if(find_vp9_encoder(egl->gpu_info.vendor, egl->card_path))
-        puts("vp9");
-#else
     // Dont clean it up on purpose to increase shutdown speed
     gsr_video_encoder *video_encoder = create_video_encoder(egl, false, GSR_COLOR_DEPTH_8_BITS, false);
     if(!video_encoder)
         return;
     
-    const gsr_supported_video_codecs supported_video_codecs = gsr_video_encoder_get_supported_codecs(video_encoder, false);
+    gsr_supported_video_codecs supported_video_codecs = gsr_video_encoder_get_supported_codecs(video_encoder, false);
+    set_supported_video_codecs_ffmpeg(&supported_video_codecs, egl->gpu_info.vendor);
+
     if(supported_video_codecs.h264)
         puts("h264");
-    if(find_h264_software_encoder())
+    if(avcodec_find_encoder_by_name("libx264"))
         puts("h264_software");
-    if(supported_video_codecs.hevc) {
+    if(supported_video_codecs.hevc)
         puts("hevc");
-        if(wayland)
-            puts("hevc_hdr"); // TODO: Verify if it's actually supported
-        puts("hevc_10bit"); // TODO: Verify if it's actually supported
-    }
-    if(supported_video_codecs.av1) {
+    if(supported_video_codecs.hevc_hdr && wayland)
+        puts("hevc_hdr");
+    if(supported_video_codecs.hevc_10bit)
+        puts("hevc_10bit");
+    if(supported_video_codecs.av1)
         puts("av1");
-        if(wayland)
-            puts("av1_hdr"); // TODO: Verify if it's actually supported
-        puts("av1_10bit"); // TODO: Verify if it's actually supported
-    }
+    if(supported_video_codecs.av1_hdr && wayland)
+        puts("av1_hdr");
+    if(supported_video_codecs.av1_10bit)
+        puts("av1_10bit");
     if(supported_video_codecs.vp8)
         puts("vp8");
     if(supported_video_codecs.vp9)
         puts("vp9");
-#endif
 }
 
 static bool monitor_capture_use_drm(gsr_egl *egl, bool wayland) {
@@ -1992,7 +1853,7 @@ static void list_audio_devices_command() {
     _exit(0);
 }
 
-static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl *egl, int fps, bool overclock, VideoCodec video_codec, gsr_color_range color_range,
+static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl *egl, int fps, VideoCodec video_codec, gsr_color_range color_range,
     bool record_cursor, bool track_damage, bool use_software_video_encoder, bool restore_portal_session, const char *portal_session_token_filepath,
     gsr_color_depth color_depth)
 {
@@ -2112,7 +1973,6 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
             nvfbc_params.pos = { 0, 0 };
             nvfbc_params.size = { 0, 0 };
             nvfbc_params.direct_capture = direct_capture;
-            nvfbc_params.overclock = overclock;
             nvfbc_params.color_depth = color_depth;
             nvfbc_params.color_range = color_range;
             nvfbc_params.record_cursor = record_cursor;
@@ -2284,26 +2144,162 @@ static AudioCodec select_audio_codec_with_fallback(AudioCodec audio_codec, const
     return audio_codec;
 }
 
-static const AVCodec* select_video_codec_with_fallback(VideoCodec video_codec, const char *video_codec_to_use, const char *file_extension, bool use_software_video_encoder, const gsr_egl *egl) {
+static const char* video_codec_to_string(VideoCodec video_codec) {
+    switch(video_codec) {
+        case VideoCodec::H264:       return "h264";
+        case VideoCodec::HEVC:       return "hevc";
+        case VideoCodec::HEVC_HDR:   return "hevc_hdr";
+        case VideoCodec::HEVC_10BIT: return "hevc_10bit";
+        case VideoCodec::AV1:        return "av1";
+        case VideoCodec::AV1_HDR:    return "av1_hdr";
+        case VideoCodec::AV1_10BIT:  return "av1_10bit";
+        case VideoCodec::VP8:        return "vp8";
+        case VideoCodec::VP9:        return "vp9";
+    }
+    return "";
+}
+
+static const AVCodec* pick_video_codec(VideoCodec *video_codec, gsr_egl *egl, bool use_software_video_encoder, bool video_codec_auto, const char *video_codec_to_use, bool is_flv) {
+    // TODO: software encoder for hevc, av1, vp8 and vp9
+
+    gsr_video_encoder *video_encoder = create_video_encoder(egl, false, GSR_COLOR_DEPTH_8_BITS, use_software_video_encoder);
+    if(!video_encoder) {
+        fprintf(stderr, "Error: failed to create video encoder\n");
+        _exit(1);
+    }
+
+    const gsr_supported_video_codecs supported_video_codecs = gsr_video_encoder_get_supported_codecs(video_encoder, true);
+    const AVCodec *video_codec_f = nullptr;
+
+    // TODO: Cleanup
+    // gsr_video_encoder_destroy
+
+    switch(*video_codec) {
+        case VideoCodec::H264: {
+            if(use_software_video_encoder)
+                video_codec_f = avcodec_find_encoder_by_name("libx264");
+            else if(supported_video_codecs.h264)
+                video_codec_f = get_ffmpeg_video_codec(*video_codec, egl->gpu_info.vendor);
+            break;
+        }
+        case VideoCodec::HEVC: {
+            if(supported_video_codecs.hevc)
+                video_codec_f = get_ffmpeg_video_codec(*video_codec, egl->gpu_info.vendor);
+            break;
+        }
+        case VideoCodec::HEVC_HDR: {
+            if(supported_video_codecs.hevc_hdr)
+                video_codec_f = get_ffmpeg_video_codec(*video_codec, egl->gpu_info.vendor);
+            break;
+        }
+        case VideoCodec::HEVC_10BIT: {
+            if(supported_video_codecs.hevc_10bit)
+                video_codec_f = get_ffmpeg_video_codec(*video_codec, egl->gpu_info.vendor);
+            break;
+        }
+        case VideoCodec::AV1: {
+            if(supported_video_codecs.av1)
+                video_codec_f = get_ffmpeg_video_codec(*video_codec, egl->gpu_info.vendor);
+            break;
+        }
+        case VideoCodec::AV1_HDR: {
+            if(supported_video_codecs.av1_hdr)
+                video_codec_f = get_ffmpeg_video_codec(*video_codec, egl->gpu_info.vendor);
+            break;
+        }
+        case VideoCodec::AV1_10BIT: {
+            if(supported_video_codecs.av1_10bit)
+                video_codec_f = get_ffmpeg_video_codec(*video_codec, egl->gpu_info.vendor);
+            break;
+        }
+        case VideoCodec::VP8: {
+            if(supported_video_codecs.vp8)
+                video_codec_f = get_ffmpeg_video_codec(*video_codec, egl->gpu_info.vendor);
+            break;
+        }
+        case VideoCodec::VP9: {
+            if(supported_video_codecs.vp9)
+                video_codec_f = get_ffmpeg_video_codec(*video_codec, egl->gpu_info.vendor);
+            break;
+        }
+    }
+
+    if(!video_codec_auto && !video_codec_f && !is_flv) {
+        switch(*video_codec) {
+            case VideoCodec::H264: {
+                fprintf(stderr, "Warning: selected video codec h264 is not supported, trying hevc instead\n");
+                video_codec_to_use = "hevc";
+                if(supported_video_codecs.hevc)
+                    video_codec_f = get_ffmpeg_video_codec(*video_codec, egl->gpu_info.vendor);
+                break;
+            }
+            case VideoCodec::HEVC:
+            case VideoCodec::HEVC_HDR:
+            case VideoCodec::HEVC_10BIT: {
+                fprintf(stderr, "Warning: selected video codec hevc is not supported, trying h264 instead\n");
+                video_codec_to_use = "h264";
+                *video_codec = VideoCodec::H264;
+                if(supported_video_codecs.h264)
+                    video_codec_f = get_ffmpeg_video_codec(*video_codec, egl->gpu_info.vendor);
+                break;
+            }
+            case VideoCodec::AV1:
+            case VideoCodec::AV1_HDR:
+            case VideoCodec::AV1_10BIT: {
+                fprintf(stderr, "Warning: selected video codec av1 is not supported, trying h264 instead\n");
+                video_codec_to_use = "h264";
+                *video_codec = VideoCodec::H264;
+                if(supported_video_codecs.h264)
+                    video_codec_f = get_ffmpeg_video_codec(*video_codec, egl->gpu_info.vendor);
+                break;
+            }
+            case VideoCodec::VP8:
+            case VideoCodec::VP9:
+                // TODO: Cant fallback to other codec because webm only supports vp8/vp9
+                break;
+        }
+    }
+
+    (void)video_codec_to_use;
+
+    if(!video_codec_f) {
+        const char *video_codec_name = video_codec_to_string(*video_codec);
+        fprintf(stderr, "Error: your gpu does not support '%s' video codec. If you are sure that your gpu does support '%s' video encoding and you are using an AMD/Intel GPU,\n"
+            "  then make sure you have installed the GPU specific vaapi packages (intel-media-driver, libva-intel-driver, libva-mesa-driver and linux-firmware).\n"
+            "  It's also possible that your distro has disabled hardware accelerated video encoding for '%s' video codec.\n"
+            "  This may be the case on corporate distros such as Manjaro, Fedora or OpenSUSE.\n"
+            "  You can test this by running 'vainfo | grep VAEntrypointEncSlice' to see if it matches any H264/HEVC/AV1/VP8/VP9 profile.\n"
+            "  On such distros, you need to manually install mesa from source to enable H264/HEVC hardware acceleration, or use a more user friendly distro. Alternatively record with AV1 if supported by your GPU.\n"
+            "  You can alternatively use the flatpak version of GPU Screen Recorder (https://flathub.org/apps/com.dec05eba.gpu_screen_recorder) which bypasses system issues with patented H264/HEVC codecs.\n"
+            "  Make sure you have mesa-extra freedesktop runtime installed when using the flatpak (this should be the default), which can be installed with this command:\n"
+            "  flatpak install --system org.freedesktop.Platform.GL.default//23.08-extra\n"
+            "  If your GPU doesn't support hardware accelerated video encoding then you can use '-encoder cpu' option to encode with your cpu instead.\n", video_codec_name, video_codec_name, video_codec_name);
+        _exit(2);
+    }
+
+    return video_codec_f;
+}
+
+static const AVCodec* select_video_codec_with_fallback(VideoCodec *video_codec, const char *video_codec_to_use, const char *file_extension, bool use_software_video_encoder, gsr_egl *egl) {
     const bool video_codec_auto = strcmp(video_codec_to_use, "auto") == 0;
     if(video_codec_auto) {
         if(strcmp(file_extension, "webm") == 0) {
             fprintf(stderr, "Info: using vp8 encoder because a codec was not specified and the file extension is .webm\n");
             video_codec_to_use = "vp8";
-            video_codec = VideoCodec::VP8;
+            *video_codec = VideoCodec::VP8;
         } else {
             fprintf(stderr, "Info: using h264 encoder because a codec was not specified\n");
             video_codec_to_use = "h264";
-            video_codec = VideoCodec::H264;
+            *video_codec = VideoCodec::H264;
         }
     }
 
     // TODO: Allow hevc, vp9 and av1 in (enhanced) flv (supported since ffmpeg 6.1)
     const bool is_flv = strcmp(file_extension, "flv") == 0;
     if(is_flv) {
-        if(video_codec != VideoCodec::H264) {
+        if(*video_codec != VideoCodec::H264) {
             video_codec_to_use = "h264";
-            video_codec = VideoCodec::H264;
+            *video_codec = VideoCodec::H264;
             fprintf(stderr, "Warning: hevc/av1 is not compatible with flv, falling back to h264 instead.\n");
         }
 
@@ -2316,9 +2312,9 @@ static const AVCodec* select_video_codec_with_fallback(VideoCodec video_codec, c
 
     const bool is_hls = strcmp(file_extension, "m3u8") == 0;
     if(is_hls) {
-        if(video_codec_is_av1(video_codec)) {
+        if(video_codec_is_av1(*video_codec)) {
             video_codec_to_use = "hevc";
-            video_codec = VideoCodec::HEVC;
+            *video_codec = VideoCodec::HEVC;
             fprintf(stderr, "Warning: av1 is not compatible with hls (m3u8), falling back to hevc instead.\n");
         }
 
@@ -2329,120 +2325,12 @@ static const AVCodec* select_video_codec_with_fallback(VideoCodec video_codec, c
         // }
     }
 
-    if(use_software_video_encoder && video_codec != VideoCodec::H264) {
+    if(use_software_video_encoder && *video_codec != VideoCodec::H264) {
         fprintf(stderr, "Error: \"-encoder cpu\" option is currently only available when using h264 codec option (-k)\n");
         usage();
     }
 
-    const AVCodec *video_codec_f = nullptr;
-    switch(video_codec) {
-        case VideoCodec::H264: {
-            if(use_software_video_encoder) {
-                video_codec_f = find_h264_software_encoder();
-            } else {
-                video_codec_f = find_h264_encoder(egl->gpu_info.vendor, egl->card_path);
-            }
-            break;
-        }
-        case VideoCodec::HEVC:
-        case VideoCodec::HEVC_HDR:
-        case VideoCodec::HEVC_10BIT:
-            // TODO: software encoder
-            video_codec_f = find_hevc_encoder(egl->gpu_info.vendor, egl->card_path);
-            break;
-        case VideoCodec::AV1:
-        case VideoCodec::AV1_HDR:
-        case VideoCodec::AV1_10BIT:
-            // TODO: software encoder
-            video_codec_f = find_av1_encoder(egl->gpu_info.vendor, egl->card_path);
-            break;
-        case VideoCodec::VP8:
-            // TODO: software encoder
-            video_codec_f = find_vp8_encoder(egl->gpu_info.vendor, egl->card_path);
-            break;
-        case VideoCodec::VP9:
-            // TODO: software encoder
-            video_codec_f = find_vp9_encoder(egl->gpu_info.vendor, egl->card_path);
-            break;
-    }
-
-    if(!video_codec_auto && !video_codec_f && !is_flv) {
-        switch(video_codec) {
-            case VideoCodec::H264: {
-                fprintf(stderr, "Warning: selected video codec h264 is not supported, trying hevc instead\n");
-                video_codec_to_use = "hevc";
-                video_codec = VideoCodec::HEVC;
-                video_codec_f = find_hevc_encoder(egl->gpu_info.vendor, egl->card_path);
-                break;
-            }
-            case VideoCodec::HEVC:
-            case VideoCodec::HEVC_HDR:
-            case VideoCodec::HEVC_10BIT: {
-                fprintf(stderr, "Warning: selected video codec hevc is not supported, trying h264 instead\n");
-                video_codec_to_use = "h264";
-                video_codec = VideoCodec::H264;
-                video_codec_f = find_h264_encoder(egl->gpu_info.vendor, egl->card_path);
-                break;
-            }
-            case VideoCodec::AV1:
-            case VideoCodec::AV1_HDR:
-            case VideoCodec::AV1_10BIT: {
-                fprintf(stderr, "Warning: selected video codec av1 is not supported, trying h264 instead\n");
-                video_codec_to_use = "h264";
-                video_codec = VideoCodec::H264;
-                video_codec_f = find_h264_encoder(egl->gpu_info.vendor, egl->card_path);
-                break;
-            }
-            case VideoCodec::VP8:
-            case VideoCodec::VP9:
-                // TODO:
-                break;
-        }
-    }
-
-    if(!video_codec_f) {
-        const char *video_codec_name = "";
-        switch(video_codec) {
-            case VideoCodec::H264: {
-                video_codec_name = "h264";
-                break;
-            }
-            case VideoCodec::HEVC:
-            case VideoCodec::HEVC_HDR:
-            case VideoCodec::HEVC_10BIT: {
-                video_codec_name = "hevc";
-                break;
-            }
-            case VideoCodec::AV1:
-            case VideoCodec::AV1_HDR:
-            case VideoCodec::AV1_10BIT: {
-                video_codec_name = "av1";
-                break;
-            }
-            case VideoCodec::VP8: {
-                video_codec_name = "vp8";
-                break;
-            }
-            case VideoCodec::VP9: {
-                video_codec_name = "vp9";
-                break;
-            }
-        }
-
-        fprintf(stderr, "Error: your gpu does not support '%s' video codec. If you are sure that your gpu does support '%s' video encoding and you are using an AMD/Intel GPU,\n"
-            "  then make sure you have installed the GPU specific vaapi packages (intel-media-driver, libva-intel-driver, libva-mesa-driver and linux-firmware).\n"
-            "  It's also possible that your distro has disabled hardware accelerated video encoding for '%s' video codec.\n"
-            "  This may be the case on corporate distros such as Manjaro, Fedora or OpenSUSE.\n"
-            "  You can test this by running 'vainfo | grep VAEntrypointEncSlice' to see if it matches any H264/HEVC profile.\n"
-            "  On such distros, you need to manually install mesa from source to enable H264/HEVC hardware acceleration, or use a more user friendly distro. Alternatively record with AV1 if supported by your GPU.\n"
-            "  You can alternatively use the flatpak version of GPU Screen Recorder (https://flathub.org/apps/com.dec05eba.gpu_screen_recorder) which bypasses system issues with patented H264/HEVC codecs.\n"
-            "  Make sure you have mesa-extra freedesktop runtime installed when using the flatpak (this should be the default), which can be installed with this command:\n"
-            "  flatpak install --system org.freedesktop.Platform.GL.default//23.08-extra\n"
-            "  If your GPU doesn't support hardware accelerated video encoding then you can use '-encoder cpu' option to encode with your cpu instead.\n", video_codec_name, video_codec_name, video_codec_name);
-        _exit(2);
-    }
-
-    return video_codec_f;
+    return pick_video_codec(video_codec, egl, use_software_video_encoder, video_codec_auto, video_codec_to_use, is_flv);
 }
 
 int main(int argc, char **argv) {
@@ -3009,10 +2897,10 @@ int main(int argc, char **argv) {
     const double target_fps = 1.0 / (double)fps;
 
     audio_codec = select_audio_codec_with_fallback(audio_codec, file_extension, uses_amix);
-    const AVCodec *video_codec_f = select_video_codec_with_fallback(video_codec, video_codec_to_use, file_extension.c_str(), use_software_video_encoder, &egl);
+    const AVCodec *video_codec_f = select_video_codec_with_fallback(&video_codec, video_codec_to_use, file_extension.c_str(), use_software_video_encoder, &egl);
 
     const gsr_color_depth color_depth = video_codec_to_bit_depth(video_codec);
-    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, &egl, fps, overclock, video_codec, color_range, record_cursor, framerate_mode == FramerateMode::CONTENT, use_software_video_encoder, restore_portal_session, portal_session_token_filepath, color_depth);
+    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, &egl, fps, video_codec, color_range, record_cursor, framerate_mode == FramerateMode::CONTENT, use_software_video_encoder, restore_portal_session, portal_session_token_filepath, color_depth);
 
     // (Some?) livestreaming services require at least one audio track to work.
     // If not audio is provided then create one silent audio track.

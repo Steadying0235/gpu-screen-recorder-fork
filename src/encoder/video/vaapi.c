@@ -246,16 +246,18 @@ static bool get_supported_video_codecs(VADisplay va_dpy, gsr_supported_video_cod
 
     int va_major = 0;
     int va_minor = 0;
-    if(vaInitialize(va_dpy, &va_major, &va_minor) != VA_STATUS_SUCCESS)
-        return false;
+    if(vaInitialize(va_dpy, &va_major, &va_minor) != VA_STATUS_SUCCESS) {
+        fprintf(stderr, "gsr error: gsr_video_encoder_vaapi_get_supported_codecs: vaInitialize failed\n");
+        goto fail;
+    }
 
     int num_profiles = vaMaxNumProfiles(va_dpy);
     if(num_profiles <= 0)
-        goto done;
+        goto fail;
 
     profile_list = calloc(num_profiles, sizeof(VAProfile));
     if(!profile_list || vaQueryConfigProfiles(va_dpy, profile_list, &num_profiles) != VA_STATUS_SUCCESS)
-        goto done;
+        goto fail;
 
     for(int i = 0; i < num_profiles; ++i) {
         if(profile_is_h264(profile_list[i])) {
@@ -285,7 +287,7 @@ static bool get_supported_video_codecs(VADisplay va_dpy, gsr_supported_video_cod
     }
 
     success = true;
-    done:
+    fail:
     if(profile_list)
         free(profile_list);
 
@@ -299,16 +301,22 @@ static gsr_supported_video_codecs gsr_video_encoder_vaapi_get_supported_codecs(g
     gsr_video_encoder_vaapi *encoder_vaapi = encoder->priv;
     gsr_supported_video_codecs supported_video_codecs = {0};
 
-    const int drm_fd = open(encoder_vaapi->params.egl->card_path, O_RDWR);
+    char render_path[128];
+    if(!gsr_card_path_get_render_path(encoder_vaapi->params.egl->card_path, render_path)) {
+        fprintf(stderr, "gsr error: gsr_video_encoder_vaapi_get_supported_codecs: failed to get /dev/dri/renderDXXX file from %s\n", encoder_vaapi->params.egl->card_path);
+        return supported_video_codecs;
+    }
+
+    const int drm_fd = open(render_path, O_RDWR);
     if(drm_fd == -1) {
-        fprintf(stderr, "gsr error: gsr_video_encoder_vaapi_get_supported_codecs: failed to open device %s\n", encoder_vaapi->params.egl->card_path);
+        fprintf(stderr, "gsr error: gsr_video_encoder_vaapi_get_supported_codecs: failed to open device %s\n", render_path);
         return supported_video_codecs;
     }
 
     VADisplay va_dpy = vaGetDisplayDRM(drm_fd);
     if(va_dpy) {
         if(!get_supported_video_codecs(va_dpy, &supported_video_codecs, cleanup))
-            fprintf(stderr, "gsr error: gsr_video_encoder_vaapi_get_supported_codecs: failed to query supported video codecs for device %s\n", encoder_vaapi->params.egl->card_path);
+            fprintf(stderr, "gsr error: gsr_video_encoder_vaapi_get_supported_codecs: failed to query supported video codecs for device %s\n", render_path);
     }
 
     if(cleanup)

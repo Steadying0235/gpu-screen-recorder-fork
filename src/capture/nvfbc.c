@@ -1,6 +1,5 @@
 #include "../../include/capture/nvfbc.h"
 #include "../../external/NvFBC.h"
-#include "../../include/cuda.h"
 #include "../../include/egl.h"
 #include "../../include/utils.h"
 #include "../../include/color_conversion.h"
@@ -24,7 +23,6 @@ typedef struct {
     bool fbc_handle_created;
     bool capture_session_created;
 
-    gsr_cuda cuda;
     NVFBC_TOGL_SETUP_PARAMS setup_params;
 
     bool supports_direct_cursor;
@@ -290,7 +288,6 @@ static int gsr_capture_nvfbc_setup_session(gsr_capture_nvfbc *cap_nvfbc) {
 
 static void gsr_capture_nvfbc_stop(gsr_capture_nvfbc *cap_nvfbc) {
     gsr_capture_nvfbc_destroy_session_and_handle(cap_nvfbc);
-    gsr_cuda_unload(&cap_nvfbc->cuda);
     if(cap_nvfbc->library) {
         dlclose(cap_nvfbc->library);
         cap_nvfbc->library = NULL;
@@ -304,15 +301,8 @@ static void gsr_capture_nvfbc_stop(gsr_capture_nvfbc *cap_nvfbc) {
 static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_capture_nvfbc *cap_nvfbc = cap->priv;
 
-    if(!cap_nvfbc->params.use_software_video_encoder) {
-        if(!gsr_cuda_load(&cap_nvfbc->cuda, cap_nvfbc->params.egl->x11.dpy, cap_nvfbc->params.overclock))
-            return -1;
-    }
-
-    if(!gsr_capture_nvfbc_load_library(cap)) {
-        gsr_cuda_unload(&cap_nvfbc->cuda);
+    if(!gsr_capture_nvfbc_load_library(cap))
         return -1;
-    }
 
     cap_nvfbc->x = max_int(cap_nvfbc->params.pos.x, 0);
     cap_nvfbc->y = max_int(cap_nvfbc->params.pos.y, 0);

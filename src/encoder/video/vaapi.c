@@ -244,6 +244,8 @@ static bool get_supported_video_codecs(VADisplay va_dpy, gsr_supported_video_cod
     bool success = false;
     VAProfile *profile_list = NULL;
 
+    vaSetInfoCallback(va_dpy, NULL, NULL);
+
     int va_major = 0;
     int va_minor = 0;
     if(vaInitialize(va_dpy, &va_major, &va_minor) != VA_STATUS_SUCCESS) {

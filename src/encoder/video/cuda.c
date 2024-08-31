@@ -299,8 +299,8 @@ static gsr_supported_video_codecs gsr_video_encoder_cuda_get_supported_codecs(gs
         goto done;
 
     typedef NVENCSTATUS NVENCAPI (*FUNC_NvEncodeAPICreateInstance)(NV_ENCODE_API_FUNCTION_LIST *functionList);
-    FUNC_NvEncodeAPICreateInstance NvEncodeAPICreateInstance = (FUNC_NvEncodeAPICreateInstance)dlsym(nvenc_lib, "NvEncodeAPICreateInstance");
-    if(!NvEncodeAPICreateInstance) {
+    FUNC_NvEncodeAPICreateInstance nvEncodeAPICreateInstance = (FUNC_NvEncodeAPICreateInstance)dlsym(nvenc_lib, "NvEncodeAPICreateInstance");
+    if(!nvEncodeAPICreateInstance) {
         fprintf(stderr, "gsr error: gsr_video_encoder_cuda_get_supported_codecs: failed to find NvEncodeAPICreateInstance in libnvidia-encode.so\n");
         goto done;
     }
@@ -308,8 +308,8 @@ static gsr_supported_video_codecs gsr_video_encoder_cuda_get_supported_codecs(gs
     NV_ENCODE_API_FUNCTION_LIST function_list;
     memset(&function_list, 0, sizeof(function_list));
     function_list.version = NV_ENCODE_API_FUNCTION_LIST_VER;
-    if(NvEncodeAPICreateInstance(&function_list) != NV_ENC_SUCCESS) {
-        fprintf(stderr, "gsr error: gsr_video_encoder_cuda_get_supported_codecs: NvEncodeAPICreateInstance failed\n");
+    if(nvEncodeAPICreateInstance(&function_list) != NV_ENC_SUCCESS) {
+        fprintf(stderr, "gsr error: gsr_video_encoder_cuda_get_supported_codecs: nvEncodeAPICreateInstance failed\n");
         goto done;
     }
 
@@ -326,7 +326,7 @@ static gsr_supported_video_codecs gsr_video_encoder_cuda_get_supported_codecs(gs
         // In such cases fallback to old api version if possible and try again.
         params.apiVersion = NVENCAPI_VERSION_470;
         if(function_list.nvEncOpenEncodeSessionEx(&params, &nvenc_encoder) != NV_ENC_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_video_encoder_cuda_get_supported_codecs: NvEncOpenEncodeSessionEx failed\n");
+            fprintf(stderr, "gsr error: gsr_video_encoder_cuda_get_supported_codecs: nvEncOpenEncodeSessionEx failed\n");
             goto done;
         }
     }

@@ -50,7 +50,6 @@ static bool gsr_video_encoder_cuda_setup_context(gsr_video_encoder_cuda *self, A
     hw_frame_context->height = video_codec_context->height;
     hw_frame_context->sw_format = self->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12;
     hw_frame_context->format = video_codec_context->pix_fmt;
-    hw_frame_context->device_ref = self->device_ctx;
     hw_frame_context->device_ctx = (AVHWDeviceContext*)self->device_ctx->data;
 
     if (av_hwframe_ctx_init(frame_context) < 0) {

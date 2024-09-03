@@ -14,6 +14,8 @@ typedef struct {
 
     unsigned int target_textures[2];
 
+    AVBufferRef *device_ctx;
+
     gsr_cuda cuda;
     CUgraphicsResource cuda_graphics_resources[2];
     CUarray mapped_arrays[2];
@@ -21,25 +23,25 @@ typedef struct {
 } gsr_video_encoder_cuda;
 
 static bool gsr_video_encoder_cuda_setup_context(gsr_video_encoder_cuda *self, AVCodecContext *video_codec_context) {
-    AVBufferRef *device_ctx = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_CUDA);
-    if(!device_ctx) {
+    self->device_ctx = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_CUDA);
+    if(!self->device_ctx) {
         fprintf(stderr, "gsr error: gsr_video_encoder_cuda_setup_context failed: failed to create hardware device context\n");
         return false;
     }
 
-    AVHWDeviceContext *hw_device_context = (AVHWDeviceContext*)device_ctx->data;
+    AVHWDeviceContext *hw_device_context = (AVHWDeviceContext*)self->device_ctx->data;
     AVCUDADeviceContext *cuda_device_context = (AVCUDADeviceContext*)hw_device_context->hwctx;
     cuda_device_context->cuda_ctx = self->cuda.cu_ctx;
-    if(av_hwdevice_ctx_init(device_ctx) < 0) {
+    if(av_hwdevice_ctx_init(self->device_ctx) < 0) {
         fprintf(stderr, "gsr error: gsr_video_encoder_cuda_setup_context failed: failed to create hardware device context\n");
-        av_buffer_unref(&device_ctx);
+        av_buffer_unref(&self->device_ctx);
         return false;
     }
 
-    AVBufferRef *frame_context = av_hwframe_ctx_alloc(device_ctx);
+    AVBufferRef *frame_context = av_hwframe_ctx_alloc(self->device_ctx);
     if(!frame_context) {
         fprintf(stderr, "gsr error: gsr_video_encoder_cuda_setup_context failed: failed to create hwframe context\n");
-        av_buffer_unref(&device_ctx);
+        av_buffer_unref(&self->device_ctx);
         return false;
     }
 
@@ -48,19 +50,18 @@ static bool gsr_video_encoder_cuda_setup_context(gsr_video_encoder_cuda *self, A
     hw_frame_context->height = video_codec_context->height;
     hw_frame_context->sw_format = self->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12;
     hw_frame_context->format = video_codec_context->pix_fmt;
-    hw_frame_context->device_ref = device_ctx;
-    hw_frame_context->device_ctx = (AVHWDeviceContext*)device_ctx->data;
+    hw_frame_context->device_ref = self->device_ctx;
+    hw_frame_context->device_ctx = (AVHWDeviceContext*)self->device_ctx->data;
 
     if (av_hwframe_ctx_init(frame_context) < 0) {
         fprintf(stderr, "gsr error: gsr_video_encoder_cuda_setup_context failed: failed to initialize hardware frame context "
                         "(note: ffmpeg version needs to be > 4.0)\n");
-        av_buffer_unref(&device_ctx);
+        av_buffer_unref(&self->device_ctx);
         //av_buffer_unref(&frame_context);
         return false;
     }
 
     self->cuda_stream = cuda_device_context->stream;
-    video_codec_context->hw_device_ctx = av_buffer_ref(device_ctx);
     video_codec_context->hw_frames_ctx = av_buffer_ref(frame_context);
     return true;
 }
@@ -374,10 +375,10 @@ void gsr_video_encoder_cuda_stop(gsr_video_encoder_cuda *self, AVCodecContext *v
     self->target_textures[0] = 0;
     self->target_textures[1] = 0;
 
-    if(video_codec_context->hw_device_ctx)
-        av_buffer_unref(&video_codec_context->hw_device_ctx);
     if(video_codec_context->hw_frames_ctx)
         av_buffer_unref(&video_codec_context->hw_frames_ctx);
+    if(self->device_ctx)
+        av_buffer_unref(&self->device_ctx);
 
     if(self->cuda.cu_ctx) {
         for(int i = 0; i < 2; ++i) {

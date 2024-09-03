@@ -55,7 +55,7 @@ from one of the official sources before reporting it as an issue.
 If you install GPU Screen Recorder flatpak, which is the gtk gui version then you can still run GPU Screen Recorder command line by using the flatpak command option, for example `flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder -w screen -f 60 -o video.mp4`. Note that if you want to record your monitor on AMD/Intel then you need to install the flatpak system-wide (like so: `flatpak install flathub --system com.dec05eba.gpu_screen_recorder`).
 
 # Dependencies
-GPU Screen Recorder uses meson build system so you need to install `meson` to build GPU Screen Recorder:
+GPU Screen Recorder uses meson build system so you need to install `meson` to build GPU Screen Recorder.
 
 ## Build dependencies
 These are the dependencies needed to build GPU Screen Recorder:

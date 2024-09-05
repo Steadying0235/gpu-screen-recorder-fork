@@ -62,6 +62,7 @@ static bool gsr_video_encoder_cuda_setup_context(gsr_video_encoder_cuda *self, A
 
     self->cuda_stream = cuda_device_context->stream;
     video_codec_context->hw_frames_ctx = av_buffer_ref(frame_context);
+    av_buffer_unref(&frame_context);
     return true;
 }
 

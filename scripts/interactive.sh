@@ -1,7 +1,5 @@
 #!/bin/sh -e
 
-selected_audio_input="$(pactl get-default-sink).monitor"
-
 echo "Select a window to record"
 window_id=$(xdotool selectwindow)
 
@@ -14,4 +12,4 @@ read output_file_name
 output_dir=$(dirname "$output_file_name")
 mkdir -p "$output_dir"
 
-gpu-screen-recorder -w "$window_id" -c mp4 -f "$fps" -a "$selected_audio_input" -o "$output_file_name"
+gpu-screen-recorder -w "$window_id" -c mp4 -f "$fps" -a default_output -o "$output_file_name"

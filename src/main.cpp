@@ -1049,11 +1049,11 @@ static void usage_full() {
     fprintf(stderr, "  Send signal SIGUSR2 to gpu-screen-recorder (killall -SIGUSR2 gpu-screen-recorder) to pause/unpause recording. Only applicable and useful when recording (not streaming nor replay).\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "EXAMPLES:\n");
-    fprintf(stderr, "  %s -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
-    fprintf(stderr, "  %s -w screen -f 60 -a \"$(pactl get-default-sink).monitor|$(pactl get-default-source)\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
-    fprintf(stderr, "  %s -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -c mkv -r 60 -o \"$HOME/Videos\"\n", program_name);
-    fprintf(stderr, "  %s -w screen -f 60 -a \"$(pactl get-default-sink).monitor\" -c mkv -sc script.sh -r 60 -o \"$HOME/Videos\"\n", program_name);
-    fprintf(stderr, "  %s -w portal -f 60 -a \"$(pactl get-default-sink).monitor\" -restore-portal-session yes -o \"$HOME/Videos/video.mp4\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -a default_output -o \"$HOME/Videos/video.mp4\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -a \"default_output|default_input\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -a default_output -c mkv -r 60 -o \"$HOME/Videos\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -a default_output -c mkv -sc script.sh -r 60 -o \"$HOME/Videos\"\n", program_name);
+    fprintf(stderr, "  %s -w portal -f 60 -a default_output -restore-portal-session yes -o \"$HOME/Videos/video.mp4\"\n", program_name);
     //fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -q ultra -pixfmt yuv444 -o video.mp4\n");
     _exit(1);
 }

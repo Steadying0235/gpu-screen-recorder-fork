@@ -94,7 +94,7 @@ When compiling GPU Screen Recorder with portal support (`-Dportal=true`, which i
 # How to use
 Run `gpu-screen-recorder --help` to see all options and also examples.
 ## Recording
-Here is an example of how to record your monitor and the default audio output: `gpu-screen-recorder -w screen -f 60 -a "$(pactl get-default-sink).monitor" -o ~/Videos/test_video.mp4`.
+Here is an example of how to record your monitor and the default audio output: `gpu-screen-recorder -w screen -f 60 -a default_output -o ~/Videos/test_video.mp4`.
 Yyou can stop and save the recording with `Ctrl+C` or by running `killall -SIGINT gpu-screen-recorder`.
 You can see a list of monitor names to record if you use an invalid monitor name, for example: `gpu-screen-recorder -w invalid -f 60 -o video.mp4`.
 ## Streaming

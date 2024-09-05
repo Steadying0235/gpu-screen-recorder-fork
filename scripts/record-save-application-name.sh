@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # This script should be passed to gpu-screen-recorder with the -sc option, for example:
-# gpu-screen-recorder -w screen -f 60 -a "$(pactl get-default-sink).monitor" -r 60 -sc scripts/record-save-application-name.sh -c mp4 -o "$HOME/Videos"
+# gpu-screen-recorder -w screen -f 60 -a default_output -r 60 -sc scripts/record-save-application-name.sh -c mp4 -o "$HOME/Videos"
 
 window=$(xdotool getwindowfocus)
 window_name=$(xdotool getwindowclassname "$window" || xdotool getwindowname "$window" || echo "Game")

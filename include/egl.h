@@ -266,6 +266,7 @@ struct gsr_egl {
     void (*glTexParameteriv)(unsigned int target, unsigned int pname, const int *params);
     void (*glGetTexLevelParameteriv)(unsigned int target, int level, unsigned int pname, int *params);
     void (*glTexImage2D)(unsigned int target, int level, int internalFormat, int width, int height, int border, unsigned int format, unsigned int type, const void *pixels);
+    void (*glCopyImageSubData)(unsigned int srcName, unsigned int srcTarget, int srcLevel, int srcX, int srcY, int srcZ, unsigned int dstName, unsigned int dstTarget, int dstLevel, int dstX, int dstY, int dstZ, int srcWidth, int srcHeight, int srcDepth);
     void (*glGetTexImage)(unsigned int target, int level, unsigned int format, unsigned int type, void *pixels);
     void (*glGenFramebuffers)(int n, unsigned int *framebuffers);
     void (*glBindFramebuffer)(unsigned int target, unsigned int framebuffer);

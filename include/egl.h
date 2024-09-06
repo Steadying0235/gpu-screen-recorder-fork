@@ -114,7 +114,6 @@ typedef void(*__GLXextFuncPtr)(void);
 #define GL_TEXTURE_MIN_FILTER                   0x2801
 #define GL_TEXTURE_WIDTH                        0x1000
 #define GL_TEXTURE_HEIGHT                       0x1001
-#define GL_TEXTURE_INTERNAL_FORMAT              0x1003
 #define GL_NEAREST                              0x2600
 #define GL_CLAMP_TO_EDGE                        0x812F
 #define GL_LINEAR                               0x2601

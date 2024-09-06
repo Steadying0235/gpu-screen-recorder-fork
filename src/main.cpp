@@ -2705,6 +2705,11 @@ int main(int argc, char **argv) {
         disable_prime_run();
     }
 
+    if(strcmp(window_str, "portal") == 0 && is_using_prime_run()) {
+        fprintf(stderr, "Warning: use of prime-run with -w portal option is currently not supported. Disabling prime-run\n");
+        disable_prime_run();
+    }
+
     if(video_codec_is_hdr(video_codec) && !wayland) {
         fprintf(stderr, "Error: hdr video codec option %s is not available on X11\n", video_codec_to_use);
         _exit(1);

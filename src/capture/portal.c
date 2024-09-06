@@ -307,14 +307,6 @@ static int max_int(int a, int b) {
     return a > b ? a : b;
 }
 
-static int gl_texture_get_internal_image_format(gsr_egl *egl, unsigned int texture) {
-    int internal_image_format = 0;
-    egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, texture);
-    egl->glGetTexLevelParameteriv(GL_TEXTURE_EXTERNAL_OES, 0, GL_TEXTURE_INTERNAL_FORMAT, &internal_image_format);
-    egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
-    return internal_image_format;
-}
-
 static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
     (void)frame;
     (void)color_conversion;
@@ -343,7 +335,7 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
     gsr_color_conversion_draw(color_conversion, using_external_image ? self->texture_map.external_texture_id : self->texture_map.texture_id,
         (vec2i){target_x, target_y}, self->capture_size,
         (vec2i){region.x, region.y}, self->capture_size,
-        0.0f, false);
+        0.0f, using_external_image);
 
     if(self->params.record_cursor) {
         const vec2i cursor_pos = {

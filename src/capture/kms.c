@@ -515,6 +515,9 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     if(!capture_is_combined_plane)
         capture_pos = (vec2i){drm_fd->x, drm_fd->y};
 
+    self->params.egl->glFlush();
+    self->params.egl->glFinish();
+
     gsr_color_conversion_draw(color_conversion, self->external_texture_fallback ? self->external_input_texture_id : self->input_texture_id,
         (vec2i){target_x, target_y}, self->capture_size,
         capture_pos, self->capture_size,
@@ -530,8 +533,8 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
             render_drm_cursor(self, color_conversion, cursor_drm_fd, target_x, target_y, texture_rotation);
     }
 
-    //self->params.egl->glFlush();
-    //self->params.egl->glFinish();
+    self->params.egl->glFlush();
+    self->params.egl->glFinish();
 
     return 0;
 }

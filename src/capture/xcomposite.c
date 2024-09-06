@@ -325,6 +325,9 @@ static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_
     const int target_x = max_int(0, frame->width / 2 - self->texture_size.x / 2);
     const int target_y = max_int(0, frame->height / 2 - self->texture_size.y / 2);
 
+    self->params.egl->glFlush();
+    self->params.egl->glFinish();
+
     gsr_color_conversion_draw(color_conversion, window_texture_get_opengl_texture_id(&self->window_texture),
         (vec2i){target_x, target_y}, self->texture_size,
         (vec2i){0, 0}, self->texture_size,
@@ -349,10 +352,8 @@ static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_
         self->params.egl->glDisable(GL_SCISSOR_TEST);
     }
 
-    // TODO: Do video encoder specific conversion here
-
-    //self->params.egl->glFlush();
-    //self->params.egl->glFinish();
+    self->params.egl->glFlush();
+    self->params.egl->glFinish();
 
     return 0;
 }

@@ -114,6 +114,7 @@ typedef void(*__GLXextFuncPtr)(void);
 #define GL_TEXTURE_MIN_FILTER                   0x2801
 #define GL_TEXTURE_WIDTH                        0x1000
 #define GL_TEXTURE_HEIGHT                       0x1001
+#define GL_TEXTURE_INTERNAL_FORMAT              0x1003
 #define GL_NEAREST                              0x2600
 #define GL_CLAMP_TO_EDGE                        0x812F
 #define GL_LINEAR                               0x2601
@@ -265,8 +266,6 @@ struct gsr_egl {
     void (*glTexParameteriv)(unsigned int target, unsigned int pname, const int *params);
     void (*glGetTexLevelParameteriv)(unsigned int target, int level, unsigned int pname, int *params);
     void (*glTexImage2D)(unsigned int target, int level, int internalFormat, int width, int height, int border, unsigned int format, unsigned int type, const void *pixels);
-    void (*glTexSubImage2D)(unsigned int target, int level, int xoffset, int yoffset, int width, int height, unsigned int format, unsigned int type, const void *pixels);
-    void (*glCopyImageSubData)(unsigned int srcName, unsigned int srcTarget, int srcLevel, int srcX, int srcY, int srcZ, unsigned int dstName, unsigned int dstTarget, int dstLevel, int dstX, int dstY, int dstZ, int srcWidth, int srcHeight, int srcDepth);
     void (*glGetTexImage)(unsigned int target, int level, unsigned int format, unsigned int type, void *pixels);
     void (*glGenFramebuffers)(int n, unsigned int *framebuffers);
     void (*glBindFramebuffer)(unsigned int target, unsigned int framebuffer);

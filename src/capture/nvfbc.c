@@ -408,10 +408,16 @@ static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame, gsr_color
         return 0;
     }
 
+    cap_nvfbc->params.egl->glFlush();
+    cap_nvfbc->params.egl->glFinish();
+
     gsr_color_conversion_draw(color_conversion, cap_nvfbc->setup_params.dwTextures[grab_params.dwTextureIndex],
         (vec2i){0, 0}, (vec2i){frame->width, frame->height},
         (vec2i){0, 0}, (vec2i){frame->width, frame->height},
         0.0f, false);
+
+    cap_nvfbc->params.egl->glFlush();
+    cap_nvfbc->params.egl->glFinish();
 
     return 0;
 }

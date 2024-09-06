@@ -16,7 +16,6 @@ typedef struct {
     gsr_capture_portal_params params;
 
     gsr_texture_map texture_map;
-    unsigned int external_intermediate_texture;
 
     gsr_dbus dbus;
     char *session_handle;
@@ -46,11 +45,6 @@ static void gsr_capture_portal_stop(gsr_capture_portal *self) {
     if(self->texture_map.external_texture_id) {
         self->params.egl->glDeleteTextures(1, &self->texture_map.external_texture_id);
         self->texture_map.external_texture_id = 0;
-    }
-
-    if(self->external_intermediate_texture) {
-        self->params.egl->glDeleteTextures(1, &self->external_intermediate_texture);
-        self->external_intermediate_texture = 0;
     }
 
     if(self->texture_map.cursor_texture_id) {
@@ -313,6 +307,14 @@ static int max_int(int a, int b) {
     return a > b ? a : b;
 }
 
+static int gl_texture_get_internal_image_format(gsr_egl *egl, unsigned int texture) {
+    int internal_image_format = 0;
+    egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, texture);
+    egl->glGetTexLevelParameteriv(GL_TEXTURE_EXTERNAL_OES, 0, GL_TEXTURE_INTERNAL_FORMAT, &internal_image_format);
+    egl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+    return internal_image_format;
+}
+
 static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
     (void)frame;
     (void)color_conversion;
@@ -324,39 +326,21 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
     gsr_pipewire_region region = {0, 0, 0, 0};
     gsr_pipewire_region cursor_region = {0, 0, 0, 0};
     bool using_external_image = false;
-    bool resized = false;
     if(gsr_pipewire_map_texture(&self->pipewire, self->texture_map, &region, &cursor_region, self->plane_fds, &self->num_plane_fds, &using_external_image)) {
         if(region.width != self->capture_size.x || region.height != self->capture_size.y) {
             gsr_color_conversion_clear(color_conversion);
             self->capture_size.x = region.width;
             self->capture_size.y = region.height;
-            resized = true;
         }
     }
 
-    if(using_external_image && (self->external_intermediate_texture == 0 || resized)) {
-        if(self->external_intermediate_texture == 0)
-            self->params.egl->glGenTextures(1, &self->external_intermediate_texture);
-        self->params.egl->glBindTexture(GL_TEXTURE_2D, self->external_intermediate_texture);
-        self->params.egl->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, self->capture_size.x, self->capture_size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-        self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        self->params.egl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
-    }
-
-    /* The image glitches a lot unless this is done. TODO: Find a proper solution */
-    if(using_external_image) {
-        self->params.egl->glCopyImageSubData(self->texture_map.external_texture_id, GL_TEXTURE_EXTERNAL_OES, 0, 0, 0, 0,
-            self->external_intermediate_texture, GL_TEXTURE_2D, 0, 0, 0, 0,
-            self->capture_size.x, self->capture_size.y, 1);
-    }
+    self->params.egl->glFlush();
+    self->params.egl->glFinish();
     
     const int target_x = max_int(0, frame->width / 2 - self->capture_size.x / 2);
     const int target_y = max_int(0, frame->height / 2 - self->capture_size.y / 2);
 
-    gsr_color_conversion_draw(color_conversion, using_external_image ? self->external_intermediate_texture : self->texture_map.texture_id,
+    gsr_color_conversion_draw(color_conversion, using_external_image ? self->texture_map.external_texture_id : self->texture_map.texture_id,
         (vec2i){target_x, target_y}, self->capture_size,
         (vec2i){region.x, region.y}, self->capture_size,
         0.0f, false);
@@ -376,8 +360,8 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
         self->params.egl->glDisable(GL_SCISSOR_TEST);
     }
 
-    //self->params.egl->glFlush();
-    //self->params.egl->glFinish();
+    self->params.egl->glFlush();
+    self->params.egl->glFinish();
 
     return 0;
 }

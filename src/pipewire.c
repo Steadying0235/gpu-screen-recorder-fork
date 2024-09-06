@@ -663,16 +663,14 @@ static bool gsr_pipewire_bind_image_to_texture(gsr_pipewire *self, EGLImage imag
     return success;
 }
 
-static void gsr_pipewire_bind_image_to_texture_with_fallback(gsr_pipewire *self, gsr_texture_map texture_map, EGLImage image, bool *using_external_image) {
+static void gsr_pipewire_bind_image_to_texture_with_fallback(gsr_pipewire *self, gsr_texture_map texture_map, EGLImage image) {
     if(self->external_texture_fallback) {
         gsr_pipewire_bind_image_to_texture(self, image, texture_map.external_texture_id, true);
-        *using_external_image = true;
     } else {
         if(!gsr_pipewire_bind_image_to_texture(self, image, texture_map.texture_id, false)) {
             fprintf(stderr, "gsr error: gsr_pipewire_map_texture: failed to bind image to texture, trying with external texture\n");
             self->external_texture_fallback = true;
             gsr_pipewire_bind_image_to_texture(self, image, texture_map.external_texture_id, true);
-            *using_external_image = true;
         }
     }
 }
@@ -709,7 +707,8 @@ bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, g
 
     EGLImage image = gsr_pipewire_create_egl_image_with_fallback(self);
     if(image) {
-        gsr_pipewire_bind_image_to_texture_with_fallback(self, texture_map, image, using_external_image);
+        gsr_pipewire_bind_image_to_texture_with_fallback(self, texture_map, image);
+        *using_external_image = self->external_texture_fallback;
         self->egl->eglDestroyImage(self->egl->egl_display, image);
     }
 

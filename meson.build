@@ -27,6 +27,7 @@ src = [
     'src/utils.c',
     'src/library_loader.c',
     'src/cursor.c',
+    'src/damage.c',
     'src/sound.cpp',
     'src/main.cpp',
 ]

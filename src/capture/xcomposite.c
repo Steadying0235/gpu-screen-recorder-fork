@@ -2,6 +2,7 @@
 #include "../../include/window_texture.h"
 #include "../../include/utils.h"
 #include "../../include/cursor.h"
+#include "../../include/damage.h"
 #include "../../include/color_conversion.h"
 
 #include <stdlib.h>
@@ -10,7 +11,6 @@
 #include <assert.h>
 
 #include <X11/Xlib.h>
-#include <X11/extensions/Xdamage.h>
 
 #include <libavutil/frame.h>
 #include <libavcodec/avcodec.h>
@@ -34,23 +34,16 @@ typedef struct {
     Atom net_active_window_atom;
 
     gsr_cursor cursor;
-
-    int damage_event;
-    int damage_error;
-    XID damage;
-    bool damaged;
+    gsr_damage damage;
+    bool cursor_damaged;
 
     bool clear_background;
 } gsr_capture_xcomposite;
 
 static void gsr_capture_xcomposite_stop(gsr_capture_xcomposite *self) {
-    if(self->damage) {
-        XDamageDestroy(self->params.egl->x11.dpy, self->damage);
-        self->damage = None;
-    }
-
     window_texture_deinit(&self->window_texture);
     gsr_cursor_deinit(&self->cursor);
+    gsr_damage_deinit(&self->damage);
 }
 
 static int max_int(int a, int b) {
@@ -71,23 +64,6 @@ static Window get_focused_window(Display *display, Atom net_active_window_atom) 
     return None;
 }
 
-static void gsr_capture_xcomposite_setup_damage(gsr_capture_xcomposite *self, Window window) {
-    if(self->damage_event == 0)
-        return;
-
-    if(self->damage) {
-        XDamageDestroy(self->params.egl->x11.dpy, self->damage);
-        self->damage = None;
-    }
-
-    self->damage = XDamageCreate(self->params.egl->x11.dpy, window, XDamageReportNonEmpty);
-    if(self->damage) {
-        XDamageSubtract(self->params.egl->x11.dpy, self->damage, None, None);
-    } else {
-        fprintf(stderr, "gsr warning: gsr_capture_xcomposite_setup_damage: XDamageCreate failed\n");
-    }
-}
-
 static int gsr_capture_xcomposite_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVFrame *frame) {
     gsr_capture_xcomposite *self = cap->priv;
 
@@ -102,19 +78,12 @@ static int gsr_capture_xcomposite_start(gsr_capture *cap, AVCodecContext *video_
         self->window = self->params.window;
     }
 
-    if(self->params.track_damage) {
-        if(!XDamageQueryExtension(self->params.egl->x11.dpy, &self->damage_event, &self->damage_error)) {
-            fprintf(stderr, "gsr warning: gsr_capture_xcomposite_start: XDamage is not supported by your X11 server\n");
-            self->damage_event = 0;
-            self->damage_error = 0;
-        }
-    } else {
-        self->damage_event = 0;
-        self->damage_error = 0;
-    }
+    if(self->params.track_damage)
+        gsr_damage_init(&self->damage, self->params.egl->x11.dpy);
+    else
+        memset(&self->damage, 0, sizeof(self->damage));
 
-    self->damaged = true;
-    gsr_capture_xcomposite_setup_damage(self, self->window);
+    gsr_damage_set_target_window(&self->damage, self->window);
 
     /* TODO: Do these in tick, and allow error if follow_focused */
 
@@ -212,18 +181,10 @@ static void gsr_capture_xcomposite_tick(gsr_capture *cap, AVCodecContext *video_
             }
         }
 
-        if(self->damage_event && self->xev.type == self->damage_event + XDamageNotify) {
-            XDamageNotifyEvent *de = (XDamageNotifyEvent*)&self->xev;
-            XserverRegion region = XFixesCreateRegion(self->params.egl->x11.dpy, NULL, 0);
-            // Subtract all the damage, repairing the window
-            XDamageSubtract(self->params.egl->x11.dpy, de->damage, None, region);
-            XFixesDestroyRegion(self->params.egl->x11.dpy, region);
-            self->damaged = true;
-        }
-
+        gsr_damage_update(&self->damage, &self->xev);
         if(gsr_cursor_update(&self->cursor, &self->xev)) {
             if(self->params.record_cursor && self->cursor.visible) {
-                self->damaged = true;
+                self->cursor_damaged = true;
             }
         }
     }
@@ -262,7 +223,7 @@ static void gsr_capture_xcomposite_tick(gsr_capture *cap, AVCodecContext *video_
 
             self->window_resized = false;
             self->clear_background = true;
-            gsr_capture_xcomposite_setup_damage(self, self->window);
+            gsr_damage_set_target_window(&self->damage, self->window);
         }
     }
 
@@ -286,18 +247,19 @@ static void gsr_capture_xcomposite_tick(gsr_capture *cap, AVCodecContext *video_
         self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
         self->clear_background = true;
-        gsr_capture_xcomposite_setup_damage(self, self->window);
+        gsr_damage_set_target_window(&self->damage, self->window);
     }
 }
 
 static bool gsr_capture_xcomposite_is_damaged(gsr_capture *cap) {
     gsr_capture_xcomposite *self = cap->priv;
-    return self->damage_event ? self->damaged : true;
+    return gsr_damage_is_damaged(&self->damage) || self->cursor_damaged;
 }
 
 static void gsr_capture_xcomposite_clear_damage(gsr_capture *cap) {
     gsr_capture_xcomposite *self = cap->priv;
-    self->damaged = false;
+    gsr_damage_clear(&self->damage);
+    self->cursor_damaged = false;
 }
 
 static bool gsr_capture_xcomposite_should_stop(gsr_capture *cap, bool *err) {

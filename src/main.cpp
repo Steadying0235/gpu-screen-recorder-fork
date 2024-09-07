@@ -3266,11 +3266,38 @@ int main(int argc, char **argv) {
         }
     }
 
+    std::thread amix_thread;
+    if(uses_amix) {
+        amix_thread = std::thread([&]() {
+            AVFrame *aframe = av_frame_alloc();
+            while(running) {
+                std::lock_guard<std::mutex> lock(audio_filter_mutex);
+                for(AudioTrack &audio_track : audio_tracks) {
+                    if(!audio_track.sink)
+                        continue;
+
+                    int err = 0;
+                    while ((err = av_buffersink_get_frame(audio_track.sink, aframe)) >= 0) {
+                        aframe->pts = audio_track.pts;
+                        err = avcodec_send_frame(audio_track.codec_context, aframe);
+                        if(err >= 0){
+                            // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                            receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, aframe->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
+                        } else {
+                            fprintf(stderr, "Failed to encode audio!\n");
+                        }
+                        av_frame_unref(aframe);
+                        audio_track.pts += audio_track.codec_context->frame_size;
+                    }
+                }
+            }
+            av_frame_free(&aframe);
+        });
+    }
+
     // Set update_fps to 24 to test if duplicate/delayed frames cause video/audio desync or too fast/slow video.
     const double update_fps = fps + 190;
     bool should_stop_error = false;
-
-    AVFrame *aframe = av_frame_alloc();
 
     int64_t video_pts_counter = 0;
     int64_t video_prev_pts = 0;
@@ -3285,29 +3312,6 @@ int main(int argc, char **argv) {
         if(gsr_capture_should_stop(capture, &should_stop_error)) {
             running = 0;
             break;
-        }
-
-        // TODO: Move to another thread, since this shouldn't be locked to video encoding fps
-        {
-            std::lock_guard<std::mutex> lock(audio_filter_mutex);
-            for(AudioTrack &audio_track : audio_tracks) {
-                if(!audio_track.sink)
-                    continue;
-
-                int err = 0;
-                while ((err = av_buffersink_get_frame(audio_track.sink, aframe)) >= 0) {
-                    aframe->pts = audio_track.pts;
-                    err = avcodec_send_frame(audio_track.codec_context, aframe);
-                    if(err >= 0){
-                        // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                        receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, aframe->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
-                    } else {
-                        fprintf(stderr, "Failed to encode audio!\n");
-                    }
-                    av_frame_unref(aframe);
-                    audio_track.pts += audio_track.codec_context->frame_size;
-                }
-            }
         }
 
         const bool damaged = !capture->is_damaged || capture->is_damaged(capture);
@@ -3431,7 +3435,8 @@ int main(int argc, char **argv) {
         }
     }
 
-    av_frame_free(&aframe);
+    if(amix_thread.joinable())
+        amix_thread.join();
 
     if (replay_buffer_size_secs == -1 && av_write_trailer(av_format_context) != 0) {
         fprintf(stderr, "Failed to write trailer\n");

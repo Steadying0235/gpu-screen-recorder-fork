@@ -156,6 +156,7 @@ typedef struct {
     vec2i size;
     uint32_t connector_id;
     gsr_monitor_rotation rotation;
+    uint32_t monitor_identifier; /* crtc id */
 } gsr_x11_output;
 
 typedef struct {
@@ -163,6 +164,7 @@ typedef struct {
     Window window;
     gsr_x11_output outputs[GSR_MAX_OUTPUTS];
     int num_outputs;
+    XEvent xev;
 } gsr_x11;
 
 typedef struct {
@@ -311,10 +313,12 @@ struct gsr_egl {
 bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland, bool is_monitor_capture);
 void gsr_egl_unload(gsr_egl *self);
 
-void gsr_egl_update(gsr_egl *self);
+/* Returns true if an event is available */
+bool gsr_egl_update(gsr_egl *self);
 /* Does opengl swap with egl or glx, depending on which one is active */
 void gsr_egl_swap_buffers(gsr_egl *self);
 
-gsr_display_server gsr_egl_get_display_server(const gsr_egl *egl);
+gsr_display_server gsr_egl_get_display_server(const gsr_egl *self);
+XEvent* gsr_egl_get_event_data(gsr_egl *self);
 
 #endif /* GSR_EGL_H */

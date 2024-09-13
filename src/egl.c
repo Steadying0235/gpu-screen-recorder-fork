@@ -152,6 +152,7 @@ static void store_x11_monitor(const gsr_monitor *monitor, void *userdata) {
     egl->x11.outputs[index].size = monitor->size;
     egl->x11.outputs[index].connector_id = monitor->connector_id;
     egl->x11.outputs[index].rotation = monitor->rotation;
+    egl->x11.outputs[index].monitor_identifier = monitor->monitor_identifier;
     ++egl->x11.num_outputs;
 }
 
@@ -675,12 +676,23 @@ void gsr_egl_unload(gsr_egl *self) {
     memset(self, 0, sizeof(gsr_egl));
 }
 
-void gsr_egl_update(gsr_egl *self) {
-    if(!self->wayland.dpy)
-        return;
-
-    // TODO: pselect on wl_display_get_fd before doing dispatch
-    wl_display_dispatch(self->wayland.dpy);
+bool gsr_egl_update(gsr_egl *self) {
+    switch(gsr_egl_get_display_server(self)) {
+        case GSR_DISPLAY_SERVER_X11: {
+            if(XPending(self->x11.dpy)) {
+                XNextEvent(self->x11.dpy, &self->x11.xev);
+                return true;
+            }
+            return false;
+        }
+        case GSR_DISPLAY_SERVER_WAYLAND: {
+            // TODO: pselect on wl_display_get_fd before doing dispatch
+            const bool events_available = wl_display_dispatch_pending(self->wayland.dpy) > 0;
+            wl_display_flush(self->wayland.dpy);
+            return events_available;
+        }
+    }
+    return false;
 }
 
 void gsr_egl_swap_buffers(gsr_egl *self) {
@@ -691,9 +703,16 @@ void gsr_egl_swap_buffers(gsr_egl *self) {
     }
 }
 
-gsr_display_server gsr_egl_get_display_server(const gsr_egl *egl) {
-    if(egl->wayland.dpy)
+gsr_display_server gsr_egl_get_display_server(const gsr_egl *self) {
+    if(self->wayland.dpy)
         return GSR_DISPLAY_SERVER_WAYLAND;
     else
         return GSR_DISPLAY_SERVER_X11;
+}
+
+XEvent* gsr_egl_get_event_data(gsr_egl *self) {
+    if(gsr_egl_get_display_server(self) == GSR_DISPLAY_SERVER_X11)
+        return &self->x11.xev;
+    else
+        return NULL;
 }

@@ -16,6 +16,11 @@ void gsr_capture_tick(gsr_capture *cap, AVCodecContext *video_codec_context) {
         cap->tick(cap, video_codec_context);
 }
 
+void gsr_capture_on_event(gsr_capture *cap, gsr_egl *egl) {
+    if(cap->on_event)
+        cap->on_event(cap, egl);
+}
+
 bool gsr_capture_should_stop(gsr_capture *cap, bool *err) {
     assert(cap->started);
     if(cap->should_stop)

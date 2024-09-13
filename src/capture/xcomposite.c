@@ -2,7 +2,6 @@
 #include "../../include/window_texture.h"
 #include "../../include/utils.h"
 #include "../../include/cursor.h"
-#include "../../include/damage.h"
 #include "../../include/color_conversion.h"
 
 #include <stdlib.h>
@@ -17,12 +16,12 @@
 
 typedef struct {
     gsr_capture_xcomposite_params params;
-    XEvent xev;
 
     bool should_stop;
     bool stop_is_error;
     bool window_resized;
     bool follow_focused_initialized;
+    bool init_new_window;
 
     Window window;
     vec2i window_size;
@@ -34,8 +33,6 @@ typedef struct {
     Atom net_active_window_atom;
 
     gsr_cursor cursor;
-    gsr_damage damage;
-    bool cursor_damaged;
 
     bool clear_background;
 } gsr_capture_xcomposite;
@@ -43,7 +40,6 @@ typedef struct {
 static void gsr_capture_xcomposite_stop(gsr_capture_xcomposite *self) {
     window_texture_deinit(&self->window_texture);
     gsr_cursor_deinit(&self->cursor);
-    gsr_damage_deinit(&self->damage);
 }
 
 static int max_int(int a, int b) {
@@ -77,13 +73,6 @@ static int gsr_capture_xcomposite_start(gsr_capture *cap, AVCodecContext *video_
     } else {
         self->window = self->params.window;
     }
-
-    if(self->params.track_damage)
-        gsr_damage_init(&self->damage, self->params.egl->x11.dpy);
-    else
-        memset(&self->damage, 0, sizeof(self->damage));
-
-    gsr_damage_set_target_window(&self->damage, self->window);
 
     /* TODO: Do these in tick, and allow error if follow_focused */
 
@@ -141,59 +130,12 @@ static void gsr_capture_xcomposite_tick(gsr_capture *cap, AVCodecContext *video_
     (void)video_codec_context;
     gsr_capture_xcomposite *self = cap->priv;
 
-    bool init_new_window = false;
-    while(XPending(self->params.egl->x11.dpy)) {
-        XNextEvent(self->params.egl->x11.dpy, &self->xev);
-
-        switch(self->xev.type) {
-            case DestroyNotify: {
-                /* Window died (when not following focused window), so we stop recording */
-                if(!self->params.follow_focused && self->xev.xdestroywindow.window == self->window) {
-                    self->should_stop = true;
-                    self->stop_is_error = false;
-                }
-                break;
-            }
-            case Expose: {
-                /* Requires window texture recreate */
-                if(self->xev.xexpose.count == 0 && self->xev.xexpose.window == self->window) {
-                    self->window_resize_timer = clock_get_monotonic_seconds();
-                    self->window_resized = true;
-                }
-                break;
-            }
-            case ConfigureNotify: {
-                /* Window resized */
-                if(self->xev.xconfigure.window == self->window && (self->xev.xconfigure.width != self->window_size.x || self->xev.xconfigure.height != self->window_size.y)) {
-                    self->window_size.x = max_int(self->xev.xconfigure.width, 0);
-                    self->window_size.y = max_int(self->xev.xconfigure.height, 0);
-                    self->window_resize_timer = clock_get_monotonic_seconds();
-                    self->window_resized = true;
-                }
-                break;
-            }
-            case PropertyNotify: {
-                /* Focused window changed */
-                if(self->params.follow_focused && self->xev.xproperty.atom == self->net_active_window_atom) {
-                    init_new_window = true;
-                }
-                break;
-            }
-        }
-
-        gsr_damage_update(&self->damage, &self->xev);
-        if(gsr_cursor_update(&self->cursor, &self->xev)) {
-            if(self->params.record_cursor && self->cursor.visible) {
-                self->cursor_damaged = true;
-            }
-        }
-    }
-
     if(self->params.follow_focused && !self->follow_focused_initialized) {
-        init_new_window = true;
+        self->init_new_window = true;
     }
 
-    if(init_new_window) {
+    if(self->init_new_window) {
+        self->init_new_window = false;
         Window focused_window = get_focused_window(self->params.egl->x11.dpy, self->net_active_window_atom);
         if(focused_window != self->window || !self->follow_focused_initialized) {
             self->follow_focused_initialized = true;
@@ -223,7 +165,6 @@ static void gsr_capture_xcomposite_tick(gsr_capture *cap, AVCodecContext *video_
 
             self->window_resized = false;
             self->clear_background = true;
-            gsr_damage_set_target_window(&self->damage, self->window);
         }
     }
 
@@ -247,19 +188,49 @@ static void gsr_capture_xcomposite_tick(gsr_capture *cap, AVCodecContext *video_
         self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
         self->clear_background = true;
-        gsr_damage_set_target_window(&self->damage, self->window);
     }
 }
 
-static bool gsr_capture_xcomposite_is_damaged(gsr_capture *cap) {
+static void gsr_capture_xcomposite_on_event(gsr_capture *cap, gsr_egl *egl) {
     gsr_capture_xcomposite *self = cap->priv;
-    return gsr_damage_is_damaged(&self->damage) || self->cursor_damaged;
-}
+    XEvent *xev = gsr_egl_get_event_data(egl);
+    switch(xev->type) {
+        case DestroyNotify: {
+            /* Window died (when not following focused window), so we stop recording */
+            if(!self->params.follow_focused && xev->xdestroywindow.window == self->window) {
+                self->should_stop = true;
+                self->stop_is_error = false;
+            }
+            break;
+        }
+        case Expose: {
+            /* Requires window texture recreate */
+            if(xev->xexpose.count == 0 && xev->xexpose.window == self->window) {
+                self->window_resize_timer = clock_get_monotonic_seconds();
+                self->window_resized = true;
+            }
+            break;
+        }
+        case ConfigureNotify: {
+            /* Window resized */
+            if(xev->xconfigure.window == self->window && (xev->xconfigure.width != self->window_size.x || xev->xconfigure.height != self->window_size.y)) {
+                self->window_size.x = max_int(xev->xconfigure.width, 0);
+                self->window_size.y = max_int(xev->xconfigure.height, 0);
+                self->window_resize_timer = clock_get_monotonic_seconds();
+                self->window_resized = true;
+            }
+            break;
+        }
+        case PropertyNotify: {
+            /* Focused window changed */
+            if(self->params.follow_focused && xev->xproperty.atom == self->net_active_window_atom) {
+                self->init_new_window = true;
+            }
+            break;
+        }
+    }
 
-static void gsr_capture_xcomposite_clear_damage(gsr_capture *cap) {
-    gsr_capture_xcomposite *self = cap->priv;
-    gsr_damage_clear(&self->damage);
-    self->cursor_damaged = false;
+    gsr_cursor_update(&self->cursor, xev);
 }
 
 static bool gsr_capture_xcomposite_should_stop(gsr_capture *cap, bool *err) {
@@ -325,6 +296,11 @@ static gsr_source_color gsr_capture_xcomposite_get_source_color(gsr_capture *cap
     return GSR_SOURCE_COLOR_RGB;
 }
 
+static uint64_t gsr_capture_xcomposite_get_window_id(gsr_capture *cap) {
+    gsr_capture_xcomposite *self = cap->priv;
+    return self->window;
+}
+
 static void gsr_capture_xcomposite_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
     (void)video_codec_context;
     if(cap->priv) {
@@ -355,14 +331,14 @@ gsr_capture* gsr_capture_xcomposite_create(const gsr_capture_xcomposite_params *
     
     *cap = (gsr_capture) {
         .start = gsr_capture_xcomposite_start,
+        .on_event = gsr_capture_xcomposite_on_event,
         .tick = gsr_capture_xcomposite_tick,
-        .is_damaged = gsr_capture_xcomposite_is_damaged,
-        .clear_damage = gsr_capture_xcomposite_clear_damage,
         .should_stop = gsr_capture_xcomposite_should_stop,
         .capture = gsr_capture_xcomposite_capture,
         .capture_end = NULL,
         .get_source_color = gsr_capture_xcomposite_get_source_color,
         .uses_external_image = NULL,
+        .get_window_id = gsr_capture_xcomposite_get_window_id,
         .destroy = gsr_capture_xcomposite_destroy,
         .priv = cap_xcomp
     };

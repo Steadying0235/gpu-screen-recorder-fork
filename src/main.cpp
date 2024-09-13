@@ -11,6 +11,7 @@ extern "C" {
 #include "../include/encoder/video/software.h"
 #include "../include/egl.h"
 #include "../include/utils.h"
+#include "../include/damage.h"
 #include "../include/color_conversion.h"
 }
 
@@ -1036,7 +1037,7 @@ static void usage_full() {
     //fprintf(stderr, "  -pixfmt  The pixel format to use for the output video. yuv420 is the most common format and is best supported, but the color is compressed, so colors can look washed out and certain colors of text can look bad. Use yuv444 for no color compression, but the video may not work everywhere and it may not work with hardware video decoding. Optional, set to 'yuv420' by default\n");
     fprintf(stderr, "  -o    The output file path. If omitted then the encoded data is sent to stdout. Required in replay mode (when using -r).\n");
     fprintf(stderr, "        In replay mode this has to be a directory instead of a file.\n");
-    fprintf(stderr, "        The directory to the file is created (recursively) if it doesn't already exist.\n");
+    fprintf(stderr, "        Note: the directory to the file is created automatically if it doesn't already exist.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -v    Prints per second, fps updates. Optional, set to 'yes' by default.\n");
     fprintf(stderr, "\n");
@@ -1853,8 +1854,8 @@ static void list_audio_devices_command() {
     _exit(0);
 }
 
-static gsr_capture* create_capture_impl(const char *window_str, const char *screen_region, bool wayland, gsr_egl *egl, int fps, VideoCodec video_codec, gsr_color_range color_range,
-    bool record_cursor, bool track_damage, bool use_software_video_encoder, bool restore_portal_session, const char *portal_session_token_filepath,
+static gsr_capture* create_capture_impl(std::string &window_str, const char *screen_region, bool wayland, gsr_egl *egl, int fps, VideoCodec video_codec, gsr_color_range color_range,
+    bool record_cursor, bool use_software_video_encoder, bool restore_portal_session, const char *portal_session_token_filepath,
     gsr_color_depth color_depth)
 {
     vec2i region_size = { 0, 0 };
@@ -1862,7 +1863,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
     bool follow_focused = false;
 
     gsr_capture *capture = nullptr;
-    if(strcmp(window_str, "focused") == 0) {
+    if(strcmp(window_str.c_str(), "focused") == 0) {
         if(wayland) {
             fprintf(stderr, "Error: GPU Screen Recorder window capture only works in a pure X11 session. Xwayland is not supported. You can record a monitor instead on wayland\n");
             _exit(2);
@@ -1884,7 +1885,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
         }
 
         follow_focused = true;
-    } else if(strcmp(window_str, "portal") == 0) {
+    } else if(strcmp(window_str.c_str(), "portal") == 0) {
 #ifdef GSR_PORTAL
         // Desktop portal capture on x11 doesn't seem to be hardware accelerated
         if(!wayland) {
@@ -1910,12 +1911,12 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
         fprintf(stderr, "Error: option '-w portal' used but GPU Screen Recorder was compiled without desktop portal support\n");
         _exit(2);
 #endif
-    } else if(contains_non_hex_number(window_str)) {
+    } else if(contains_non_hex_number(window_str.c_str())) {
         if(monitor_capture_use_drm(egl, wayland)) {
             const bool is_x11 = gsr_egl_get_display_server(egl) == GSR_DISPLAY_SERVER_X11;
             const gsr_connection_type connection_type = is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
 
-            if(strcmp(window_str, "screen") == 0) {
+            if(strcmp(window_str.c_str(), "screen") == 0) {
                 FirstOutputCallback first_output;
                 first_output.output_name = NULL;
                 for_each_active_monitor_output(egl, connection_type, get_first_output, &first_output);
@@ -1928,20 +1929,20 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 }
             } else {
                 gsr_monitor gmon;
-                if(!get_monitor_by_name(egl, connection_type, window_str, &gmon)) {
-                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
+                if(!get_monitor_by_name(egl, connection_type, window_str.c_str(), &gmon)) {
+                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str.c_str());
                     fprintf(stderr, "    \"screen\"\n");
                     for_each_active_monitor_output(egl, connection_type, monitor_output_callback_print, NULL);
                     _exit(1);
                 }
             }
         } else {
-            if(strcmp(window_str, "screen") != 0 && strcmp(window_str, "screen-direct") != 0 && strcmp(window_str, "screen-direct-force") != 0) {
+            if(strcmp(window_str.c_str(), "screen") != 0 && strcmp(window_str.c_str(), "screen-direct") != 0 && strcmp(window_str.c_str(), "screen-direct-force") != 0) {
                 gsr_monitor gmon;
-                if(!get_monitor_by_name(egl, GSR_CONNECTION_X11, window_str, &gmon)) {
+                if(!get_monitor_by_name(egl, GSR_CONNECTION_X11, window_str.c_str(), &gmon)) {
                     const int screens_width = XWidthOfScreen(DefaultScreenOfDisplay(egl->x11.dpy));
                     const int screens_height = XWidthOfScreen(DefaultScreenOfDisplay(egl->x11.dpy));
-                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str);
+                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str.c_str());
                     fprintf(stderr, "    \"screen\"    (%dx%d+%d+%d)\n", screens_width, screens_height, 0, 0);
                     fprintf(stderr, "    \"screen-direct\"    (%dx%d+%d+%d)\n", screens_width, screens_height, 0, 0);
                     fprintf(stderr, "    \"screen-direct-force\"    (%dx%d+%d+%d)\n", screens_width, screens_height, 0, 0);
@@ -1952,8 +1953,8 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
         }
 
         if(egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA && !wayland) {
-            const char *capture_target = window_str;
-            bool direct_capture = strcmp(window_str, "screen-direct") == 0;
+            const char *capture_target = window_str.c_str();
+            bool direct_capture = strcmp(window_str.c_str(), "screen-direct") == 0;
             if(direct_capture) {
                 capture_target = "screen";
                 // TODO: Temporary disable direct capture because push model causes stuttering when it's direct capturing. This might be a nvfbc bug. This does not happen when using a compositor.
@@ -1961,7 +1962,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
                 fprintf(stderr, "Warning: screen-direct has temporary been disabled as it causes stuttering. This is likely a NvFBC bug. Falling back to \"screen\".\n");
             }
 
-            if(strcmp(window_str, "screen-direct-force") == 0) {
+            if(strcmp(window_str.c_str(), "screen-direct-force") == 0) {
                 direct_capture = true;
                 capture_target = "screen";
             }
@@ -1983,7 +1984,7 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
         } else {
             gsr_capture_kms_params kms_params;
             kms_params.egl = egl;
-            kms_params.display_to_capture = window_str;
+            kms_params.display_to_capture = window_str.c_str();
             kms_params.color_depth = color_depth;
             kms_params.color_range = color_range;
             kms_params.record_cursor = record_cursor;
@@ -1999,9 +2000,9 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
         }
 
         errno = 0;
-        src_window_id = strtol(window_str, nullptr, 0);
+        src_window_id = strtol(window_str.c_str(), nullptr, 0);
         if(src_window_id == None || errno == EINVAL) {
-            fprintf(stderr, "Invalid window number %s\n", window_str);
+            fprintf(stderr, "Invalid window number %s\n", window_str.c_str());
             usage();
         }
     }
@@ -2014,7 +2015,6 @@ static gsr_capture* create_capture_impl(const char *window_str, const char *scre
         xcomposite_params.region_size = region_size;
         xcomposite_params.color_range = color_range;
         xcomposite_params.record_cursor = record_cursor;
-        xcomposite_params.track_damage = track_damage;
         xcomposite_params.color_depth = color_depth;
         capture = gsr_capture_xcomposite_create(&xcomposite_params);
         if(!capture)
@@ -2677,10 +2677,9 @@ int main(int argc, char **argv) {
         replay_buffer_size_secs += std::ceil(keyint); // Add a few seconds to account of lost packets because of non-keyframe packets skipped
     }
 
-    // TODO: Remove strdup
-    const char *window_str = strdup(args["-w"].value());
+    std::string window_str = args["-w"].value();
 
-    if(!restore_portal_session && strcmp(window_str, "portal") == 0) {
+    if(!restore_portal_session && strcmp(window_str.c_str(), "portal") == 0) {
         fprintf(stderr, "gsr info: option '-w portal' was used without '-restore-portal-session yes'. The previous screencast session will be ignored\n");
     }
 
@@ -2705,7 +2704,7 @@ int main(int argc, char **argv) {
         disable_prime_run();
     }
 
-    if(strcmp(window_str, "portal") == 0 && is_using_prime_run()) {
+    if(strcmp(window_str.c_str(), "portal") == 0 && is_using_prime_run()) {
         fprintf(stderr, "Warning: use of prime-run with -w portal option is currently not supported. Disabling prime-run\n");
         disable_prime_run();
     }
@@ -2715,7 +2714,7 @@ int main(int argc, char **argv) {
         _exit(1);
     }
 
-    const bool is_monitor_capture = strcmp(window_str, "focused") != 0 && strcmp(window_str, "portal") != 0 && contains_non_hex_number(window_str);
+    const bool is_monitor_capture = strcmp(window_str.c_str(), "focused") != 0 && strcmp(window_str.c_str(), "portal") != 0 && contains_non_hex_number(window_str.c_str());
     gsr_egl egl;
     if(!gsr_egl_load(&egl, dpy, wayland, is_monitor_capture)) {
         fprintf(stderr, "gsr error: failed to load opengl\n");
@@ -2817,7 +2816,7 @@ int main(int argc, char **argv) {
 
     const char *screen_region = args["-s"].value();
 
-    if(screen_region && strcmp(window_str, "focused") != 0) {
+    if(screen_region && strcmp(window_str.c_str(), "focused") != 0) {
         fprintf(stderr, "Error: option -s is only available when using -w focused\n");
         usage();
     }
@@ -2900,7 +2899,7 @@ int main(int argc, char **argv) {
     const AVCodec *video_codec_f = select_video_codec_with_fallback(&video_codec, video_codec_to_use, file_extension.c_str(), use_software_video_encoder, &egl);
 
     const gsr_color_depth color_depth = video_codec_to_bit_depth(video_codec);
-    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, &egl, fps, video_codec, color_range, record_cursor, framerate_mode == FramerateMode::CONTENT, use_software_video_encoder, restore_portal_session, portal_session_token_filepath, color_depth);
+    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, &egl, fps, video_codec, color_range, record_cursor, use_software_video_encoder, restore_portal_session, portal_session_token_filepath, color_depth);
 
     // (Some?) livestreaming services require at least one audio track to work.
     // If not audio is provided then create one silent audio track.
@@ -3087,7 +3086,6 @@ int main(int argc, char **argv) {
     }
 
     double fps_start_time = clock_get_monotonic_seconds();
-    double frame_timer_start = fps_start_time - target_fps; // We want to capture the first frame immediately
     int fps_counter = 0;
     int damage_fps_counter = 0;
 
@@ -3166,7 +3164,7 @@ int main(int argc, char **argv) {
 
                     if(paused) {
                         if(!audio_device.sound_device.handle)
-                            usleep(timeout_ms * 1000);
+                            av_usleep(timeout_ms * 1000);
 
                         continue;
                     }
@@ -3229,7 +3227,7 @@ int main(int argc, char **argv) {
                     }
 
                     if(!audio_device.sound_device.handle)
-                        usleep(timeout_ms * 1000);
+                        av_usleep(timeout_ms * 1000);
 
                     if(got_audio_data) {
                         // TODO: Instead of converting audio, get float audio from alsa. Or does alsa do conversion internally to get this format?
@@ -3290,13 +3288,14 @@ int main(int argc, char **argv) {
                         audio_track.pts += audio_track.codec_context->frame_size;
                     }
                 }
+                av_usleep(5 * 1000); // 5 milliseconds
             }
             av_frame_free(&aframe);
         });
     }
 
     // Set update_fps to 24 to test if duplicate/delayed frames cause video/audio desync or too fast/slow video.
-    const double update_fps = fps + 190;
+    const double update_fps = fps;
     bool should_stop_error = false;
 
     int64_t video_pts_counter = 0;
@@ -3304,25 +3303,50 @@ int main(int argc, char **argv) {
 
     bool hdr_metadata_set = false;
 
-    while(running) {
-        double frame_start = clock_get_monotonic_seconds();
+    const double damage_timeout_seconds = framerate_mode == FramerateMode::CONTENT ? 0.5 : 0.1;
+    bool use_damage_tracking = false;
+    gsr_damage damage;
+    memset(&damage, 0, sizeof(damage));
+    if(gsr_egl_get_display_server(&egl) == GSR_DISPLAY_SERVER_X11) {
+        gsr_damage_init(&damage, &egl, record_cursor);
+        use_damage_tracking = true;
+    }
 
+    if(is_monitor_capture)
+        gsr_damage_set_target_monitor(&damage, window_str.c_str());
+
+    while(running) {
+        const double frame_start = clock_get_monotonic_seconds();
+
+        while(gsr_egl_update(&egl)) {
+            gsr_capture_on_event(capture, &egl);
+            gsr_damage_update(&damage, gsr_egl_get_event_data(&egl));
+        }
         gsr_capture_tick(capture, video_codec_context);
+
+        if(!is_monitor_capture) {
+            Window damage_target_window = 0;
+            if(capture->get_window_id)
+                damage_target_window = capture->get_window_id(capture);
+
+            if(damage_target_window != 0)
+                gsr_damage_set_target_window(&damage, damage_target_window);
+        }
+
         should_stop_error = false;
         if(gsr_capture_should_stop(capture, &should_stop_error)) {
             running = 0;
             break;
         }
 
-        const bool damaged = !capture->is_damaged || capture->is_damaged(capture);
+        const bool damaged = !use_damage_tracking || gsr_damage_is_damaged(&damage);
         if(damaged) {
             ++damage_fps_counter;
         }
 
         ++fps_counter;
         double time_now = clock_get_monotonic_seconds();
-        double frame_timer_elapsed = time_now - frame_timer_start;
-        double elapsed = time_now - fps_start_time;
+        const double elapsed = time_now - fps_start_time;
         if (elapsed >= 1.0) {
             if(verbose) {
                 fprintf(stderr, "update fps: %d, damage fps: %d\n", fps_counter, damage_fps_counter);
@@ -3332,52 +3356,47 @@ int main(int argc, char **argv) {
             damage_fps_counter = 0;
         }
 
-        double frame_time_overflow = frame_timer_elapsed - target_fps;
-        if (frame_time_overflow >= 0.0 && damaged) {
-            if(capture->clear_damage)
-                capture->clear_damage(capture);
-            frame_time_overflow = std::min(frame_time_overflow, target_fps);
-            frame_timer_start = time_now - frame_time_overflow;
+        const double this_video_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
+        const int64_t expected_frames = std::round((this_video_frame_time - record_start_time) / target_fps);
+        int num_frames = std::max((int64_t)0LL, expected_frames - video_pts_counter);
+        const double num_frames_seconds = num_frames * target_fps;
+        if((damaged || num_frames_seconds >= damage_timeout_seconds) && !paused/* && fps_counter < fps + 100*/) {
+            gsr_damage_clear(&damage);
 
-            const double this_video_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
-            const int64_t expected_frames = std::round((this_video_frame_time - record_start_time) / target_fps);
-            const int num_frames = framerate_mode == FramerateMode::CONSTANT ? std::max((int64_t)0LL, expected_frames - video_pts_counter) : 1;
+            egl.glClear(0);
+            gsr_capture_capture(capture, video_frame, &color_conversion);
+            gsr_egl_swap_buffers(&egl);
 
-            if(num_frames > 0 && !paused) {
-                egl.glClear(0);
-                gsr_capture_capture(capture, video_frame, &color_conversion);
-                gsr_egl_swap_buffers(&egl);
+            gsr_video_encoder_copy_textures_to_frame(video_encoder, video_frame);
 
-                gsr_video_encoder_copy_textures_to_frame(video_encoder, video_frame);
+            if(hdr && !hdr_metadata_set && replay_buffer_size_secs == -1 && add_hdr_metadata_to_video_stream(capture, video_stream))
+                hdr_metadata_set = true;
 
-                if(hdr && !hdr_metadata_set && replay_buffer_size_secs == -1 && add_hdr_metadata_to_video_stream(capture, video_stream))
-                    hdr_metadata_set = true;
-
-                // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
-                for(int i = 0; i < num_frames; ++i) {
-                    if(framerate_mode == FramerateMode::CONSTANT) {
-                        video_frame->pts = video_pts_counter + i;
-                    } else {
-                        video_frame->pts = (this_video_frame_time - record_start_time) * (double)AV_TIME_BASE;
-                        const bool same_pts = video_frame->pts == video_prev_pts;
-                        video_prev_pts = video_frame->pts;
-                        if(same_pts)
-                            continue;
-                    }
-
-                    int ret = avcodec_send_frame(video_codec_context, video_frame);
-                    if(ret == 0) {
-                        // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                        receive_frames(video_codec_context, VIDEO_STREAM_INDEX, video_stream, video_frame->pts, av_format_context,
-                            record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
-                    } else {
-                        fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
-                    }
+            // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
+            const int num_frames_to_encode = framerate_mode == FramerateMode::CONSTANT ? num_frames : 1;
+            for(int i = 0; i < num_frames_to_encode; ++i) {
+                if(framerate_mode == FramerateMode::CONSTANT) {
+                    video_frame->pts = video_pts_counter + i;
+                } else {
+                    video_frame->pts = (this_video_frame_time - record_start_time) * (double)AV_TIME_BASE;
+                    const bool same_pts = video_frame->pts == video_prev_pts;
+                    video_prev_pts = video_frame->pts;
+                    if(same_pts)
+                        continue;
                 }
 
-                gsr_capture_capture_end(capture, video_frame);
-                video_pts_counter += num_frames;
+                int ret = avcodec_send_frame(video_codec_context, video_frame);
+                if(ret == 0) {
+                    // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                    receive_frames(video_codec_context, VIDEO_STREAM_INDEX, video_stream, video_frame->pts, av_format_context,
+                        record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
+                } else {
+                    fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
+                }
             }
+
+            gsr_capture_capture_end(capture, video_frame);
+            video_pts_counter += num_frames;
         }
 
         if(toggle_pause == 1) {
@@ -3409,11 +3428,15 @@ int main(int argc, char **argv) {
             save_replay_async(video_codec_context, VIDEO_STREAM_INDEX, audio_tracks, frame_data_queue, frames_erased, filename, container_format, file_extension, write_output_mutex, date_folders, hdr, capture);
         }
 
-        double frame_end = clock_get_monotonic_seconds();
-        double frame_sleep_fps = 1.0 / update_fps;
-        double sleep_time = frame_sleep_fps - (frame_end - frame_start);
-        if(sleep_time > 0.0)
-            usleep(sleep_time * 1000.0 * 1000.0);
+        const double frame_end = clock_get_monotonic_seconds();
+        const double frame_sleep_fps = 1.0 / update_fps;
+        const double sleep_time = frame_sleep_fps - (frame_end - frame_start);
+        if(sleep_time > 0.0) {
+           if(damaged)
+               av_usleep(sleep_time * 1000.0 * 1000.0);
+            else
+                av_usleep(2 * 1000.0); // 2 milliseconds
+        }
     }
 
     running = 0;
@@ -3445,6 +3468,7 @@ int main(int argc, char **argv) {
     if(replay_buffer_size_secs == -1 && !(output_format->flags & AVFMT_NOFILE))
         avio_close(av_format_context->pb);
 
+    gsr_damage_deinit(&damage);
     gsr_color_conversion_deinit(&color_conversion);
     gsr_video_encoder_destroy(video_encoder, video_codec_context);
     gsr_capture_destroy(capture, video_codec_context);
@@ -3458,7 +3482,6 @@ int main(int argc, char **argv) {
     }
 
     //av_frame_free(&video_frame);
-    free((void*)window_str);
     free(empty_audio);
     // We do an _exit here because cuda uses at_exit to do _something_ that causes the program to freeze,
     // but only on some nvidia driver versions on some gpus (RTX?), and _exit exits the program without calling

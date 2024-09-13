@@ -4,7 +4,6 @@
 #include "../../include/cursor.h"
 #include "../../kms/client/kms_client.h"
 
-#include <X11/Xlib.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -50,7 +49,6 @@ typedef struct {
 
     bool is_x11;
     gsr_cursor x11_cursor;
-    XEvent xev;
 } gsr_capture_kms;
 
 static void gsr_capture_kms_cleanup_kms_fds(gsr_capture_kms *self) {
@@ -199,17 +197,13 @@ static int gsr_capture_kms_start(gsr_capture *cap, AVCodecContext *video_codec_c
     return 0;
 }
 
-static void gsr_capture_kms_tick(gsr_capture *cap, AVCodecContext *video_codec_context) {
-    (void)video_codec_context;
+static void gsr_capture_kms_on_event(gsr_capture *cap, gsr_egl *egl) {
     gsr_capture_kms *self = cap->priv;
-
     if(!self->is_x11)
         return;
 
-    while(XPending(self->params.egl->x11.dpy)) {
-        XNextEvent(self->params.egl->x11.dpy, &self->xev);
-        gsr_cursor_update(&self->x11_cursor, &self->xev);
-    }
+    XEvent *xev = gsr_egl_get_event_data(egl);
+    gsr_cursor_update(&self->x11_cursor, xev);
 }
 
 static float monitor_rotation_to_radians(gsr_monitor_rotation rot) {
@@ -628,7 +622,8 @@ gsr_capture* gsr_capture_kms_create(const gsr_capture_kms_params *params) {
     
     *cap = (gsr_capture) {
         .start = gsr_capture_kms_start,
-        .tick = gsr_capture_kms_tick,
+        .on_event = gsr_capture_kms_on_event,
+        .tick = NULL,
         .should_stop = gsr_capture_kms_should_stop,
         .capture = gsr_capture_kms_capture,
         .capture_end = gsr_capture_kms_capture_end,

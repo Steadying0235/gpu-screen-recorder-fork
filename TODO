@@ -45,8 +45,6 @@ Use separate plane (which has offset and pitch) from combined plane instead of t
 
 Both twitch and youtube support variable bitrate but twitch recommends constant bitrate to reduce stream buffering/dropped frames when going from low motion to high motion: https://help.twitch.tv/s/article/broadcasting-guidelines?language=en_US. Info for youtube: https://support.google.com/youtube/answer/2853702?hl=en#zippy=%2Cvariable-bitrate-with-custom-stream-keys-in-live-control-room%2Ck-p-fps%2Cp-fps.
 
-Limit fps recording with x damage. This is good when running replay mode 24/7 and being afk or when not much is happening on the screen.
-
 On nvidia some games apparently causes the game to appear to stutter (without dropping fps) when recording a monitor but not using
     when using direct screen capture. Observed in Deus Ex and Apex Legends.
 
@@ -119,8 +117,6 @@ Support vfr matching games exact fps all the time. On x11 use damage tracking, o
 Support selecting which gpu to use. This can be done in egl with eglQueryDevicesEXT and then eglGetPlatformDisplayEXT. This will automatically work on AMD and Intel as vaapi uses the same device. On nvidia we need to use eglQueryDeviceAttribEXT with EGL_CUDA_DEVICE_NV.
     Maybe on glx (nvidia x11 nvfbc) we need to use __NV_PRIME_RENDER_OFFLOAD, __NV_PRIME_RENDER_OFFLOAD_PROVIDER, __GLX_VENDOR_LIBRARY_NAME, __VK_LAYER_NV_optimus, VK_ICD_FILENAMES instead. Just look at prime-run /usr/bin/prime-run.
 
-Remove is_damaged and clear_damage and return a value from capture function instead that states if the image has been updated or not.
-
 When adding support for steam deck, add option to send video to another computer.
 New gpu screen recorder gui should have the option to cut the video directly, maybe running an ffmpeg command or implementing that ourselves. Only support gpu screen recorder video files.
 
@@ -159,3 +155,5 @@ Enable 2-pass encoding.
 Add vbr/cbr option.
 
 Restart replay/update video resolution if monitor resolution changes.
+
+Support damage tracking on wayland.

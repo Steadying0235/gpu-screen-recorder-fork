@@ -14,7 +14,7 @@ typedef struct {
     vec2i size;
     uint32_t connector_id; /* Only on x11 and drm */
     gsr_monitor_rotation rotation; /* Only on x11 and wayland */
-    uint32_t monitor_identifier; /* Only on drm and wayland */
+    uint32_t monitor_identifier; /* On x11 this is the crtc id */
 } gsr_monitor;
 
 typedef struct {

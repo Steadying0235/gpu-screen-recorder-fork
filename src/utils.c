@@ -91,7 +91,7 @@ void for_each_active_monitor_output_x11_not_cached(Display *display, active_moni
                         .size = { .x = (int)crt_info->width, .y = (int)crt_info->height },
                         .connector_id = x11_output_get_connector_id(display, screen_res->outputs[i], randr_connector_id_atom),
                         .rotation = x11_rotation_to_gsr_rotation(crt_info->rotation),
-                        .monitor_identifier = 0
+                        .monitor_identifier = out_info->crtc
                     };
                     callback(&monitor, userdata);
                 }
@@ -116,7 +116,7 @@ void for_each_active_monitor_output_x11(const gsr_egl *egl, active_monitor_callb
             .size = output->size,
             .connector_id = output->connector_id,
             .rotation = output->rotation,
-            .monitor_identifier = 0
+            .monitor_identifier = output->monitor_identifier
         };
         callback(&monitor, userdata);
     }

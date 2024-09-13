@@ -24,7 +24,7 @@ int gsr_cursor_init(gsr_cursor *self, gsr_egl *egl, Display *display);
 void gsr_cursor_deinit(gsr_cursor *self);
 
 /* Returns true if the cursor image has updated or if the cursor has moved */
-bool gsr_cursor_update(gsr_cursor *self, XEvent *xev);
+bool gsr_cursor_on_event(gsr_cursor *self, XEvent *xev);
 void gsr_cursor_tick(gsr_cursor *self, Window relative_to);
 
 #endif /* GSR_CURSOR_H */

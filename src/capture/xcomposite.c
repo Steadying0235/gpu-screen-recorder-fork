@@ -230,7 +230,7 @@ static void gsr_capture_xcomposite_on_event(gsr_capture *cap, gsr_egl *egl) {
         }
     }
 
-    gsr_cursor_update(&self->cursor, xev);
+    gsr_cursor_on_event(&self->cursor, xev);
 }
 
 static bool gsr_capture_xcomposite_should_stop(gsr_capture *cap, bool *err) {

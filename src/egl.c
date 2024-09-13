@@ -676,7 +676,7 @@ void gsr_egl_unload(gsr_egl *self) {
     memset(self, 0, sizeof(gsr_egl));
 }
 
-bool gsr_egl_update(gsr_egl *self) {
+bool gsr_egl_process_event(gsr_egl *self) {
     switch(gsr_egl_get_display_server(self)) {
         case GSR_DISPLAY_SERVER_X11: {
             if(XPending(self->x11.dpy)) {

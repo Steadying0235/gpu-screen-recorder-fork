@@ -3318,10 +3318,11 @@ int main(int argc, char **argv) {
     while(running) {
         const double frame_start = clock_get_monotonic_seconds();
 
-        while(gsr_egl_update(&egl)) {
+        while(gsr_egl_process_event(&egl)) {
             gsr_capture_on_event(capture, &egl);
-            gsr_damage_update(&damage, gsr_egl_get_event_data(&egl));
+            gsr_damage_on_event(&damage, gsr_egl_get_event_data(&egl));
         }
+        gsr_damage_tick(&damage);
         gsr_capture_tick(capture, video_codec_context);
 
         if(!is_monitor_capture) {

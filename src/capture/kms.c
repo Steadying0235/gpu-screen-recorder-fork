@@ -203,7 +203,7 @@ static void gsr_capture_kms_on_event(gsr_capture *cap, gsr_egl *egl) {
         return;
 
     XEvent *xev = gsr_egl_get_event_data(egl);
-    gsr_cursor_update(&self->x11_cursor, xev);
+    gsr_cursor_on_event(&self->x11_cursor, xev);
 }
 
 static float monitor_rotation_to_radians(gsr_monitor_rotation rot) {

@@ -84,7 +84,26 @@ bool gsr_damage_set_target_window(gsr_damage *self, uint64_t window) {
         self->damage = None;
     }
 
+    if(self->window)
+        XSelectInput(self->egl->x11.dpy, self->window, 0);
+
     self->window = window;
+    XSelectInput(self->egl->x11.dpy, self->window, StructureNotifyMask | ExposureMask);
+
+    XWindowAttributes win_attr;
+    win_attr.x = 0;
+    win_attr.y = 0;
+    win_attr.width = 0;
+    win_attr.height = 0;
+    if(!XGetWindowAttributes(self->egl->x11.dpy, self->window, &win_attr))
+        fprintf(stderr, "gsr warning: gsr_damage_set_target_window failed: failed to get window attributes: %ld\n", (long)self->window);
+
+    //self->window_pos.x = win_attr.x;
+    //self->window_pos.y = win_attr.y;
+
+    self->window_size.x = win_attr.width;
+    self->window_size.y = win_attr.height;
+
     self->damage = XDamageCreate(self->egl->x11.dpy, window, XDamageReportNonEmpty);
     if(self->damage) {
         XDamageSubtract(self->egl->x11.dpy, self->damage, None, None);
@@ -113,6 +132,9 @@ bool gsr_damage_set_target_monitor(gsr_damage *self, const char *monitor_name) {
     memset(&self->monitor, 0, sizeof(self->monitor));
     if(!get_monitor_by_name(self->egl, GSR_CONNECTION_X11, monitor_name, &self->monitor))
         fprintf(stderr, "gsr warning: gsr_damage_set_target_monitor: failed to find monitor: %s\n", monitor_name);
+
+    if(self->window)
+        XSelectInput(self->egl->x11.dpy, self->window, 0);
 
     self->window = DefaultRootWindow(self->egl->x11.dpy);
     self->damage = XDamageCreate(self->egl->x11.dpy, self->window, XDamageReportNonEmpty);
@@ -221,21 +243,52 @@ static void gsr_damage_on_damage_event(gsr_damage *self, XEvent *xev) {
     XFlush(self->egl->x11.dpy);
 }
 
-static void gsr_damage_update_cursor(gsr_damage *self) {
-    Window dummy_window;
+static void gsr_damage_on_event_cursor(gsr_damage *self) {
+    Window root_return = None;
+    Window child_return = None;
     int dummy_i;
     unsigned int dummy_u;
     vec2i cursor_position = {0, 0};
-    XQueryPointer(self->egl->x11.dpy, self->window, &dummy_window, &dummy_window, &dummy_i, &dummy_i, &cursor_position.x, &cursor_position.y, &dummy_u);
+    XQueryPointer(self->egl->x11.dpy, self->window, &root_return, &child_return, &dummy_i, &dummy_i, &cursor_position.x, &cursor_position.y, &dummy_u);
     if(cursor_position.x != self->cursor_position.x || cursor_position.y != self->cursor_position.y) {
         self->cursor_position = cursor_position;
-        self->damaged = true;
+        const gsr_rectangle cursor_region = { self->cursor_position, {64, 64} }; // TODO: Track cursor size
+        switch(self->track_type) {
+            case GSR_DAMAGE_TRACK_NONE: {
+                self->damaged = true;
+                break;
+            }
+            case GSR_DAMAGE_TRACK_WINDOW: {
+                const gsr_rectangle window_region = { (vec2i){0, 0}, self->window_size };
+                self->damaged = self->window_size.x == 0 || rectangles_intersect(window_region, cursor_region);
+                break;
+            }
+            case GSR_DAMAGE_TRACK_MONITOR: {
+                const gsr_rectangle monitor_region = { self->monitor.pos, self->monitor.size };
+                self->damaged = self->monitor.monitor_identifier == 0 || rectangles_intersect(monitor_region, cursor_region);
+                break;
+            }
+        }
     }
 }
 
-void gsr_damage_update(gsr_damage *self, XEvent *xev) {
+static void gsr_damage_on_window_configure_notify(gsr_damage *self, XEvent *xev) {
+    if(xev->xconfigure.window != self->window)
+        return;
+
+    //self->window_pos.x = xev->xconfigure.x;
+    //self->window_pos.y = xev->xconfigure.y;
+    
+    self->window_size.x = xev->xconfigure.width;
+    self->window_size.y = xev->xconfigure.height;
+}
+
+void gsr_damage_on_event(gsr_damage *self, XEvent *xev) {
     if(self->damage_event == 0 || self->track_type == GSR_DAMAGE_TRACK_NONE)
         return;
+
+    if(self->track_type == GSR_DAMAGE_TRACK_WINDOW && xev->type == ConfigureNotify)
+        gsr_damage_on_window_configure_notify(self, xev);
 
     if(self->randr_event) {
         if(xev->type == self->randr_event + RRScreenChangeNotify)
@@ -247,9 +300,14 @@ void gsr_damage_update(gsr_damage *self, XEvent *xev) {
 
     if(self->damage_event && xev->type == self->damage_event + XDamageNotify)
         gsr_damage_on_damage_event(self, xev);
+}
+
+void gsr_damage_tick(gsr_damage *self) {
+    if(self->damage_event == 0 || self->track_type == GSR_DAMAGE_TRACK_NONE)
+        return;
 
     if(self->track_cursor && !self->damaged)
-        gsr_damage_update_cursor(self);
+        gsr_damage_on_event_cursor(self);
 }
 
 bool gsr_damage_is_damaged(gsr_damage *self) {

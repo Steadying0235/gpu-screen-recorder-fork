@@ -314,7 +314,7 @@ bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland, bool is_monitor_cap
 void gsr_egl_unload(gsr_egl *self);
 
 /* Returns true if an event is available */
-bool gsr_egl_update(gsr_egl *self);
+bool gsr_egl_process_event(gsr_egl *self);
 /* Does opengl swap with egl or glx, depending on which one is active */
 void gsr_egl_swap_buffers(gsr_egl *self);
 

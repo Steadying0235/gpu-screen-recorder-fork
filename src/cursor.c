@@ -155,7 +155,7 @@ void gsr_cursor_deinit(gsr_cursor *self) {
     self->egl = NULL;
 }
 
-bool gsr_cursor_update(gsr_cursor *self, XEvent *xev) {
+bool gsr_cursor_on_event(gsr_cursor *self, XEvent *xev) {
     bool updated = false;
     XGenericEventCookie *cookie = (XGenericEventCookie*)&xev->xcookie;
     const Bool got_event_data = XGetEventData(self->display, cookie);

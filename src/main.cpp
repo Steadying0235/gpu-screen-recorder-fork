@@ -980,7 +980,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -fm   Framerate mode. Should be either 'cfr' (constant frame rate), 'vfr' (variable frame rate) or 'content'. Optional, set to 'vfr' by default.\n");
     fprintf(stderr, "        'vfr' is recommended for recording for less issue with very high system load but some applications such as video editors may not support it properly.\n");
-    fprintf(stderr, "        'content' is currently only supported when recording a single window, on X11. The 'content' option matches the recording frame rate to the captured content.\n");
+    fprintf(stderr, "        'content' is currently only supported on X11. The 'content' option matches the recording frame rate to the captured content.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -bm   Bitrate mode. Should be either 'auto', 'qp' (constant quality) or 'vbr' (variable bitrate). Optional, set to 'auto' by default which defaults to 'qp' on all devices\n");
     fprintf(stderr, "        except steam deck that has broken drivers and doesn't support qp.\n");

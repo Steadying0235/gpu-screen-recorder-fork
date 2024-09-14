@@ -2771,7 +2771,7 @@ int main(int argc, char **argv) {
         usage();
     }
 
-    if(framerate_mode == FramerateMode::CONTENT && (wayland || is_monitor_capture)) {
+    if(framerate_mode == FramerateMode::CONTENT && wayland) {
         fprintf(stderr, "Error: -fm 'content' is currently only supported on X11 and when capturing a single window.\n");
         usage();
     }

@@ -3303,7 +3303,9 @@ int main(int argc, char **argv) {
 
     bool hdr_metadata_set = false;
 
-    const double damage_timeout_seconds = framerate_mode == FramerateMode::CONTENT ? 0.5 : 0.1;
+    double damage_timeout_seconds = framerate_mode == FramerateMode::CONTENT ? 0.5 : 0.1;
+    damage_timeout_seconds = std::max(damage_timeout_seconds, target_fps);
+
     bool use_damage_tracking = false;
     gsr_damage damage;
     memset(&damage, 0, sizeof(damage));

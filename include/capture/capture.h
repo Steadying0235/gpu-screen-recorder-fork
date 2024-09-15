@@ -25,6 +25,8 @@ struct gsr_capture {
     bool (*uses_external_image)(gsr_capture *cap); /* can be NULL. If NULL, return false */
     bool (*set_hdr_metadata)(gsr_capture *cap, AVMasteringDisplayMetadata *mastering_display_metadata, AVContentLightMetadata *light_metadata); /* can be NULL. If NULL, return false */
     uint64_t (*get_window_id)(gsr_capture *cap); /* can be NULL. Returns 0 if unknown */
+    bool (*is_damaged)(gsr_capture *cap); /* can be NULL */
+    void (*clear_damage)(gsr_capture *cap); /* can be NULL */
     void (*destroy)(gsr_capture *cap, AVCodecContext *video_codec_context);
 
     void *priv; /* can be NULL */

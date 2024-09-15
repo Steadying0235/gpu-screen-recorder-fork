@@ -980,7 +980,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -fm   Framerate mode. Should be either 'cfr' (constant frame rate), 'vfr' (variable frame rate) or 'content'. Optional, set to 'vfr' by default.\n");
     fprintf(stderr, "        'vfr' is recommended for recording for less issue with very high system load but some applications such as video editors may not support it properly.\n");
-    fprintf(stderr, "        'content' is currently only supported on X11. The 'content' option matches the recording frame rate to the captured content.\n");
+    fprintf(stderr, "        'content' is currently only supported on X11 or when using portal capture option. The 'content' option matches the recording frame rate to the captured content.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -bm   Bitrate mode. Should be either 'auto', 'qp' (constant quality) or 'vbr' (variable bitrate). Optional, set to 'auto' by default which defaults to 'qp' on all devices\n");
     fprintf(stderr, "        except steam deck that has broken drivers and doesn't support qp.\n");
@@ -2678,8 +2678,9 @@ int main(int argc, char **argv) {
     }
 
     std::string window_str = args["-w"].value();
+    const bool is_portal_capture = strcmp(window_str.c_str(), "portal") == 0;
 
-    if(!restore_portal_session && strcmp(window_str.c_str(), "portal") == 0) {
+    if(!restore_portal_session && is_portal_capture) {
         fprintf(stderr, "gsr info: option '-w portal' was used without '-restore-portal-session yes'. The previous screencast session will be ignored\n");
     }
 
@@ -2704,7 +2705,7 @@ int main(int argc, char **argv) {
         disable_prime_run();
     }
 
-    if(strcmp(window_str.c_str(), "portal") == 0 && is_using_prime_run()) {
+    if(is_portal_capture && is_using_prime_run()) {
         fprintf(stderr, "Warning: use of prime-run with -w portal option is currently not supported. Disabling prime-run\n");
         disable_prime_run();
     }
@@ -2714,7 +2715,7 @@ int main(int argc, char **argv) {
         _exit(1);
     }
 
-    const bool is_monitor_capture = strcmp(window_str.c_str(), "focused") != 0 && strcmp(window_str.c_str(), "portal") != 0 && contains_non_hex_number(window_str.c_str());
+    const bool is_monitor_capture = strcmp(window_str.c_str(), "focused") != 0 && !is_portal_capture && contains_non_hex_number(window_str.c_str());
     gsr_egl egl;
     if(!gsr_egl_load(&egl, dpy, wayland, is_monitor_capture)) {
         fprintf(stderr, "gsr error: failed to load opengl\n");
@@ -2771,8 +2772,8 @@ int main(int argc, char **argv) {
         usage();
     }
 
-    if(framerate_mode == FramerateMode::CONTENT && wayland) {
-        fprintf(stderr, "Error: -fm 'content' is currently only supported on X11 and when capturing a single window.\n");
+    if(framerate_mode == FramerateMode::CONTENT && wayland && !is_portal_capture) {
+        fprintf(stderr, "Error: -fm 'content' is currently only supported on X11 or when using portal capture option\n");
         usage();
     }
 
@@ -3342,10 +3343,14 @@ int main(int argc, char **argv) {
             break;
         }
 
-        const bool damaged = !use_damage_tracking || gsr_damage_is_damaged(&damage);
-        if(damaged) {
+        bool damaged = false;
+        if(capture->is_damaged)
+            damaged = capture->is_damaged(capture);
+        else
+            damaged = !use_damage_tracking || gsr_damage_is_damaged(&damage);
+
+        if(damaged)
             ++damage_fps_counter;
-        }
 
         ++fps_counter;
         double time_now = clock_get_monotonic_seconds();
@@ -3365,6 +3370,8 @@ int main(int argc, char **argv) {
         const double num_frames_seconds = num_frames * target_fps;
         if((damaged || num_frames_seconds >= damage_timeout_seconds) && !paused/* && fps_counter < fps + 100*/) {
             gsr_damage_clear(&damage);
+            if(capture->clear_damage)
+                capture->clear_damage(capture);
 
             egl.glClear(0);
             gsr_capture_capture(capture, video_frame, &color_conversion);

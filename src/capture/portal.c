@@ -374,6 +374,16 @@ static bool gsr_capture_portal_uses_external_image(gsr_capture *cap) {
     return true;
 }
 
+static bool gsr_capture_portal_is_damaged(gsr_capture *cap) {
+    gsr_capture_portal *self = cap->priv;
+    return gsr_pipewire_is_damaged(&self->pipewire);
+}
+
+static void gsr_capture_portal_clear_damage(gsr_capture *cap) {
+    gsr_capture_portal *self = cap->priv;
+    gsr_pipewire_clear_damage(&self->pipewire);
+}
+
 static void gsr_capture_portal_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
     (void)video_codec_context;
     gsr_capture_portal *cap_portal = cap->priv;
@@ -411,6 +421,8 @@ gsr_capture* gsr_capture_portal_create(const gsr_capture_portal_params *params) 
         .capture_end = gsr_capture_portal_capture_end,
         .get_source_color = gsr_capture_portal_get_source_color,
         .uses_external_image = gsr_capture_portal_uses_external_image,
+        .is_damaged = gsr_capture_portal_is_damaged,
+        .clear_damage = gsr_capture_portal_clear_damage,
         .destroy = gsr_capture_portal_destroy,
         .priv = cap_portal
     };

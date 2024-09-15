@@ -129,6 +129,8 @@ static void on_process_cb(void *user_data) {
             self->dmabuf_data[i].offset = buffer->datas[i].chunk->offset;
             self->dmabuf_data[i].stride = buffer->datas[i].chunk->stride;
         }
+
+        self->damaged = true;
     } else {
         // TODO:
     }
@@ -744,4 +746,18 @@ bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, g
 
     pthread_mutex_unlock(&self->mutex);
     return true;
+}
+
+bool gsr_pipewire_is_damaged(gsr_pipewire *self) {
+    bool damaged = false;
+    pthread_mutex_lock(&self->mutex);
+    damaged = self->damaged;
+    pthread_mutex_unlock(&self->mutex);
+    return damaged;
+}
+
+void gsr_pipewire_clear_damage(gsr_pipewire *self) {
+    pthread_mutex_lock(&self->mutex);
+    self->damaged = false;
+    pthread_mutex_unlock(&self->mutex);
 }

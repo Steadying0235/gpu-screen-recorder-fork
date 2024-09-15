@@ -65,6 +65,7 @@ typedef struct {
     struct spa_video_info format;
     int server_version_sync;
     bool negotiated;
+    bool damaged;
 
     struct {
         bool visible;
@@ -105,5 +106,7 @@ void gsr_pipewire_deinit(gsr_pipewire *self);
 
 /* |plane_fds| should be at least GSR_PIPEWIRE_DMABUF_MAX_PLANES in size */
 bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region, int *plane_fds, int *num_plane_fds, bool *using_external_image);
+bool gsr_pipewire_is_damaged(gsr_pipewire *self);
+void gsr_pipewire_clear_damage(gsr_pipewire *self);
 
 #endif /* GSR_PIPEWIRE_H */

@@ -62,7 +62,7 @@ These are the dependencies needed to build GPU Screen Recorder:
 
 * libglvnd (which provides libgl, libglx and libegl)
 * ffmpeg (libavcodec, libavformat, libavutil, libswresample, libavfilter)
-* x11 (libx11, libxcomposite, libxrandr, libxfixes, libxdamage, libxi)
+* x11 (libx11, libxcomposite, libxrandr, libxfixes, libxdamage)
 * libpulse
 * libva (and libva-drm)
 * libdrm

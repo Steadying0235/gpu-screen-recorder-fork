@@ -8,7 +8,6 @@ typedef struct {
     gsr_egl *egl;
     Display *display;
     int x_fixes_event_base;
-    int xi_opcode;
 
     unsigned int texture_id;
     vec2i size;
@@ -17,7 +16,6 @@ typedef struct {
 
     bool cursor_image_set;
     bool visible;
-    bool cursor_moved;
 } gsr_cursor;
 
 int gsr_cursor_init(gsr_cursor *self, gsr_egl *egl, Display *display);

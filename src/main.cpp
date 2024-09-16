@@ -3287,23 +3287,25 @@ int main(int argc, char **argv) {
         amix_thread = std::thread([&]() {
             AVFrame *aframe = av_frame_alloc();
             while(running) {
-                std::lock_guard<std::mutex> lock(audio_filter_mutex);
-                for(AudioTrack &audio_track : audio_tracks) {
-                    if(!audio_track.sink)
-                        continue;
+                {
+                    std::lock_guard<std::mutex> lock(audio_filter_mutex);
+                    for(AudioTrack &audio_track : audio_tracks) {
+                        if(!audio_track.sink)
+                            continue;
 
-                    int err = 0;
-                    while ((err = av_buffersink_get_frame(audio_track.sink, aframe)) >= 0) {
-                        aframe->pts = audio_track.pts;
-                        err = avcodec_send_frame(audio_track.codec_context, aframe);
-                        if(err >= 0){
-                            // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                            receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, aframe->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
-                        } else {
-                            fprintf(stderr, "Failed to encode audio!\n");
+                        int err = 0;
+                        while ((err = av_buffersink_get_frame(audio_track.sink, aframe)) >= 0) {
+                            aframe->pts = audio_track.pts;
+                            err = avcodec_send_frame(audio_track.codec_context, aframe);
+                            if(err >= 0){
+                                // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                                receive_frames(audio_track.codec_context, audio_track.stream_index, audio_track.stream, aframe->pts, av_format_context, record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
+                            } else {
+                                fprintf(stderr, "Failed to encode audio!\n");
+                            }
+                            av_frame_unref(aframe);
+                            audio_track.pts += audio_track.codec_context->frame_size;
                         }
-                        av_frame_unref(aframe);
-                        audio_track.pts += audio_track.codec_context->frame_size;
                     }
                 }
                 av_usleep(5 * 1000); // 5 milliseconds

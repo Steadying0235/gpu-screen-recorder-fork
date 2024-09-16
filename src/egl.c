@@ -388,10 +388,22 @@ static bool gsr_egl_load_egl(gsr_egl *self, void *library) {
 }
 
 static bool gsr_egl_proc_load_egl(gsr_egl *self) {
+    self->eglExportDMABUFImageQueryMESA = (FUNC_eglExportDMABUFImageQueryMESA)self->eglGetProcAddress("eglExportDMABUFImageQueryMESA");
+    self->eglExportDMABUFImageMESA = (FUNC_eglExportDMABUFImageMESA)self->eglGetProcAddress("eglExportDMABUFImageMESA");
     self->glEGLImageTargetTexture2DOES = (FUNC_glEGLImageTargetTexture2DOES)self->eglGetProcAddress("glEGLImageTargetTexture2DOES");
     self->eglQueryDisplayAttribEXT = (FUNC_eglQueryDisplayAttribEXT)self->eglGetProcAddress("eglQueryDisplayAttribEXT");
     self->eglQueryDeviceStringEXT = (FUNC_eglQueryDeviceStringEXT)self->eglGetProcAddress("eglQueryDeviceStringEXT");
     self->eglQueryDmaBufModifiersEXT = (FUNC_eglQueryDmaBufModifiersEXT)self->eglGetProcAddress("eglQueryDmaBufModifiersEXT");
+
+    if(!self->eglExportDMABUFImageQueryMESA) {
+        fprintf(stderr, "gsr error: gsr_egl_load failed: could not find eglExportDMABUFImageQueryMESA\n");
+        return false;
+    }
+
+    if(!self->eglExportDMABUFImageMESA) {
+        fprintf(stderr, "gsr error: gsr_egl_load failed: could not find eglExportDMABUFImageMESA\n");
+        return false;
+    }
 
     if(!self->glEGLImageTargetTexture2DOES) {
         fprintf(stderr, "gsr error: gsr_egl_load failed: could not find glEGLImageTargetTexture2DOES\n");

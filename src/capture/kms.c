@@ -49,6 +49,9 @@ typedef struct {
 
     bool is_x11;
     gsr_cursor x11_cursor;
+
+    AVCodecContext *video_codec_context;
+    bool performance_error_shown;
 } gsr_capture_kms;
 
 static void gsr_capture_kms_cleanup_kms_fds(gsr_capture_kms *self) {
@@ -194,6 +197,8 @@ static int gsr_capture_kms_start(gsr_capture *cap, AVCodecContext *video_codec_c
 
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
+
+    self->video_codec_context = video_codec_context;
     return 0;
 }
 
@@ -495,12 +500,6 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     if(drm_fd->has_hdr_metadata && self->params.hdr && hdr_metadata_is_supported_format(&drm_fd->hdr_metadata))
         gsr_kms_set_hdr_metadata(self, drm_fd);
 
-    EGLImage image = gsr_capture_kms_create_egl_image_with_fallback(self, drm_fd);
-    if(image) {
-        gsr_capture_kms_bind_image_to_input_texture_with_fallback(self, image);
-        self->params.egl->eglDestroyImage(self->params.egl->egl_display, image);
-    }
-
     const float texture_rotation = monitor_rotation_to_radians(self->monitor_rotation);
     const int target_x = max_int(0, frame->width / 2 - self->capture_size.x / 2);
     const int target_y = max_int(0, frame->height / 2 - self->capture_size.y / 2);
@@ -509,13 +508,40 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     if(!capture_is_combined_plane)
         capture_pos = (vec2i){drm_fd->x, drm_fd->y};
 
-    self->params.egl->glFlush();
-    self->params.egl->glFinish();
+    if(!self->performance_error_shown && self->monitor_rotation != GSR_MONITOR_ROT_0 && video_codec_context_is_vaapi(self->video_codec_context)) {
+        self->performance_error_shown = true;
+        fprintf(stderr,"gsr warning: gsr_capture_kms_capture: the monitor you are recording is rotated, composition will have to be used."
+            " If you are experience performance problems in the video then record a single window on X11 or use portal capture option instead\n");
+    }
 
-    gsr_color_conversion_draw(color_conversion, self->external_texture_fallback ? self->external_input_texture_id : self->input_texture_id,
-        (vec2i){target_x, target_y}, self->capture_size,
-        capture_pos, self->capture_size,
-        texture_rotation, self->external_texture_fallback);
+    /* Fast opengl free path */
+    if(self->monitor_rotation == GSR_MONITOR_ROT_0 && video_codec_context_is_vaapi(self->video_codec_context)) {
+        int fds[4];
+        uint32_t offsets[4];
+        uint32_t pitches[4];
+        uint64_t modifiers[4];
+        for(int i = 0; i < drm_fd->num_dma_bufs; ++i) {
+            fds[i] = drm_fd->dma_buf[i].fd;
+            offsets[i] = drm_fd->dma_buf[i].offset;
+            pitches[i] = drm_fd->dma_buf[i].pitch;
+            modifiers[i] = drm_fd->modifier;
+        }
+        vaapi_copy_drm_planes_to_video_surface(self->video_codec_context, frame, capture_pos.x, capture_pos.y, drm_fd->pixel_format, drm_fd->width, drm_fd->height, fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs);
+    } else {
+        EGLImage image = gsr_capture_kms_create_egl_image_with_fallback(self, drm_fd);
+        if(image) {
+            gsr_capture_kms_bind_image_to_input_texture_with_fallback(self, image);
+            self->params.egl->eglDestroyImage(self->params.egl->egl_display, image);
+        }
+
+        self->params.egl->glFlush();
+        self->params.egl->glFinish();
+
+        gsr_color_conversion_draw(color_conversion, self->external_texture_fallback ? self->external_input_texture_id : self->input_texture_id,
+            (vec2i){target_x, target_y}, self->capture_size,
+            capture_pos, self->capture_size,
+            texture_rotation, self->external_texture_fallback);
+    }
 
     if(self->params.record_cursor) {
         gsr_kms_response_item *cursor_drm_fd = find_cursor_drm_if_on_monitor(self, drm_fd->connector_id, capture_is_combined_plane);

@@ -31,6 +31,7 @@ typedef void* EGLSurface;
 typedef void* EGLContext;
 typedef void* EGLClientBuffer;
 typedef void* EGLImage;
+typedef void* EGLImageKHR;
 typedef void *GLeglImageOES;
 typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 typedef struct __GLXFBConfigRec *GLXFBConfig;
@@ -138,6 +139,8 @@ typedef void(*__GLXextFuncPtr)(void);
 #define GL_COMPILE_STATUS                       0x8B81
 #define GL_LINK_STATUS                          0x8B82
 
+typedef unsigned int (*FUNC_eglExportDMABUFImageQueryMESA)(EGLDisplay dpy, EGLImageKHR image, int *fourcc, int *num_planes, uint64_t *modifiers);
+typedef unsigned int (*FUNC_eglExportDMABUFImageMESA)(EGLDisplay dpy, EGLImageKHR image, int *fds, int32_t *strides, int32_t *offsets);
 typedef void (*FUNC_glEGLImageTargetTexture2DOES)(unsigned int target, GLeglImageOES image);
 typedef GLXContext (*FUNC_glXCreateContextAttribsARB)(Display *dpy, GLXFBConfig config, GLXContext share_context, Bool direct, const int *attrib_list);
 typedef void (*FUNC_glXSwapIntervalEXT)(Display * dpy, GLXDrawable drawable, int interval);
@@ -235,6 +238,8 @@ struct gsr_egl {
     unsigned int (*eglBindAPI)(unsigned int api);
     __eglMustCastToProperFunctionPointerType (*eglGetProcAddress)(const char *procname);
 
+    FUNC_eglExportDMABUFImageQueryMESA eglExportDMABUFImageQueryMESA;
+    FUNC_eglExportDMABUFImageMESA eglExportDMABUFImageMESA;
     FUNC_glEGLImageTargetTexture2DOES glEGLImageTargetTexture2DOES;
     FUNC_eglQueryDisplayAttribEXT eglQueryDisplayAttribEXT;
     FUNC_eglQueryDeviceStringEXT eglQueryDeviceStringEXT;

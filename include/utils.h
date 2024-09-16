@@ -7,6 +7,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+typedef struct AVCodecContext AVCodecContext;
+typedef struct AVFrame AVFrame;
+
 typedef struct {
     const char *name;
     int name_len;
@@ -44,5 +47,7 @@ int create_directory_recursive(char *path);
 
 /* |img_attr| needs to be at least 44 in size */
 void setup_dma_buf_attrs(intptr_t *img_attr, uint32_t format, uint32_t width, uint32_t height, const int *fds, const uint32_t *offsets, const uint32_t *pitches, const uint64_t *modifiers, int num_planes, bool use_modifier);
+bool video_codec_context_is_vaapi(AVCodecContext *video_codec_context);
+bool vaapi_copy_drm_planes_to_video_surface(AVCodecContext *video_codec_context, AVFrame *video_frame, int x, int y, uint32_t format, uint32_t width, uint32_t height, const int *fds, const uint32_t *offsets, const uint32_t *pitches, const uint64_t *modifiers, int num_planes);
 
 #endif /* GSR_UTILS_H */

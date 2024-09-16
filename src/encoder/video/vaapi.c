@@ -41,8 +41,7 @@ static bool gsr_video_encoder_vaapi_setup_context(gsr_video_encoder_vaapi *self,
         return false;
     }
 
-    AVHWFramesContext *hw_frame_context =
-        (AVHWFramesContext *)frame_context->data;
+    AVHWFramesContext *hw_frame_context = (AVHWFramesContext*)frame_context->data;
     hw_frame_context->width = video_codec_context->width;
     hw_frame_context->height = video_codec_context->height;
     hw_frame_context->sw_format = self->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? AV_PIX_FMT_P010LE : AV_PIX_FMT_NV12;
@@ -51,7 +50,7 @@ static bool gsr_video_encoder_vaapi_setup_context(gsr_video_encoder_vaapi *self,
 
     //hw_frame_context->initial_pool_size = 20;
 
-    AVVAAPIDeviceContext *vactx =((AVHWDeviceContext*)self->device_ctx->data)->hwctx;
+    AVVAAPIDeviceContext *vactx = ((AVHWDeviceContext*)self->device_ctx->data)->hwctx;
     self->va_dpy = vactx->display;
 
     if (av_hwframe_ctx_init(frame_context) < 0) {

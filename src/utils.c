@@ -12,9 +12,11 @@
 
 #include <xf86drmMode.h>
 #include <xf86drm.h>
-
 #include <X11/Xatom.h>
 #include <X11/extensions/Xrandr.h>
+#include <va/va_drmcommon.h>
+#include <libavcodec/avcodec.h>
+#include <libavutil/hwcontext_vaapi.h>
 
 double clock_get_monotonic_seconds(void) {
     struct timespec ts;
@@ -623,4 +625,177 @@ void setup_dma_buf_attrs(intptr_t *img_attr, uint32_t format, uint32_t width, ui
 
     img_attr[img_attr_index++] = EGL_NONE;
     assert(img_attr_index <= 44);
+}
+
+static VADisplay video_codec_context_get_vaapi_display(AVCodecContext *video_codec_context) {
+    AVHWFramesContext *hw_frame_context = (AVHWFramesContext*)video_codec_context->hw_frames_ctx->data;
+    AVHWDeviceContext *device_context = (AVHWDeviceContext*)hw_frame_context->device_ctx;
+    if(device_context->type == AV_HWDEVICE_TYPE_VAAPI) {
+        AVVAAPIDeviceContext *vactx = device_context->hwctx;
+        return vactx->display;
+    }
+    return NULL;
+}
+
+bool video_codec_context_is_vaapi(AVCodecContext *video_codec_context) {
+    AVHWFramesContext *hw_frame_context = (AVHWFramesContext*)video_codec_context->hw_frames_ctx->data;
+    AVHWDeviceContext *device_context = (AVHWDeviceContext*)hw_frame_context->device_ctx;
+    return device_context->type == AV_HWDEVICE_TYPE_VAAPI;
+}
+
+bool vaapi_copy_drm_planes_to_video_surface(AVCodecContext *video_codec_context, AVFrame *video_frame, int x, int y, uint32_t format, uint32_t width, uint32_t height, const int *fds, const uint32_t *offsets, const uint32_t *pitches, const uint64_t *modifiers, int num_planes) {
+    VAConfigID config_id = 0;
+    VAContextID context_id = 0;
+    VASurfaceID input_surface = 0;
+    VABufferID buffer_id = 0;
+    bool success = true;
+
+    VADisplay va_dpy = video_codec_context_get_vaapi_display(video_codec_context);
+    if(!va_dpy) {
+        success = false;
+        goto done;
+    }
+
+    VAStatus va_status = vaCreateConfig(va_dpy, VAProfileNone, VAEntrypointVideoProc, NULL, 0, &config_id);
+    if(va_status != VA_STATUS_SUCCESS) {
+        fprintf(stderr, "gsr error: vaapi_copy_drm_planes_to_video_surface: vaCreateConfig failed, error: %d\n", va_status);
+        success = false;
+        goto done;
+    }
+
+    VASurfaceID target_surface_id = (uintptr_t)video_frame->data[3];
+    va_status = vaCreateContext(va_dpy, config_id, width, height, VA_PROGRESSIVE, &target_surface_id, 1, &context_id);
+    if(va_status != VA_STATUS_SUCCESS) {
+        fprintf(stderr, "gsr error: vaapi_copy_drm_planes_to_video_surface: vaCreateContext failed, error: %d\n", va_status);
+        success = false;
+        goto done;
+    }
+
+    VADRMPRIMESurfaceDescriptor buf = {0};
+    buf.fourcc = format;//VA_FOURCC_BGRX; // TODO: VA_FOURCC_BGRA, VA_FOURCC_X2R10G10B10
+    buf.width = width;
+    buf.height = height;
+    buf.num_objects = num_planes;
+    buf.num_layers = 1;
+    buf.layers[0].drm_format = format;
+    buf.layers[0].num_planes = buf.num_objects;
+    for(int i = 0; i < num_planes; ++i) {
+        buf.objects[i].fd = fds[i];
+        buf.objects[i].size = height * pitches[i]; // TODO:
+        buf.objects[i].drm_format_modifier = modifiers[i];
+
+        buf.layers[0].object_index[i] = i;
+        buf.layers[0].offset[i] = offsets[i];
+        buf.layers[0].pitch[i] = pitches[i];
+    }
+
+    VASurfaceAttrib attribs[2] = {0};
+    attribs[0].type = VASurfaceAttribMemoryType;
+    attribs[0].flags = VA_SURFACE_ATTRIB_SETTABLE;
+    attribs[0].value.type = VAGenericValueTypeInteger;
+    attribs[0].value.value.i = VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2;
+    attribs[1].type = VASurfaceAttribExternalBufferDescriptor;
+    attribs[1].flags = VA_SURFACE_ATTRIB_SETTABLE;
+    attribs[1].value.type = VAGenericValueTypePointer;
+    attribs[1].value.value.p = &buf;
+    
+    // TODO: RT_FORMAT with 10 bit/hdr, VA_RT_FORMAT_RGB32_10
+    va_status = vaCreateSurfaces(va_dpy, VA_RT_FORMAT_RGB32, width, height, &input_surface, 1, attribs, 2);
+    if(va_status != VA_STATUS_SUCCESS) {
+        fprintf(stderr, "gsr error: vaapi_copy_drm_planes_to_video_surface: vaCreateSurfaces failed, error: %d\n", va_status);
+        success = false;
+        goto done;
+    }
+
+    // TODO:
+    const VARectangle output_region = {
+        .x = x,
+        .y = y,
+        .width = width,
+        .height = height
+    };
+
+    // Copying a surface to another surface will automatically perform the color conversion. Thanks vaapi!
+    VAProcPipelineParameterBuffer params = {0};
+    params.surface = input_surface;
+    params.surface_region = NULL;
+    params.output_region = &output_region;
+    params.output_background_color = 0;
+    params.filter_flags = VA_FRAME_PICTURE;
+    params.pipeline_flags = VA_PROC_PIPELINE_FAST;
+
+    params.input_color_properties.colour_primaries = 1;
+    params.input_color_properties.transfer_characteristics = 1;
+    params.input_color_properties.matrix_coefficients = 1;
+    params.surface_color_standard = VAProcColorStandardBT709; // TODO:
+    params.input_color_properties.color_range = video_frame->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;
+
+    params.output_color_properties.colour_primaries = 1;
+    params.output_color_properties.transfer_characteristics = 1;
+    params.output_color_properties.matrix_coefficients = 1;
+    params.output_color_standard = VAProcColorStandardBT709; // TODO:
+    params.output_color_properties.color_range = video_frame->color_range == AVCOL_RANGE_JPEG ? VA_SOURCE_RANGE_FULL : VA_SOURCE_RANGE_REDUCED;
+
+    params.processing_mode = VAProcPerformanceMode;
+
+    // VAProcPipelineCaps pipeline_caps = {0};
+    // va_status = vaQueryVideoProcPipelineCaps(self->va_dpy,
+    //                                    self->context_id,
+    //                                    NULL, 0,
+    //                                    &pipeline_caps);
+    // if(va_status == VA_STATUS_SUCCESS) {
+    //     fprintf(stderr, "pipeline_caps: %u, %u\n", (unsigned int)pipeline_caps.rotation_flags, pipeline_caps.blend_flags);
+    // }
+
+    // TODO: params.output_hdr_metadata
+
+    // TODO:
+    // if (first surface to render)
+    //     pipeline_param->output_background_color = 0xff000000; // black
+
+    va_status = vaCreateBuffer(va_dpy, context_id, VAProcPipelineParameterBufferType, sizeof(params), 1, &params, &buffer_id);
+    if(va_status != VA_STATUS_SUCCESS) {
+        fprintf(stderr, "gsr error: vaapi_copy_drm_planes_to_video_surface: vaCreateBuffer failed, error: %d\n", va_status);
+        success = false;
+        goto done;
+    }
+
+    va_status = vaBeginPicture(va_dpy, context_id, target_surface_id);
+    if(va_status != VA_STATUS_SUCCESS) {
+        fprintf(stderr, "gsr error: vaapi_copy_drm_planes_to_video_surface: vaBeginPicture failed, error: %d\n", va_status);
+        success = false;
+        goto done;
+    }
+
+    va_status = vaRenderPicture(va_dpy, context_id, &buffer_id, 1);
+    if(va_status != VA_STATUS_SUCCESS) {
+        vaEndPicture(va_dpy, context_id);
+        fprintf(stderr, "gsr error: vaapi_copy_drm_planes_to_video_surface: vaRenderPicture failed, error: %d\n", va_status);
+        success = false;
+        goto done;
+    }
+
+    va_status = vaEndPicture(va_dpy, context_id);
+    if(va_status != VA_STATUS_SUCCESS) {
+        fprintf(stderr, "gsr error: vaapi_copy_drm_planes_to_video_surface: vaEndPicture failed, error: %d\n", va_status);
+        success = false;
+        goto done;
+    }
+
+    //vaSyncBuffer(self->va_dpy, self->buffer_id, 1000 * 1000);
+
+    done:
+    if(buffer_id)
+        vaDestroyBuffer(va_dpy, buffer_id);
+
+    if(input_surface)
+        vaDestroySurfaces(va_dpy, &input_surface, 1);
+
+    if(context_id)
+        vaDestroyContext(va_dpy, context_id);
+
+    if(config_id)
+        vaDestroyConfig(va_dpy, config_id);
+
+    return success;
 }

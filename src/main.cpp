@@ -519,13 +519,13 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
         if(codec_context->codec_id == AV_CODEC_ID_AV1 || codec_context->codec_id == AV_CODEC_ID_H264 || codec_context->codec_id == AV_CODEC_ID_HEVC) {
             switch(video_quality) {
                 case VideoQuality::MEDIUM:
-                    codec_context->global_quality = 160 * quality_multiply;
+                    codec_context->global_quality = 150 * quality_multiply;
                     break;
                 case VideoQuality::HIGH:
-                    codec_context->global_quality = 130 * quality_multiply;
+                    codec_context->global_quality = 120 * quality_multiply;
                     break;
                 case VideoQuality::VERY_HIGH:
-                    codec_context->global_quality = 110 * quality_multiply;
+                    codec_context->global_quality = 100 * quality_multiply;
                     break;
                 case VideoQuality::ULTRA:
                     codec_context->global_quality = 90 * quality_multiply;
@@ -2753,6 +2753,11 @@ int main(int argc, char **argv) {
         }
     }
 
+    if(wayland && is_monitor_capture) {
+        fprintf(stderr, "gsr warning: it's not possible to sync video to recorded monitor exactly on wayland when recording a monitor."
+            " If you experience stutter in the video then record with portal capture option instead (-w portal) or use X11 instead\n");
+    }
+
     // TODO: Fix constant framerate not working properly on amd/intel because capture framerate gets locked to the same framerate as
     // game framerate, which doesn't work well when you need to encode multiple duplicate frames (AMD/Intel is slow at encoding!).
     // It also appears to skip audio frames on nvidia wayland? why? that should be fine, but it causes video stuttering because of audio/video sync.
@@ -3442,8 +3447,8 @@ int main(int argc, char **argv) {
         const double frame_sleep_fps = 1.0 / update_fps;
         const double sleep_time = frame_sleep_fps - (frame_end - frame_start);
         if(sleep_time > 0.0) {
-           if(damaged)
-               av_usleep(sleep_time * 1000.0 * 1000.0);
+            if(damaged)
+                av_usleep(sleep_time * 1000.0 * 1000.0);
             else
                 av_usleep(2 * 1000.0); // 2 milliseconds
         }

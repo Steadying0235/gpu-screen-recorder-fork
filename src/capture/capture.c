@@ -10,10 +10,10 @@ int gsr_capture_start(gsr_capture *cap, AVCodecContext *video_codec_context, AVF
     return res;
 }
 
-void gsr_capture_tick(gsr_capture *cap, AVCodecContext *video_codec_context) {
+void gsr_capture_tick(gsr_capture *cap) {
     assert(cap->started);
     if(cap->tick)
-        cap->tick(cap, video_codec_context);
+        cap->tick(cap);
 }
 
 void gsr_capture_on_event(gsr_capture *cap, gsr_egl *egl) {
@@ -32,12 +32,6 @@ bool gsr_capture_should_stop(gsr_capture *cap, bool *err) {
 int gsr_capture_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
     assert(cap->started);
     return cap->capture(cap, frame, color_conversion);
-}
-
-void gsr_capture_capture_end(gsr_capture *cap, AVFrame *frame) {
-    assert(cap->started);
-    if(cap->capture_end)
-        cap->capture_end(cap, frame);
 }
 
 gsr_source_color gsr_capture_get_source_color(gsr_capture *cap) {

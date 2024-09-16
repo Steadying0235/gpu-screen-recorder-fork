@@ -88,6 +88,7 @@ static const struct pw_core_events core_events = {
 static void on_process_cb(void *user_data) {
     gsr_pipewire *self = user_data;
     struct spa_meta_cursor *cursor = NULL;
+    //struct spa_meta *video_damage = NULL;
 
     /* Find the most recent buffer */
     struct pw_buffer *pw_buf = NULL;
@@ -135,6 +136,7 @@ static void on_process_cb(void *user_data) {
         // TODO:
     }
 
+    // TODO: Move down to read_metadata
     struct spa_meta_region *region = spa_buffer_find_meta_data(buffer, SPA_META_VideoCrop, sizeof(*region));
     if(region && spa_meta_region_is_valid(region)) {
         // fprintf(stderr, "gsr info: pipewire: crop Region available (%dx%d+%d+%d)\n",
@@ -152,6 +154,17 @@ static void on_process_cb(void *user_data) {
     pthread_mutex_unlock(&self->mutex);
 
 read_metadata:
+
+    // video_damage = spa_buffer_find_meta(buffer, SPA_META_VideoDamage);
+    // if(video_damage) {
+    //     struct spa_meta_region *r = spa_meta_first(video_damage);
+    //     if(spa_meta_check(r, video_damage)) {
+    //         //fprintf(stderr, "damage: %d,%d %ux%u\n", r->region.position.x, r->region.position.y, r->region.size.width, r->region.size.height);
+    //         pthread_mutex_lock(&self->mutex);
+    //         self->damaged = true;
+    //         pthread_mutex_unlock(&self->mutex);
+    //     }
+    // }
 
     cursor = spa_buffer_find_meta_data(buffer, SPA_META_Cursor, sizeof(*cursor));
     self->cursor.valid = cursor && spa_meta_cursor_is_valid(cursor);
@@ -229,15 +242,23 @@ static void on_param_changed_cb(void *user_data, uint32_t id, const struct spa_p
 
     uint8_t params_buffer[1024];
     struct spa_pod_builder pod_builder = SPA_POD_BUILDER_INIT(params_buffer, sizeof(params_buffer));
-    const struct spa_pod *params[3];
+    const struct spa_pod *params[4];
 
     params[0] = spa_pod_builder_add_object(
-		&pod_builder, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
-		SPA_PARAM_META_type, SPA_POD_Id(SPA_META_VideoCrop),
-		SPA_PARAM_META_size,
-		SPA_POD_Int(sizeof(struct spa_meta_region)));
+        &pod_builder, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
+        SPA_PARAM_META_type, SPA_POD_Id(SPA_META_VideoCrop),
+        SPA_PARAM_META_size,
+        SPA_POD_Int(sizeof(struct spa_meta_region)));
 
     params[1] = spa_pod_builder_add_object(
+        &pod_builder, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
+        SPA_PARAM_META_type, SPA_POD_Id(SPA_META_VideoDamage),
+        SPA_PARAM_META_size, SPA_POD_CHOICE_RANGE_Int(
+                                sizeof(struct spa_meta_region) * 16,
+                                sizeof(struct spa_meta_region) * 1,
+                                sizeof(struct spa_meta_region) * 16));
+
+    params[2] = spa_pod_builder_add_object(
         &pod_builder, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
         SPA_PARAM_META_type, SPA_POD_Id(SPA_META_Cursor),
         SPA_PARAM_META_size,
@@ -245,11 +266,11 @@ static void on_param_changed_cb(void *user_data, uint32_t id, const struct spa_p
                      CURSOR_META_SIZE(1, 1),
                      CURSOR_META_SIZE(1024, 1024)));
 
-    params[2] = spa_pod_builder_add_object(
+    params[3] = spa_pod_builder_add_object(
         &pod_builder, SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers,
         SPA_PARAM_BUFFERS_dataType, SPA_POD_Int(buffer_types));
 
-    pw_stream_update_params(self->stream, params, 3);
+    pw_stream_update_params(self->stream, params, 4);
     self->negotiated = true;
 }
 
@@ -694,12 +715,14 @@ static void gsr_pipewire_update_cursor_texture(gsr_pipewire *self, gsr_texture_m
     self->cursor.data = NULL;
 }
 
-bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region, int *plane_fds, int *num_plane_fds, bool *using_external_image) {
+bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region, gsr_pipewire_dmabuf_data *dmabuf_data, int *num_dmabuf_data, uint32_t *fourcc, uint64_t *modifiers, bool *using_external_image) {
     for(int i = 0; i < GSR_PIPEWIRE_DMABUF_MAX_PLANES; ++i) {
-        plane_fds[i] = -1;
+        memset(&dmabuf_data[i], 0, sizeof(gsr_pipewire_dmabuf_data));
     }
-    *num_plane_fds = 0;
+    *num_dmabuf_data = 0;
     *using_external_image = self->external_texture_fallback;
+    *fourcc = 0;
+    *modifiers = 0;
     pthread_mutex_lock(&self->mutex);
 
     if(!self->negotiated || self->dmabuf_data[0].fd <= 0) {
@@ -738,10 +761,12 @@ bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, g
     cursor_region->height = self->cursor.height;
 
     for(size_t i = 0; i < self->dmabuf_num_planes; ++i) {
-        plane_fds[i] = self->dmabuf_data[i].fd;
+        dmabuf_data[i] = self->dmabuf_data[i];
         self->dmabuf_data[i].fd = -1;
     }
-    *num_plane_fds = self->dmabuf_num_planes;
+    *num_dmabuf_data = self->dmabuf_num_planes;
+    *fourcc = spa_video_format_to_drm_format(self->format.info.raw.format);
+    *modifiers = self->format.info.raw.modifier;
     self->dmabuf_num_planes = 0;
 
     pthread_mutex_unlock(&self->mutex);

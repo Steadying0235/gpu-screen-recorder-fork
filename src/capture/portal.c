@@ -22,18 +22,20 @@ typedef struct {
 
     gsr_pipewire pipewire;
     vec2i capture_size;
-    int plane_fds[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
-    int num_plane_fds;
+    gsr_pipewire_dmabuf_data dmabuf_data[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
+    int num_dmabuf_data;
+
+    AVCodecContext *video_codec_context;
 } gsr_capture_portal;
 
 static void gsr_capture_portal_cleanup_plane_fds(gsr_capture_portal *self) {
-    for(int i = 0; i < self->num_plane_fds; ++i) {
-        if(self->plane_fds[i] > 0) {
-            close(self->plane_fds[i]);
-            self->plane_fds[i] = 0;
+    for(int i = 0; i < self->num_dmabuf_data; ++i) {
+        if(self->dmabuf_data[i].fd > 0) {
+            close(self->dmabuf_data[i].fd);
+            self->dmabuf_data[i].fd = 0;
         }
     }
-    self->num_plane_fds = 0;
+    self->num_dmabuf_data = 0;
 }
 
 static void gsr_capture_portal_stop(gsr_capture_portal *self) {
@@ -237,7 +239,9 @@ static bool gsr_capture_portal_get_frame_dimensions(gsr_capture_portal *self) {
     const double start_time = clock_get_monotonic_seconds();
     while(clock_get_monotonic_seconds() - start_time < 5.0) {
         bool uses_external_image = false;
-        if(gsr_pipewire_map_texture(&self->pipewire, self->texture_map, &region, &cursor_region, self->plane_fds, &self->num_plane_fds, &uses_external_image)) {
+        uint32_t fourcc = 0;
+        uint64_t modifiers = 0;
+        if(gsr_pipewire_map_texture(&self->pipewire, self->texture_map, &region, &cursor_region, self->dmabuf_data, &self->num_dmabuf_data, &fourcc, &modifiers, &uses_external_image)) {
             gsr_capture_portal_cleanup_plane_fds(self);
             self->capture_size.x = region.width;
             self->capture_size.y = region.height;
@@ -300,6 +304,8 @@ static int gsr_capture_portal_start(gsr_capture *cap, AVCodecContext *video_code
 
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
+
+    self->video_codec_context = video_codec_context;
     return 0;
 }
 
@@ -312,39 +318,57 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
     (void)color_conversion;
     gsr_capture_portal *self = cap->priv;
 
-    gsr_capture_portal_cleanup_plane_fds(self);
-
     /* TODO: Handle formats other than RGB(a) */
     gsr_pipewire_region region = {0, 0, 0, 0};
     gsr_pipewire_region cursor_region = {0, 0, 0, 0};
+    uint32_t pipewire_fourcc = 0;
+    uint64_t pipewire_modifiers = 0;
     bool using_external_image = false;
-    if(gsr_pipewire_map_texture(&self->pipewire, self->texture_map, &region, &cursor_region, self->plane_fds, &self->num_plane_fds, &using_external_image)) {
+    if(gsr_pipewire_map_texture(&self->pipewire, self->texture_map, &region, &cursor_region, self->dmabuf_data, &self->num_dmabuf_data, &pipewire_fourcc, &pipewire_modifiers, &using_external_image)) {
         if(region.width != self->capture_size.x || region.height != self->capture_size.y) {
-            gsr_color_conversion_clear(color_conversion);
             self->capture_size.x = region.width;
             self->capture_size.y = region.height;
+            gsr_color_conversion_clear(color_conversion);
         }
+    } else {
+        return 0;
     }
 
     self->params.egl->glFlush();
     self->params.egl->glFinish();
     
-    const int target_x = max_int(0, frame->width / 2 - self->capture_size.x / 2);
-    const int target_y = max_int(0, frame->height / 2 - self->capture_size.y / 2);
+    const vec2i target_pos = { max_int(0, frame->width / 2 - self->capture_size.x / 2), max_int(0, frame->height / 2 - self->capture_size.y / 2) };
 
-    gsr_color_conversion_draw(color_conversion, using_external_image ? self->texture_map.external_texture_id : self->texture_map.texture_id,
-        (vec2i){target_x, target_y}, self->capture_size,
-        (vec2i){region.x, region.y}, self->capture_size,
-        0.0f, using_external_image);
+    // TODO: Handle region crop
+
+    /* Fast opengl free path */
+    if(video_codec_context_is_vaapi(self->video_codec_context)) {
+        int fds[4];
+        uint32_t offsets[4];
+        uint32_t pitches[4];
+        uint64_t modifiers[4];
+        for(int i = 0; i < self->num_dmabuf_data; ++i) {
+            fds[i] = self->dmabuf_data[i].fd;
+            offsets[i] = self->dmabuf_data[i].offset;
+            pitches[i] = self->dmabuf_data[i].stride;
+            modifiers[i] = pipewire_modifiers;
+        }
+        vaapi_copy_drm_planes_to_video_surface(self->video_codec_context, frame, (vec2i){region.x, region.y}, self->capture_size, target_pos, self->capture_size, pipewire_fourcc, self->capture_size, fds, offsets, pitches, modifiers, self->num_dmabuf_data);
+    } else {
+        gsr_color_conversion_draw(color_conversion, using_external_image ? self->texture_map.external_texture_id : self->texture_map.texture_id,
+            target_pos, self->capture_size,
+            (vec2i){region.x, region.y}, self->capture_size,
+            0.0f, using_external_image);
+    }
 
     if(self->params.record_cursor) {
         const vec2i cursor_pos = {
-            target_x + cursor_region.x,
-            target_y + cursor_region.y
+            target_pos.x + cursor_region.x,
+            target_pos.y + cursor_region.y
         };
 
         self->params.egl->glEnable(GL_SCISSOR_TEST);
-        self->params.egl->glScissor(target_x, target_y, self->capture_size.x, self->capture_size.y);
+        self->params.egl->glScissor(target_pos.x, target_pos.y, self->capture_size.x, self->capture_size.y);
         gsr_color_conversion_draw(color_conversion, self->texture_map.cursor_texture_id,
             (vec2i){cursor_pos.x, cursor_pos.y}, (vec2i){cursor_region.width, cursor_region.height},
             (vec2i){0, 0}, (vec2i){cursor_region.width, cursor_region.height},
@@ -355,13 +379,9 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
     self->params.egl->glFlush();
     self->params.egl->glFinish();
 
-    return 0;
-}
-
-static void gsr_capture_portal_capture_end(gsr_capture *cap, AVFrame *frame) {
-    (void)frame;
-    gsr_capture_portal *self = cap->priv;
     gsr_capture_portal_cleanup_plane_fds(self);
+
+    return 0;
 }
 
 static gsr_source_color gsr_capture_portal_get_source_color(gsr_capture *cap) {
@@ -418,7 +438,6 @@ gsr_capture* gsr_capture_portal_create(const gsr_capture_portal_params *params) 
         .tick = NULL,
         .should_stop = NULL,
         .capture = gsr_capture_portal_capture,
-        .capture_end = gsr_capture_portal_capture_end,
         .get_source_color = gsr_capture_portal_get_source_color,
         .uses_external_image = gsr_capture_portal_uses_external_image,
         .is_damaged = gsr_capture_portal_is_damaged,

@@ -155,5 +155,3 @@ Enable 2-pass encoding.
 Add vbr/cbr option.
 
 Restart replay/update video resolution if monitor resolution changes.
-
-Support damage tracking on wayland.

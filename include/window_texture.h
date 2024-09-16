@@ -7,6 +7,7 @@ typedef struct {
     Display *display;
     Window window;
     Pixmap pixmap;
+    EGLImage image;
     unsigned int texture_id;
     int redirected;
     gsr_egl *egl;

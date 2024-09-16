@@ -12,6 +12,7 @@
 
 #include <xf86drmMode.h>
 #include <xf86drm.h>
+#include <libdrm/drm_fourcc.h>
 #include <X11/Xatom.h>
 #include <X11/extensions/Xrandr.h>
 #include <va/va_drmcommon.h>
@@ -628,25 +629,47 @@ void setup_dma_buf_attrs(intptr_t *img_attr, uint32_t format, uint32_t width, ui
 }
 
 static VADisplay video_codec_context_get_vaapi_display(AVCodecContext *video_codec_context) {
-    AVHWFramesContext *hw_frame_context = (AVHWFramesContext*)video_codec_context->hw_frames_ctx->data;
+    AVBufferRef *hw_frames_ctx = video_codec_context->hw_frames_ctx;
+    if(!hw_frames_ctx)
+        return NULL;
+
+    AVHWFramesContext *hw_frame_context = (AVHWFramesContext*)hw_frames_ctx->data;
     AVHWDeviceContext *device_context = (AVHWDeviceContext*)hw_frame_context->device_ctx;
-    if(device_context->type == AV_HWDEVICE_TYPE_VAAPI) {
-        AVVAAPIDeviceContext *vactx = device_context->hwctx;
-        return vactx->display;
-    }
-    return NULL;
+    if(device_context->type != AV_HWDEVICE_TYPE_VAAPI)
+        return NULL;
+
+    AVVAAPIDeviceContext *vactx = device_context->hwctx;
+    return vactx->display;
 }
 
 bool video_codec_context_is_vaapi(AVCodecContext *video_codec_context) {
-    AVHWFramesContext *hw_frame_context = (AVHWFramesContext*)video_codec_context->hw_frames_ctx->data;
+    AVBufferRef *hw_frames_ctx = video_codec_context->hw_frames_ctx;
+    if(!hw_frames_ctx)
+        return NULL;
+
+    AVHWFramesContext *hw_frame_context = (AVHWFramesContext*)hw_frames_ctx->data;
     AVHWDeviceContext *device_context = (AVHWDeviceContext*)hw_frame_context->device_ctx;
     return device_context->type == AV_HWDEVICE_TYPE_VAAPI;
 }
 
-bool vaapi_copy_drm_planes_to_video_surface(AVCodecContext *video_codec_context, AVFrame *video_frame, int x, int y, uint32_t format, uint32_t width, uint32_t height, const int *fds, const uint32_t *offsets, const uint32_t *pitches, const uint64_t *modifiers, int num_planes) {
+static uint32_t drm_fourcc_to_va_fourcc(uint32_t drm_fourcc) {
+    switch(drm_fourcc) {
+        case DRM_FORMAT_XRGB8888: return VA_FOURCC_BGRX;
+        case DRM_FORMAT_XBGR8888: return VA_FOURCC_RGBX;
+        case DRM_FORMAT_RGBX8888: return VA_FOURCC_XBGR;
+        case DRM_FORMAT_BGRX8888: return VA_FOURCC_XRGB;
+        case DRM_FORMAT_ARGB8888: return VA_FOURCC_BGRA;
+        case DRM_FORMAT_ABGR8888: return VA_FOURCC_RGBA;
+        case DRM_FORMAT_RGBA8888: return VA_FOURCC_ABGR;
+        case DRM_FORMAT_BGRA8888: return VA_FOURCC_ARGB;
+        default:                  return drm_fourcc;
+    }
+}
+
+bool vaapi_copy_drm_planes_to_video_surface(AVCodecContext *video_codec_context, AVFrame *video_frame, vec2i source_pos, vec2i source_size, vec2i dest_pos, vec2i dest_size, uint32_t format, vec2i size, const int *fds, const uint32_t *offsets, const uint32_t *pitches, const uint64_t *modifiers, int num_planes) {
     VAConfigID config_id = 0;
     VAContextID context_id = 0;
-    VASurfaceID input_surface = 0;
+    VASurfaceID input_surface_id = 0;
     VABufferID buffer_id = 0;
     bool success = true;
 
@@ -658,30 +681,30 @@ bool vaapi_copy_drm_planes_to_video_surface(AVCodecContext *video_codec_context,
 
     VAStatus va_status = vaCreateConfig(va_dpy, VAProfileNone, VAEntrypointVideoProc, NULL, 0, &config_id);
     if(va_status != VA_STATUS_SUCCESS) {
-        fprintf(stderr, "gsr error: vaapi_copy_drm_planes_to_video_surface: vaCreateConfig failed, error: %d\n", va_status);
+        fprintf(stderr, "gsr error: vaapi_copy_drm_planes_to_video_surface: vaCreateConfig failed, error: %s\n", vaErrorStr(va_status));
         success = false;
         goto done;
     }
 
-    VASurfaceID target_surface_id = (uintptr_t)video_frame->data[3];
-    va_status = vaCreateContext(va_dpy, config_id, width, height, VA_PROGRESSIVE, &target_surface_id, 1, &context_id);
+    VASurfaceID output_surface_id = (uintptr_t)video_frame->data[3];
+    va_status = vaCreateContext(va_dpy, config_id, size.x, size.y, VA_PROGRESSIVE, &output_surface_id, 1, &context_id);
     if(va_status != VA_STATUS_SUCCESS) {
-        fprintf(stderr, "gsr error: vaapi_copy_drm_planes_to_video_surface: vaCreateContext failed, error: %d\n", va_status);
+        fprintf(stderr, "gsr error: vaapi_copy_drm_planes_to_video_surface: vaCreateContext failed, error: %s\n", vaErrorStr(va_status));
         success = false;
         goto done;
     }
 
     VADRMPRIMESurfaceDescriptor buf = {0};
-    buf.fourcc = format;//VA_FOURCC_BGRX; // TODO: VA_FOURCC_BGRA, VA_FOURCC_X2R10G10B10
-    buf.width = width;
-    buf.height = height;
+    buf.fourcc = drm_fourcc_to_va_fourcc(format);//VA_FOURCC_BGRX; // TODO: VA_FOURCC_BGRA, VA_FOURCC_X2R10G10B10
+    buf.width = size.x;
+    buf.height = size.y;
     buf.num_objects = num_planes;
     buf.num_layers = 1;
     buf.layers[0].drm_format = format;
     buf.layers[0].num_planes = buf.num_objects;
     for(int i = 0; i < num_planes; ++i) {
         buf.objects[i].fd = fds[i];
-        buf.objects[i].size = height * pitches[i]; // TODO:
+        buf.objects[i].size = size.y * pitches[i]; // TODO:
         buf.objects[i].drm_format_modifier = modifiers[i];
 
         buf.layers[0].object_index[i] = i;
@@ -700,25 +723,33 @@ bool vaapi_copy_drm_planes_to_video_surface(AVCodecContext *video_codec_context,
     attribs[1].value.value.p = &buf;
     
     // TODO: RT_FORMAT with 10 bit/hdr, VA_RT_FORMAT_RGB32_10
-    va_status = vaCreateSurfaces(va_dpy, VA_RT_FORMAT_RGB32, width, height, &input_surface, 1, attribs, 2);
+    // TODO: Max size same as source_size
+    va_status = vaCreateSurfaces(va_dpy, VA_RT_FORMAT_RGB32, size.x, size.y, &input_surface_id, 1, attribs, 2);
     if(va_status != VA_STATUS_SUCCESS) {
-        fprintf(stderr, "gsr error: vaapi_copy_drm_planes_to_video_surface: vaCreateSurfaces failed, error: %d\n", va_status);
+        fprintf(stderr, "gsr error: vaapi_copy_drm_planes_to_video_surface: vaCreateSurfaces failed, error: %s\n", vaErrorStr(va_status));
         success = false;
         goto done;
     }
 
-    // TODO:
+    const VARectangle source_region = {
+        .x = source_pos.x,
+        .y = source_pos.y,
+        .width = source_size.x,
+        .height = source_size.y
+    };
+
     const VARectangle output_region = {
-        .x = x,
-        .y = y,
-        .width = width,
-        .height = height
+        .x = dest_pos.x,
+        .y = dest_pos.y,
+        .width = dest_size.x,
+        .height = dest_size.y
     };
 
     // Copying a surface to another surface will automatically perform the color conversion. Thanks vaapi!
     VAProcPipelineParameterBuffer params = {0};
-    params.surface = input_surface;
+    params.surface = input_surface_id;
     params.surface_region = NULL;
+    params.surface_region = &source_region;
     params.output_region = &output_region;
     params.output_background_color = 0;
     params.filter_flags = VA_FRAME_PICTURE;
@@ -760,7 +791,7 @@ bool vaapi_copy_drm_planes_to_video_surface(AVCodecContext *video_codec_context,
         goto done;
     }
 
-    va_status = vaBeginPicture(va_dpy, context_id, target_surface_id);
+    va_status = vaBeginPicture(va_dpy, context_id, output_surface_id);
     if(va_status != VA_STATUS_SUCCESS) {
         fprintf(stderr, "gsr error: vaapi_copy_drm_planes_to_video_surface: vaBeginPicture failed, error: %d\n", va_status);
         success = false;
@@ -782,20 +813,74 @@ bool vaapi_copy_drm_planes_to_video_surface(AVCodecContext *video_codec_context,
         goto done;
     }
 
-    //vaSyncBuffer(self->va_dpy, self->buffer_id, 1000 * 1000);
+    // vaSyncBuffer(va_dpy, buffer_id, 1000 * 1000 * 1000);
+    // vaSyncSurface(va_dpy, input_surface_id);
+    // vaSyncSurface(va_dpy, output_surface_id);
 
     done:
     if(buffer_id)
         vaDestroyBuffer(va_dpy, buffer_id);
 
-    if(input_surface)
-        vaDestroySurfaces(va_dpy, &input_surface, 1);
+    if(input_surface_id)
+        vaDestroySurfaces(va_dpy, &input_surface_id, 1);
 
     if(context_id)
         vaDestroyContext(va_dpy, context_id);
 
     if(config_id)
         vaDestroyConfig(va_dpy, config_id);
+
+    return success;
+}
+
+bool vaapi_copy_egl_image_to_video_surface(gsr_egl *egl, EGLImage image, vec2i source_pos, vec2i source_size, vec2i dest_pos, vec2i dest_size, AVCodecContext *video_codec_context, AVFrame *video_frame) {
+    if(!image)
+        return false;
+
+    int texture_fourcc = 0;
+    int texture_num_planes = 0;
+    uint64_t texture_modifiers = 0;
+    if(!egl->eglExportDMABUFImageQueryMESA(egl->egl_display, image, &texture_fourcc, &texture_num_planes, &texture_modifiers)) {
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: eglExportDMABUFImageQueryMESA failed\n");
+        return false;
+    }
+
+    if(texture_num_planes <= 0 || texture_num_planes > 8) {
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: expected planes size to be 0<planes<8 for drm buf, got %d planes\n", texture_num_planes);
+        return false;
+    }
+
+    int texture_fds[8];
+    int32_t texture_strides[8];
+    int32_t texture_offsets[8];
+
+    while(egl->eglGetError() != EGL_SUCCESS){}
+    if(!egl->eglExportDMABUFImageMESA(egl->egl_display, image, texture_fds, texture_strides, texture_offsets)) {
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: eglExportDMABUFImageMESA failed, error: %d\n", egl->eglGetError());
+        return false;
+    }
+
+    int fds[8];
+    uint32_t offsets[8];
+    uint32_t pitches[8];
+    uint64_t modifiers[8];
+    for(int i = 0; i < texture_num_planes; ++i) {
+        fds[i] = texture_fds[i];
+        offsets[i] = texture_offsets[i];
+        pitches[i] = texture_strides[i];
+        modifiers[i] = texture_modifiers;
+
+        if(fds[i] == -1)
+            texture_num_planes = i;
+    }
+    const bool success = texture_num_planes > 0 && vaapi_copy_drm_planes_to_video_surface(video_codec_context, video_frame, source_pos, source_size, dest_pos, dest_size, texture_fourcc, source_size, fds, offsets, pitches, modifiers, texture_num_planes);
+
+    for(int i = 0; i < texture_num_planes; ++i) {
+        if(texture_fds[i] > 0) {
+            close(texture_fds[i]);
+            texture_fds[i] = -1;
+        }
+    }
 
     return success;
 }

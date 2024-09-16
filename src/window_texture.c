@@ -16,6 +16,7 @@ int window_texture_init(WindowTexture *window_texture, Display *display, Window 
     window_texture->display = display;
     window_texture->window = window;
     window_texture->pixmap = None;
+    window_texture->image = NULL;
     window_texture->texture_id = 0;
     window_texture->redirected = 0;
     window_texture->egl = egl;
@@ -32,6 +33,11 @@ static void window_texture_cleanup(WindowTexture *self, int delete_texture) {
     if(delete_texture && self->texture_id) {
         self->egl->glDeleteTextures(1, &self->texture_id);
         self->texture_id = 0;
+    }
+
+    if(self->image) {
+        self->egl->eglDestroyImage(self->egl->egl_display, self->image);
+        self->image = NULL;
     }
 
     if(self->pixmap) {
@@ -101,14 +107,14 @@ int window_texture_on_resize(WindowTexture *self) {
 
     self->pixmap = pixmap;
     self->texture_id = texture_id;
+    self->image = image;
 
     cleanup:
     self->egl->glBindTexture(GL_TEXTURE_2D, 0);
 
-    if(image)
-        self->egl->eglDestroyImage(self->egl->egl_display, image);
-
     if(result != 0) {
+        if(image)
+            self->egl->eglDestroyImage(self->egl->egl_display, image);
         if(texture_id != 0)
             self->egl->glDeleteTextures(1, &texture_id);
         if(pixmap)

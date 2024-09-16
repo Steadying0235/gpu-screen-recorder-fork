@@ -471,7 +471,6 @@ gsr_capture* gsr_capture_nvfbc_create(const gsr_capture_nvfbc_params *params) {
         .tick = NULL,
         .should_stop = NULL,
         .capture = gsr_capture_nvfbc_capture,
-        .capture_end = NULL,
         .get_source_color = gsr_capture_nvfbc_get_source_color,
         .uses_external_image = NULL,
         .destroy = gsr_capture_nvfbc_destroy,

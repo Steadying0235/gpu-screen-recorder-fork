@@ -3331,7 +3331,7 @@ int main(int argc, char **argv) {
             gsr_damage_on_event(&damage, gsr_egl_get_event_data(&egl));
         }
         gsr_damage_tick(&damage);
-        gsr_capture_tick(capture, video_codec_context);
+        gsr_capture_tick(capture);
 
         if(!is_monitor_capture) {
             Window damage_target_window = 0;
@@ -3349,10 +3349,12 @@ int main(int argc, char **argv) {
         }
 
         bool damaged = false;
-        if(capture->is_damaged)
+        if(use_damage_tracking)
+            damaged = gsr_damage_is_damaged(&damage);
+        else if(capture->is_damaged)
             damaged = capture->is_damaged(capture);
         else
-            damaged = !use_damage_tracking || gsr_damage_is_damaged(&damage);
+            damaged = true;
 
         if(damaged)
             ++damage_fps_counter;
@@ -3410,7 +3412,6 @@ int main(int argc, char **argv) {
                 }
             }
 
-            gsr_capture_capture_end(capture, video_frame);
             video_pts_counter += num_frames;
         }
 

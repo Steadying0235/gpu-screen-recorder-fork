@@ -104,8 +104,8 @@ typedef struct {
 bool gsr_pipewire_init(gsr_pipewire *self, int pipewire_fd, uint32_t pipewire_node, int fps, bool capture_cursor, gsr_egl *egl);
 void gsr_pipewire_deinit(gsr_pipewire *self);
 
-/* |plane_fds| should be at least GSR_PIPEWIRE_DMABUF_MAX_PLANES in size */
-bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region, int *plane_fds, int *num_plane_fds, bool *using_external_image);
+/* |dmabuf_data| should be at least GSR_PIPEWIRE_DMABUF_MAX_PLANES in size */
+bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region, gsr_pipewire_dmabuf_data *dmabuf_data, int *num_dmabuf_data, uint32_t *fourcc, uint64_t *modifiers, bool *using_external_image);
 bool gsr_pipewire_is_damaged(gsr_pipewire *self);
 void gsr_pipewire_clear_damage(gsr_pipewire *self);
 

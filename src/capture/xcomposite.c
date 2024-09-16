@@ -29,6 +29,7 @@ typedef struct {
     double window_resize_timer;
     
     WindowTexture window_texture;
+    AVCodecContext *video_codec_context;
 
     Atom net_active_window_atom;
 
@@ -122,12 +123,12 @@ static int gsr_capture_xcomposite_start(gsr_capture *cap, AVCodecContext *video_
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
 
+    self->video_codec_context = video_codec_context;
     self->window_resize_timer = clock_get_monotonic_seconds();
     return 0;
 }
 
-static void gsr_capture_xcomposite_tick(gsr_capture *cap, AVCodecContext *video_codec_context) {
-    (void)video_codec_context;
+static void gsr_capture_xcomposite_tick(gsr_capture *cap) {
     gsr_capture_xcomposite *self = cap->priv;
 
     if(self->params.follow_focused && !self->follow_focused_initialized) {
@@ -255,27 +256,31 @@ static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_
         gsr_color_conversion_clear(color_conversion);
     }
 
-    const int target_x = max_int(0, frame->width / 2 - self->texture_size.x / 2);
-    const int target_y = max_int(0, frame->height / 2 - self->texture_size.y / 2);
+    const vec2i target_pos = { max_int(0, frame->width / 2 - self->texture_size.x / 2), max_int(0, frame->height / 2 - self->texture_size.y / 2) };
 
     self->params.egl->glFlush();
     self->params.egl->glFinish();
 
-    gsr_color_conversion_draw(color_conversion, window_texture_get_opengl_texture_id(&self->window_texture),
-        (vec2i){target_x, target_y}, self->texture_size,
-        (vec2i){0, 0}, self->texture_size,
-        0.0f, false);
+    /* Fast opengl free path */
+    if(video_codec_context_is_vaapi(self->video_codec_context)) {
+        vaapi_copy_egl_image_to_video_surface(self->params.egl, self->window_texture.image, (vec2i){0, 0}, self->texture_size, target_pos, self->texture_size, self->video_codec_context, frame);
+    } else {
+        gsr_color_conversion_draw(color_conversion, window_texture_get_opengl_texture_id(&self->window_texture),
+            target_pos, self->texture_size,
+            (vec2i){0, 0}, self->texture_size,
+            0.0f, false);
+    }
 
     if(self->params.record_cursor && self->cursor.visible) {
         gsr_cursor_tick(&self->cursor, self->window);
 
         const vec2i cursor_pos = {
-            target_x + self->cursor.position.x - self->cursor.hotspot.x,
-            target_y + self->cursor.position.y - self->cursor.hotspot.y
+            target_pos.x + self->cursor.position.x - self->cursor.hotspot.x,
+            target_pos.y + self->cursor.position.y - self->cursor.hotspot.y
         };
 
         self->params.egl->glEnable(GL_SCISSOR_TEST);
-        self->params.egl->glScissor(target_x, target_y, self->texture_size.x, self->texture_size.y);
+        self->params.egl->glScissor(target_pos.x, target_pos.y, self->texture_size.x, self->texture_size.y);
 
         gsr_color_conversion_draw(color_conversion, self->cursor.texture_id,
             cursor_pos, self->cursor.size,
@@ -335,7 +340,6 @@ gsr_capture* gsr_capture_xcomposite_create(const gsr_capture_xcomposite_params *
         .tick = gsr_capture_xcomposite_tick,
         .should_stop = gsr_capture_xcomposite_should_stop,
         .capture = gsr_capture_xcomposite_capture,
-        .capture_end = NULL,
         .get_source_color = gsr_capture_xcomposite_get_source_color,
         .uses_external_image = NULL,
         .get_window_id = gsr_capture_xcomposite_get_window_id,

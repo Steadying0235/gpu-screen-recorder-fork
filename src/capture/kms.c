@@ -552,7 +552,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     if(drm_fd->has_hdr_metadata && self->params.hdr && hdr_metadata_is_supported_format(&drm_fd->hdr_metadata))
         gsr_kms_set_hdr_metadata(self, drm_fd);
 
-    if(!self->performance_error_shown && self->monitor_rotation != GSR_MONITOR_ROT_0 && video_codec_context_is_vaapi(self->video_codec_context)) {
+    if(!self->performance_error_shown && self->monitor_rotation != GSR_MONITOR_ROT_0 && video_codec_context_is_vaapi(self->video_codec_context) && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD) {
         self->performance_error_shown = true;
         fprintf(stderr,"gsr warning: gsr_capture_kms_capture: the monitor you are recording is rotated, composition will have to be used."
             " If you are experience performance problems in the video then record a single window on X11 or use portal capture option instead\n");
@@ -576,7 +576,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     }
 
     /* Fast opengl free path */
-    if(self->monitor_rotation == GSR_MONITOR_ROT_0 && video_codec_context_is_vaapi(self->video_codec_context)) {
+    if(self->monitor_rotation == GSR_MONITOR_ROT_0 && video_codec_context_is_vaapi(self->video_codec_context) && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD) {
         int fds[4];
         uint32_t offsets[4];
         uint32_t pitches[4];

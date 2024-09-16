@@ -152,6 +152,8 @@ Allow prime-run on x11 if monitor capture and the prime gpu is not nvidia.
 
 Enable 2-pass encoding.
 
-Add vbr/cbr option.
+Add cbr option.
 
 Restart replay/update video resolution if monitor resolution changes.
+
+Fix pure vaapi copy on intel.

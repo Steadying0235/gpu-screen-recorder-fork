@@ -342,7 +342,7 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
     // TODO: Handle region crop
 
     /* Fast opengl free path */
-    if(video_codec_context_is_vaapi(self->video_codec_context)) {
+    if(video_codec_context_is_vaapi(self->video_codec_context) && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD) {
         int fds[4];
         uint32_t offsets[4];
         uint32_t pitches[4];

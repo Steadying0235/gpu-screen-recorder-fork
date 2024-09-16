@@ -262,7 +262,7 @@ static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_
     self->params.egl->glFinish();
 
     /* Fast opengl free path */
-    if(video_codec_context_is_vaapi(self->video_codec_context)) {
+    if(video_codec_context_is_vaapi(self->video_codec_context) && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD) {
         vaapi_copy_egl_image_to_video_surface(self->params.egl, self->window_texture.image, (vec2i){0, 0}, self->texture_size, target_pos, self->texture_size, self->video_codec_context, frame);
     } else {
         gsr_color_conversion_draw(color_conversion, window_texture_get_opengl_texture_id(&self->window_texture),

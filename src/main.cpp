@@ -143,6 +143,17 @@ static bool video_codec_is_hdr(VideoCodec video_codec) {
     }
 }
 
+static VideoCodec hdr_video_codec_to_sdr_video_codec(VideoCodec video_codec) {
+    switch(video_codec) {
+        case VideoCodec::HEVC_HDR:
+            return VideoCodec::HEVC;
+        case VideoCodec::AV1_HDR:
+            return VideoCodec::AV1;
+        default:
+            return video_codec;
+    }
+}
+
 static gsr_color_depth video_codec_to_bit_depth(VideoCodec video_codec) {
     switch(video_codec) {
         case VideoCodec::HEVC_HDR:
@@ -1893,10 +1904,6 @@ static gsr_capture* create_capture_impl(std::string &window_str, const char *scr
             _exit(1);
         }
 
-        if(video_codec_is_hdr(video_codec)) {
-            fprintf(stderr, "Warning: portal capture option doesn't support hdr yet (pipewire doesn't support hdr)\n");
-        }
-
         gsr_capture_portal_params portal_params;
         portal_params.egl = egl;
         portal_params.color_depth = color_depth;
@@ -2900,6 +2907,11 @@ int main(int argc, char **argv) {
 
     const bool force_no_audio_offset = is_livestream || is_output_piped || (file_extension != "mp4" && file_extension != "mkv" && file_extension != "webm");
     const double target_fps = 1.0 / (double)fps;
+
+    if(video_codec_is_hdr(video_codec) && is_portal_capture) {
+        fprintf(stderr, "Warning: portal capture option doesn't support hdr yet (pipewire doesn't support hdr), the video will be tonemapped from hdr to sdr\n");
+        video_codec = hdr_video_codec_to_sdr_video_codec(video_codec);
+    }
 
     audio_codec = select_audio_codec_with_fallback(audio_codec, file_extension, uses_amix);
     const AVCodec *video_codec_f = select_video_codec_with_fallback(&video_codec, video_codec_to_use, file_extension.c_str(), use_software_video_encoder, &egl);

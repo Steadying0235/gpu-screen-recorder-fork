@@ -55,9 +55,9 @@ typedef struct {
     AVCodecContext *video_codec_context;
     bool performance_error_shown;
 
-    int drm_fd;
-    uint64_t prev_sequence;
-    bool damaged;
+    //int drm_fd;
+    //uint64_t prev_sequence;
+    //bool damaged;
 
     vec2i prev_target_pos;
     vec2i prev_plane_size;
@@ -93,10 +93,10 @@ static void gsr_capture_kms_stop(gsr_capture_kms *self) {
         self->cursor_texture_id = 0;
     }
 
-    if(self->drm_fd > 0) {
-        close(self->drm_fd);
-        self->drm_fd = -1;
-    }
+    // if(self->drm_fd > 0) {
+    //     close(self->drm_fd);
+    //     self->drm_fd = -1;
+    // }
 
     gsr_capture_kms_cleanup_kms_fds(self);
     gsr_kms_client_deinit(&self->kms_client);
@@ -232,25 +232,26 @@ static void gsr_capture_kms_on_event(gsr_capture *cap, gsr_egl *egl) {
     gsr_cursor_on_event(&self->x11_cursor, xev);
 }
 
-static void gsr_capture_kms_tick(gsr_capture *cap) {
-    gsr_capture_kms *self = cap->priv;
+// TODO: This is disabled for now because we want to be able to record at a framerate highe than the monitor framerate
+// static void gsr_capture_kms_tick(gsr_capture *cap) {
+//     gsr_capture_kms *self = cap->priv;
 
-    if(self->drm_fd <= 0)
-        self->drm_fd = open(self->params.egl->card_path, O_RDONLY);
+//     if(self->drm_fd <= 0)
+//         self->drm_fd = open(self->params.egl->card_path, O_RDONLY);
 
-    if(self->drm_fd <= 0)
-        return;
+//     if(self->drm_fd <= 0)
+//         return;
 
-    uint64_t sequence = 0;
-    uint64_t ns = 0;
-    if(drmCrtcGetSequence(self->drm_fd, 79, &sequence, &ns) != 0)
-        return;
+//     uint64_t sequence = 0;
+//     uint64_t ns = 0;
+//     if(drmCrtcGetSequence(self->drm_fd, 79, &sequence, &ns) != 0)
+//         return;
 
-    if(sequence != self->prev_sequence) {
-        self->prev_sequence = sequence;
-        self->damaged = true;
-    }
-}
+//     if(sequence != self->prev_sequence) {
+//         self->prev_sequence = sequence;
+//         self->damaged = true;
+//     }
+// }
 
 static float monitor_rotation_to_radians(gsr_monitor_rotation rot) {
     switch(rot) {
@@ -673,15 +674,15 @@ static bool gsr_capture_kms_set_hdr_metadata(gsr_capture *cap, AVMasteringDispla
     return true;
 }
 
-static bool gsr_capture_kms_is_damaged(gsr_capture *cap) {
-    gsr_capture_kms *self = cap->priv;
-    return self->damaged;
-}
+// static bool gsr_capture_kms_is_damaged(gsr_capture *cap) {
+//     gsr_capture_kms *self = cap->priv;
+//     return self->damaged;
+// }
 
-static void gsr_capture_kms_clear_damage(gsr_capture *cap) {
-    gsr_capture_kms *self = cap->priv;
-    self->damaged = false;
-}
+// static void gsr_capture_kms_clear_damage(gsr_capture *cap) {
+//     gsr_capture_kms *self = cap->priv;
+//     self->damaged = false;
+// }
 
 static void gsr_capture_kms_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
     (void)video_codec_context;
@@ -725,14 +726,14 @@ gsr_capture* gsr_capture_kms_create(const gsr_capture_kms_params *params) {
     *cap = (gsr_capture) {
         .start = gsr_capture_kms_start,
         .on_event = gsr_capture_kms_on_event,
-        .tick = gsr_capture_kms_tick,
+        //.tick = gsr_capture_kms_tick,
         .should_stop = gsr_capture_kms_should_stop,
         .capture = gsr_capture_kms_capture,
         .get_source_color = gsr_capture_kms_get_source_color,
         .uses_external_image = gsr_capture_kms_uses_external_image,
         .set_hdr_metadata = gsr_capture_kms_set_hdr_metadata,
-        .is_damaged = gsr_capture_kms_is_damaged,
-        .clear_damage = gsr_capture_kms_clear_damage,
+        //.is_damaged = gsr_capture_kms_is_damaged,
+        //.clear_damage = gsr_capture_kms_clear_damage,
         .destroy = gsr_capture_kms_destroy,
         .priv = cap_kms
     };

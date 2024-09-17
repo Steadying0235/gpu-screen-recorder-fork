@@ -497,6 +497,9 @@ static void render_drm_cursor(gsr_capture_kms *self, gsr_color_conversion *color
 }
 
 static void render_x11_cursor(gsr_capture_kms *self, gsr_color_conversion *color_conversion, vec2i capture_pos, vec2i target_pos) {
+    if(!self->x11_cursor.visible)
+        return;
+
     gsr_cursor_tick(&self->x11_cursor, DefaultRootWindow(self->params.egl->x11.dpy));
 
     const vec2i cursor_pos = {

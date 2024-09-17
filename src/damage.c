@@ -53,6 +53,9 @@ bool gsr_damage_init(gsr_damage *self, gsr_egl *egl, bool track_cursor) {
         return false;
     }
 
+    if(self->track_cursor)
+        self->track_cursor = gsr_cursor_init(&self->cursor, self->egl, self->egl->x11.dpy) == 0;
+
     XRRSelectInput(self->egl->x11.dpy, DefaultRootWindow(self->egl->x11.dpy), RRScreenChangeNotifyMask | RRCrtcChangeNotifyMask | RROutputChangeNotifyMask);
 
     self->damaged = true;
@@ -64,6 +67,8 @@ void gsr_damage_deinit(gsr_damage *self) {
         XDamageDestroy(self->egl->x11.dpy, self->damage);
         self->damage = None;
     }
+
+    gsr_cursor_deinit(&self->cursor);
 
     self->damage_event = 0;
     self->damage_error = 0;
@@ -245,16 +250,11 @@ static void gsr_damage_on_damage_event(gsr_damage *self, XEvent *xev) {
     XFlush(self->egl->x11.dpy);
 }
 
-static void gsr_damage_on_event_cursor(gsr_damage *self) {
-    Window root_return = None;
-    Window child_return = None;
-    int dummy_i;
-    unsigned int dummy_u;
-    vec2i cursor_position = {0, 0};
-    XQueryPointer(self->egl->x11.dpy, self->window, &root_return, &child_return, &dummy_i, &dummy_i, &cursor_position.x, &cursor_position.y, &dummy_u);
-    if(cursor_position.x != self->cursor_position.x || cursor_position.y != self->cursor_position.y) {
-        self->cursor_position = cursor_position;
-        const gsr_rectangle cursor_region = { self->cursor_position, {64, 64} }; // TODO: Track cursor size
+static void gsr_damage_on_tick_cursor(gsr_damage *self) {
+    vec2i prev_cursor_pos = self->cursor.position;
+    gsr_cursor_tick(&self->cursor, self->window);
+    if(self->cursor.position.x != prev_cursor_pos.x || self->cursor.position.y != prev_cursor_pos.y) {
+        const gsr_rectangle cursor_region = { self->cursor.position, self->cursor.size };
         switch(self->track_type) {
             case GSR_DAMAGE_TRACK_NONE: {
                 self->damaged = true;
@@ -302,14 +302,17 @@ void gsr_damage_on_event(gsr_damage *self, XEvent *xev) {
 
     if(self->damage_event && xev->type == self->damage_event + XDamageNotify)
         gsr_damage_on_damage_event(self, xev);
+
+    if(self->track_cursor)
+        gsr_cursor_on_event(&self->cursor, xev);
 }
 
 void gsr_damage_tick(gsr_damage *self) {
     if(self->damage_event == 0 || self->track_type == GSR_DAMAGE_TRACK_NONE)
         return;
 
-    if(self->track_cursor && !self->damaged)
-        gsr_damage_on_event_cursor(self);
+    if(self->track_cursor && self->cursor.visible && !self->damaged)
+        gsr_damage_on_tick_cursor(self);
 }
 
 bool gsr_damage_is_damaged(gsr_damage *self) {

@@ -1,6 +1,7 @@
 #ifndef GSR_DAMAGE_H
 #define GSR_DAMAGE_H
 
+#include "cursor.h"
 #include "utils.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -31,7 +32,7 @@ typedef struct {
     //vec2i window_pos;
     vec2i window_size;
 
-    vec2i cursor_position; /* Relative to |window| */
+    gsr_cursor cursor; /* Relative to |window| */
     gsr_monitor monitor;
     char monitor_name[32];
 } gsr_damage;

@@ -887,6 +887,8 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
     } else {
         // TODO: More quality options
         //av_dict_set_int(&options, "low_power", 1, 0);
+        // Improves performance but increases vram
+        av_dict_set_int(&options, "async_depth", 8, 0);
 
         if(codec_context->codec_id == AV_CODEC_ID_H264) {
             // TODO:
@@ -3389,7 +3391,7 @@ int main(int argc, char **argv) {
         const int64_t expected_frames = std::round((this_video_frame_time - record_start_time) / target_fps);
         int num_frames = std::max((int64_t)0LL, expected_frames - video_pts_counter);
         const double num_frames_seconds = num_frames * target_fps;
-        if((damaged || num_frames_seconds >= damage_timeout_seconds) && !paused/* && fps_counter < fps + 100*/) {
+        if((damaged || (framerate_mode == FramerateMode::CONSTANT && num_frames > 0) || (framerate_mode != FramerateMode::CONSTANT && num_frames_seconds >= damage_timeout_seconds)) && !paused) {
             gsr_damage_clear(&damage);
             if(capture->clear_damage)
                 capture->clear_damage(capture);

@@ -162,6 +162,10 @@ This is mostly an issue on AMD. For av1 it's a hardware issue, see: https://gitl
 This can happen if your video player is missing the H264/HEVC video codecs. Either install the codecs or use mpv.
 ## I get stutter in the video
 Try recording to an SSD and make sure it's not using NTFS file system. Also record in variable framerate format.
+## The colors look washed out when recording a monitor with HDR enabled
+You have to either record in hdr mode (`hevc_hdr`/`av1_hdr`) to record a HDR video or record with desktop portal option (`-w portal`) to turn the HDR recording into SDR.
+## GPU Screen Recorder records night light when recording with monitor with HDR
+You can record with desktop portal option (`-w portal`) instead which ignores night light, if you are ok with recording without HDR.
 
 # Donations
 If you want to donate you can donate via bitcoin or monero.

@@ -900,9 +900,9 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
         } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
             //av_dict_set(&options, "pix_fmt", "yuv420p16le", 0);
             if(color_depth == GSR_COLOR_DEPTH_10_BITS)
-                av_dict_set_int(&options, "profile", AV_PROFILE_HEVC_MAIN_10, 0);
+                av_dict_set(&options, "profile", "main10", 0);
             else
-                av_dict_set_int(&options, "profile", AV_PROFILE_HEVC_MAIN, 0);
+                av_dict_set(&options, "profile", "main", 0);
         }
     } else {
         // TODO: More quality options

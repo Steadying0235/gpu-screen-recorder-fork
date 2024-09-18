@@ -287,7 +287,8 @@ static AVCodecID audio_codec_get_id(AudioCodec audio_codec) {
     return AV_CODEC_ID_AAC;
 }
 
-static AVSampleFormat audio_codec_get_sample_format(AudioCodec audio_codec, const AVCodec *codec, bool mix_audio) {
+static AVSampleFormat audio_codec_get_sample_format(AVCodecContext *audio_codec_context, AudioCodec audio_codec, const AVCodec *codec, bool mix_audio) {
+    (void)audio_codec_context;
     switch(audio_codec) {
         case AudioCodec::AAC: {
             return AV_SAMPLE_FMT_FLTP;
@@ -296,13 +297,32 @@ static AVSampleFormat audio_codec_get_sample_format(AudioCodec audio_codec, cons
             bool supports_s16 = false;
             bool supports_flt = false;
 
-            for(size_t i = 0; codec->sample_fmts && codec->sample_fmts[i] != -1; ++i) {
+            #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(61, 15, 0)
+            for(size_t i = 0; codec->sample_fmts && codec->sample_fmts[i] != AV_SAMPLE_FMT_NONE; ++i) {
                 if(codec->sample_fmts[i] == AV_SAMPLE_FMT_S16) {
                     supports_s16 = true;
                 } else if(codec->sample_fmts[i] == AV_SAMPLE_FMT_FLT) {
                     supports_flt = true;
                 }
             }
+            #else
+            const enum AVSampleFormat *sample_fmts = NULL;
+            if(avcodec_get_supported_config(audio_codec_context, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0, (const void**)&sample_fmts, NULL) >= 0) {
+                if(sample_fmts) {
+                    for(size_t i = 0; sample_fmts[i] != AV_SAMPLE_FMT_NONE; ++i) {
+                        if(sample_fmts[i] == AV_SAMPLE_FMT_S16) {
+                            supports_s16 = true;
+                        } else if(sample_fmts[i] == AV_SAMPLE_FMT_FLT) {
+                            supports_flt = true;
+                        }
+                    }
+                } else {
+                    // What a dumb API. It returns NULL if all formats are supported
+                    supports_s16 = true;
+                    supports_flt = true;
+                }
+            }
+            #endif
 
             // Amix only works with float audio
             if(mix_audio)
@@ -371,7 +391,7 @@ static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_code
 
     assert(codec->type == AVMEDIA_TYPE_AUDIO);
     codec_context->codec_id = codec->id;
-    codec_context->sample_fmt = audio_codec_get_sample_format(audio_codec, codec, mix_audio);
+    codec_context->sample_fmt = audio_codec_get_sample_format(codec_context, audio_codec, codec, mix_audio);
     codec_context->bit_rate = audio_bitrate == 0 ? audio_codec_get_get_bitrate(audio_codec) : audio_bitrate;
     codec_context->sample_rate = AUDIO_SAMPLE_RATE;
     if(audio_codec == AudioCodec::AAC)
@@ -694,9 +714,9 @@ static void open_video_software(AVCodecContext *codec_context, VideoQuality vide
 
     av_dict_set(&options, "preset", "medium", 0);
     if(color_depth == GSR_COLOR_DEPTH_10_BITS) {
-        av_dict_set(&options, "profile", "high10", 0);
+        av_dict_set_int(&options, "profile", AV_PROFILE_H264_HIGH_10, 0);
     } else {
-        av_dict_set(&options, "profile", "high", 0);
+        av_dict_set_int(&options, "profile", AV_PROFILE_H264_HIGH, 0);
     }
     // TODO: If streaming or piping output set this to zerolatency
     av_dict_set(&options, "tune", "fastdecode", 0);
@@ -880,9 +900,9 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
         } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
             //av_dict_set(&options, "pix_fmt", "yuv420p16le", 0);
             if(color_depth == GSR_COLOR_DEPTH_10_BITS)
-                av_dict_set(&options, "profile", "main10", 0);
+                av_dict_set_int(&options, "profile", AV_PROFILE_HEVC_MAIN_10, 0);
             else
-                av_dict_set(&options, "profile", "main", 0);
+                av_dict_set_int(&options, "profile", AV_PROFILE_HEVC_MAIN, 0);
         }
     } else {
         // TODO: More quality options
@@ -893,19 +913,19 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
         if(codec_context->codec_id == AV_CODEC_ID_H264) {
             // TODO:
             if(color_depth == GSR_COLOR_DEPTH_10_BITS)
-                av_dict_set(&options, "profile", "high10", 0);
+                av_dict_set_int(&options, "profile", AV_PROFILE_H264_HIGH_10, 0);
             else
-                av_dict_set(&options, "profile", "high", 0);
+                av_dict_set_int(&options, "profile", AV_PROFILE_H264_HIGH, 0);
             // Removed because it causes stutter in games for some people
             //av_dict_set_int(&options, "quality", 5, 0); // quality preset
         } else if(codec_context->codec_id == AV_CODEC_ID_AV1) {
-            av_dict_set(&options, "profile", "main", 0); // TODO: use professional instead?
+            av_dict_set_int(&options, "profile", AV_PROFILE_AV1_MAIN, 0); // TODO: use professional instead?
             av_dict_set(&options, "tier", "main", 0);
         } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
             if(color_depth == GSR_COLOR_DEPTH_10_BITS)
-                av_dict_set(&options, "profile", "main10", 0);
+                av_dict_set_int(&options, "profile", AV_PROFILE_HEVC_MAIN_10, 0);
             else
-                av_dict_set(&options, "profile", "main", 0);
+                av_dict_set_int(&options, "profile", AV_PROFILE_HEVC_MAIN, 0);
 
             if(hdr)
                 av_dict_set(&options, "sei", "hdr", 0);

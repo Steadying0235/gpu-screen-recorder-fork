@@ -3389,18 +3389,19 @@ int main(int argc, char **argv) {
 
         const double this_video_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
         const int64_t expected_frames = std::round((this_video_frame_time - record_start_time) / target_fps);
-        int num_frames = std::max((int64_t)0LL, expected_frames - video_pts_counter);
+        const int num_frames = std::max((int64_t)0LL, expected_frames - video_pts_counter);
         const double num_frames_seconds = num_frames * target_fps;
         if((damaged || (framerate_mode == FramerateMode::CONSTANT && num_frames > 0) || (framerate_mode != FramerateMode::CONSTANT && num_frames_seconds >= damage_timeout_seconds)) && !paused) {
             gsr_damage_clear(&damage);
             if(capture->clear_damage)
                 capture->clear_damage(capture);
 
-            egl.glClear(0);
-            gsr_capture_capture(capture, video_frame, &color_conversion);
-            gsr_egl_swap_buffers(&egl);
-
-            gsr_video_encoder_copy_textures_to_frame(video_encoder, video_frame);
+            if(damaged || video_pts_counter == 0) {
+                egl.glClear(0);
+                gsr_capture_capture(capture, video_frame, &color_conversion);
+                gsr_egl_swap_buffers(&egl);
+                gsr_video_encoder_copy_textures_to_frame(video_encoder, video_frame);
+            }
 
             if(hdr && !hdr_metadata_set && replay_buffer_size_secs == -1 && add_hdr_metadata_to_video_stream(capture, video_stream))
                 hdr_metadata_set = true;

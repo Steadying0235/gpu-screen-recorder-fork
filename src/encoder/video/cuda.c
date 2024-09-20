@@ -281,6 +281,7 @@ static bool get_supported_video_codecs(const NV_ENCODE_API_FUNCTION_LIST *functi
 }
 
 #define NVENCAPI_VERSION_470 (11 | (1 << 24))
+#define NVENCAPI_STRUCT_VERSION_470(ver) ((uint32_t)NVENCAPI_VERSION_470 | ((ver)<<16) | (0x7 << 28))
 
 static gsr_supported_video_codecs gsr_video_encoder_cuda_get_supported_codecs(gsr_video_encoder *encoder, bool cleanup) {
     (void)encoder;
@@ -310,13 +311,16 @@ static gsr_supported_video_codecs gsr_video_encoder_cuda_get_supported_codecs(gs
     memset(&function_list, 0, sizeof(function_list));
     function_list.version = NV_ENCODE_API_FUNCTION_LIST_VER;
     if(nvEncodeAPICreateInstance(&function_list) != NV_ENC_SUCCESS) {
-        fprintf(stderr, "gsr error: gsr_video_encoder_cuda_get_supported_codecs: nvEncodeAPICreateInstance failed\n");
-        goto done;
+        function_list.version = NVENCAPI_STRUCT_VERSION_470(2);
+        if(nvEncodeAPICreateInstance(&function_list) != NV_ENC_SUCCESS) {
+            fprintf(stderr, "gsr error: gsr_video_encoder_cuda_get_supported_codecs: nvEncodeAPICreateInstance failed\n");
+            goto done;
+        }
     }
 
     NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS params;
     memset(&params, 0, sizeof(params));
-    params.version = NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS_VER;
+    params.version = NVENCAPI_STRUCT_VERSION(1);
     params.deviceType = NV_ENC_DEVICE_TYPE_CUDA;
     params.device = cuda.cu_ctx;
     params.apiVersion = NVENCAPI_VERSION;
@@ -325,6 +329,7 @@ static gsr_supported_video_codecs gsr_video_encoder_cuda_get_supported_codecs(gs
     if(function_list.nvEncOpenEncodeSessionEx(&params, &nvenc_encoder) != NV_ENC_SUCCESS) {
         // Old nvidia gpus dont support the new nvenc api (which is required for av1).
         // In such cases fallback to old api version if possible and try again.
+        params.version = NVENCAPI_STRUCT_VERSION_470(1);
         params.apiVersion = NVENCAPI_VERSION_470;
         if(function_list.nvEncOpenEncodeSessionEx(&params, &nvenc_encoder) != NV_ENC_SUCCESS) {
             fprintf(stderr, "gsr error: gsr_video_encoder_cuda_get_supported_codecs: nvEncOpenEncodeSessionEx failed\n");

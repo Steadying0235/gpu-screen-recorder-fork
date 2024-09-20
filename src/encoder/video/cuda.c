@@ -309,13 +309,10 @@ static gsr_supported_video_codecs gsr_video_encoder_cuda_get_supported_codecs(gs
 
     NV_ENCODE_API_FUNCTION_LIST function_list;
     memset(&function_list, 0, sizeof(function_list));
-    function_list.version = NV_ENCODE_API_FUNCTION_LIST_VER;
+    function_list.version = NVENCAPI_STRUCT_VERSION(2);
     if(nvEncodeAPICreateInstance(&function_list) != NV_ENC_SUCCESS) {
-        function_list.version = NVENCAPI_STRUCT_VERSION_470(2);
-        if(nvEncodeAPICreateInstance(&function_list) != NV_ENC_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_video_encoder_cuda_get_supported_codecs: nvEncodeAPICreateInstance failed\n");
-            goto done;
-        }
+        fprintf(stderr, "gsr error: gsr_video_encoder_cuda_get_supported_codecs: nvEncodeAPICreateInstance failed\n");
+        goto done;
     }
 
     NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS params;
@@ -329,10 +326,16 @@ static gsr_supported_video_codecs gsr_video_encoder_cuda_get_supported_codecs(gs
     if(function_list.nvEncOpenEncodeSessionEx(&params, &nvenc_encoder) != NV_ENC_SUCCESS) {
         // Old nvidia gpus dont support the new nvenc api (which is required for av1).
         // In such cases fallback to old api version if possible and try again.
+        function_list.version = NVENCAPI_STRUCT_VERSION_470(2);
+        if(nvEncodeAPICreateInstance(&function_list) != NV_ENC_SUCCESS) {
+            fprintf(stderr, "gsr error: gsr_video_encoder_cuda_get_supported_codecs: nvEncodeAPICreateInstance (retry) failed\n");
+            goto done;
+        }
+
         params.version = NVENCAPI_STRUCT_VERSION_470(1);
         params.apiVersion = NVENCAPI_VERSION_470;
         if(function_list.nvEncOpenEncodeSessionEx(&params, &nvenc_encoder) != NV_ENC_SUCCESS) {
-            fprintf(stderr, "gsr error: gsr_video_encoder_cuda_get_supported_codecs: nvEncOpenEncodeSessionEx failed\n");
+            fprintf(stderr, "gsr error: gsr_video_encoder_cuda_get_supported_codecs: nvEncOpenEncodeSessionEx (retry) failed\n");
             goto done;
         }
     }

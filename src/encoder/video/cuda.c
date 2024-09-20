@@ -287,6 +287,7 @@ static gsr_supported_video_codecs gsr_video_encoder_cuda_get_supported_codecs(gs
     (void)encoder;
 
     void *nvenc_lib = NULL;
+    void *nvenc_encoder = NULL;
     gsr_cuda cuda;
     memset(&cuda, 0, sizeof(cuda));
     gsr_supported_video_codecs supported_video_codecs = {0};
@@ -321,8 +322,6 @@ static gsr_supported_video_codecs gsr_video_encoder_cuda_get_supported_codecs(gs
     params.deviceType = NV_ENC_DEVICE_TYPE_CUDA;
     params.device = cuda.cu_ctx;
     params.apiVersion = NVENCAPI_VERSION;
-
-    void *nvenc_encoder = NULL;
     if(function_list.nvEncOpenEncodeSessionEx(&params, &nvenc_encoder) != NV_ENC_SUCCESS) {
         // Old nvidia gpus dont support the new nvenc api (which is required for av1).
         // In such cases fallback to old api version if possible and try again.
@@ -344,7 +343,8 @@ static gsr_supported_video_codecs gsr_video_encoder_cuda_get_supported_codecs(gs
 
     done:
     if(cleanup) {
-        function_list.nvEncDestroyEncoder(nvenc_encoder);
+        if(nvenc_encoder)
+            function_list.nvEncDestroyEncoder(nvenc_encoder);
         if(nvenc_lib)
             dlclose(nvenc_lib);
         gsr_cuda_unload(&cuda);

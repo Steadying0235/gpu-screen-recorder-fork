@@ -654,6 +654,50 @@ static AVFrame* create_audio_frame(AVCodecContext *audio_codec_context) {
     return frame;
 }
 
+static void dict_set_profile(AVCodecContext *codec_context, gsr_gpu_vendor vendor, gsr_color_depth color_depth, AVDictionary **options) {
+    #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(61, 17, 100)
+    if(codec_context->codec_id == AV_CODEC_ID_H264) {
+        // TODO: Only for vaapi
+        //if(color_depth == GSR_COLOR_DEPTH_10_BITS)
+        //    av_dict_set(options, "profile", "high10", 0);
+        //else
+        av_dict_set(options, "profile", "high", 0);
+    } else if(codec_context->codec_id == AV_CODEC_ID_AV1) {
+        if(vendor == GSR_GPU_VENDOR_NVIDIA) {
+            if(color_depth == GSR_COLOR_DEPTH_10_BITS)
+                av_dict_set_int(options, "highbitdepth", 1, 0);
+        } else {
+            av_dict_set(options, "profile", "main", 0); // TODO: use professional instead?
+        }
+    } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
+        if(color_depth == GSR_COLOR_DEPTH_10_BITS)
+            av_dict_set(options, "profile", "main10", 0);
+        else
+            av_dict_set(options, "profile", "main", 0);
+    }
+    #else
+    if(codec_context->codec_id == AV_CODEC_ID_H264) {
+        // TODO: Only for vaapi
+        //if(color_depth == GSR_COLOR_DEPTH_10_BITS)
+        //    av_dict_set_int(options, "profile", AV_PROFILE_H264_HIGH_10, 0);
+        //else
+        av_dict_set_int(options, "profile", AV_PROFILE_H264_HIGH, 0);
+    } else if(codec_context->codec_id == AV_CODEC_ID_AV1) {
+        if(vendor == GSR_GPU_VENDOR_NVIDIA) {
+            if(color_depth == GSR_COLOR_DEPTH_10_BITS)
+                av_dict_set_int(options, "highbitdepth", 1, 0);
+        } else {
+            av_dict_set_int(options, "profile", AV_PROFILE_AV1_MAIN, 0); // TODO: use professional instead?
+        }
+    } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
+        if(color_depth == GSR_COLOR_DEPTH_10_BITS)
+            av_dict_set_int(options, "profile", AV_PROFILE_HEVC_MAIN_10, 0);
+        else
+            av_dict_set_int(options, "profile", AV_PROFILE_HEVC_MAIN, 0);
+    }
+    #endif
+}
+
 static void video_software_set_qp(AVCodecContext *codec_context, VideoQuality video_quality, bool hdr, AVDictionary **options) {
     // 8 bit / 10 bit = 80%
     const float qp_multiply = hdr ? 8.0f/10.0f : 1.0f;
@@ -713,11 +757,7 @@ static void open_video_software(AVCodecContext *codec_context, VideoQuality vide
         video_software_set_qp(codec_context, video_quality, hdr, &options);
 
     av_dict_set(&options, "preset", "medium", 0);
-    if(color_depth == GSR_COLOR_DEPTH_10_BITS) {
-        av_dict_set_int(&options, "profile", AV_PROFILE_H264_HIGH_10, 0);
-    } else {
-        av_dict_set_int(&options, "profile", AV_PROFILE_H264_HIGH, 0);
-    }
+    dict_set_profile(codec_context, GSR_GPU_VENDOR_INTEL, color_depth, &options);
     // TODO: If streaming or piping output set this to zerolatency
     av_dict_set(&options, "tune", "fastdecode", 0);
 
@@ -870,25 +910,25 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
         }
     }
 
+    // TODO: Enable multipass
+
     if(vendor == GSR_GPU_VENDOR_NVIDIA) {
         av_dict_set(&options, "tune", "hq", 0);
 
-        // TODO: Enable multipass
+        dict_set_profile(codec_context, vendor, color_depth, &options);
 
         if(codec_context->codec_id == AV_CODEC_ID_H264) {
             // TODO: h264 10bit?
-            switch(pixel_format) {
-                case PixelFormat::YUV420:
-                    av_dict_set(&options, "profile", "high", 0);
-                    break;
-                case PixelFormat::YUV444:
-                    av_dict_set(&options, "profile", "high444p", 0);
-                    break;
-            }
+            // TODO:
+            // switch(pixel_format) {
+            //     case PixelFormat::YUV420:
+            //         av_dict_set_int(&options, "profile", AV_PROFILE_H264_HIGH, 0);
+            //         break;
+            //     case PixelFormat::YUV444:
+            //         av_dict_set_int(&options, "profile", AV_PROFILE_H264_HIGH_444, 0);
+            //         break;
+            // }
         } else if(codec_context->codec_id == AV_CODEC_ID_AV1) {
-            if(color_depth == GSR_COLOR_DEPTH_10_BITS)
-                av_dict_set_int(&options, "highbitdepth", 1, 0);
-
             switch(pixel_format) {
                 case PixelFormat::YUV420:
                     av_dict_set(&options, "rgb_mode", "yuv420", 0);
@@ -899,10 +939,6 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
             }
         } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
             //av_dict_set(&options, "pix_fmt", "yuv420p16le", 0);
-            if(color_depth == GSR_COLOR_DEPTH_10_BITS)
-                av_dict_set(&options, "profile", "main10", 0);
-            else
-                av_dict_set(&options, "profile", "main", 0);
         }
     } else {
         // TODO: More quality options
@@ -911,22 +947,11 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
         av_dict_set_int(&options, "async_depth", 8, 0);
 
         if(codec_context->codec_id == AV_CODEC_ID_H264) {
-            // TODO:
-            if(color_depth == GSR_COLOR_DEPTH_10_BITS)
-                av_dict_set_int(&options, "profile", AV_PROFILE_H264_HIGH_10, 0);
-            else
-                av_dict_set_int(&options, "profile", AV_PROFILE_H264_HIGH, 0);
             // Removed because it causes stutter in games for some people
             //av_dict_set_int(&options, "quality", 5, 0); // quality preset
         } else if(codec_context->codec_id == AV_CODEC_ID_AV1) {
-            av_dict_set_int(&options, "profile", AV_PROFILE_AV1_MAIN, 0); // TODO: use professional instead?
             av_dict_set(&options, "tier", "main", 0);
         } else if(codec_context->codec_id == AV_CODEC_ID_HEVC) {
-            if(color_depth == GSR_COLOR_DEPTH_10_BITS)
-                av_dict_set_int(&options, "profile", AV_PROFILE_HEVC_MAIN_10, 0);
-            else
-                av_dict_set_int(&options, "profile", AV_PROFILE_HEVC_MAIN, 0);
-
             if(hdr)
                 av_dict_set(&options, "sei", "hdr", 0);
         }
@@ -1260,8 +1285,14 @@ struct AudioTrack {
 
 static bool add_hdr_metadata_to_video_stream(gsr_capture *cap, AVStream *video_stream) {
     size_t light_metadata_size = 0;
+    size_t mastering_display_metadata_size = 0;
     AVContentLightMetadata *light_metadata = av_content_light_metadata_alloc(&light_metadata_size);
+    #if LIBAVUTIL_VERSION_INT < AV_VERSION_INT(59, 37, 100)
     AVMasteringDisplayMetadata *mastering_display_metadata = av_mastering_display_metadata_alloc();
+    mastering_display_metadata_size = sizeof(*mastering_display_metadata);
+    #else
+    AVMasteringDisplayMetadata *mastering_display_metadata = av_mastering_display_metadata_alloc_size(&mastering_display_metadata_size);
+    #endif
 
     if(!light_metadata || !mastering_display_metadata) {
         if(light_metadata)
@@ -1282,15 +1313,15 @@ static bool add_hdr_metadata_to_video_stream(gsr_capture *cap, AVStream *video_s
     // TODO: More error checking
 
     #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(60, 31, 102)
-    const bool added_light_metadata = av_stream_add_side_data(video_stream, AV_PKT_DATA_CONTENT_LIGHT_LEVEL, (uint8_t*)light_metadata, light_metadata_size);
+    av_stream_add_side_data(video_stream, AV_PKT_DATA_CONTENT_LIGHT_LEVEL, (uint8_t*)light_metadata, light_metadata_size);
     #else
     av_packet_side_data_add(&video_stream->codecpar->coded_side_data, &video_stream->codecpar->nb_coded_side_data, AV_PKT_DATA_CONTENT_LIGHT_LEVEL, light_metadata, light_metadata_size, 0);
     #endif
 
     #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(60, 31, 102)
-    const bool added_display_metadata = av_stream_add_side_data(video_stream, AV_PKT_DATA_MASTERING_DISPLAY_METADATA, (uint8_t*)mastering_display_metadata, sizeof(*mastering_display_metadata));
+    av_stream_add_side_data(video_stream, AV_PKT_DATA_MASTERING_DISPLAY_METADATA, (uint8_t*)mastering_display_metadata, mastering_display_metadata_size);
     #else
-    av_packet_side_data_add(&video_stream->codecpar->coded_side_data, &video_stream->codecpar->nb_coded_side_data, AV_PKT_DATA_MASTERING_DISPLAY_METADATA, mastering_display_metadata, sizeof(*mastering_display_metadata), 0);
+    av_packet_side_data_add(&video_stream->codecpar->coded_side_data, &video_stream->codecpar->nb_coded_side_data, AV_PKT_DATA_MASTERING_DISPLAY_METADATA, mastering_display_metadata, mastering_display_metadata_size, 0);
     #endif
 
     return true;

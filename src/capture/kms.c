@@ -232,7 +232,7 @@ static void gsr_capture_kms_on_event(gsr_capture *cap, gsr_egl *egl) {
     gsr_cursor_on_event(&self->x11_cursor, xev);
 }
 
-// TODO: This is disabled for now because we want to be able to record at a framerate highe than the monitor framerate
+// TODO: This is disabled for now because we want to be able to record at a framerate higher than the monitor framerate
 // static void gsr_capture_kms_tick(gsr_capture *cap) {
 //     gsr_capture_kms *self = cap->priv;
 
@@ -571,9 +571,10 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         capture_pos = (vec2i){drm_fd->x, drm_fd->y};
 
     // TODO: Hack!! cursor flickers without this when using vaapi copy on wayland.
-    // There is probably some sync issue between opengl and vaapi.
+    // There is probably some sync issue between opengl and vaapi. It flickers more when capture fps is lower.
     // Remove this when that has been figured out. Same for the below glFlush && glFinish
-    for(int i = 0; i < 3; ++i) {
+    const int hack_iterations = max_int(1, roundf(1000.0 / (double)self->params.fps));
+    for(int i = 0; i < hack_iterations; ++i) {
         self->params.egl->glFlush();
         self->params.egl->glFinish();
     }
@@ -607,7 +608,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
             texture_rotation, self->external_texture_fallback);
     }
 
-    for(int i = 0; i < 3; ++i) {
+    for(int i = 0; i < hack_iterations; ++i) {
         self->params.egl->glFlush();
         self->params.egl->glFinish();
     }
@@ -624,7 +625,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         }
     }
 
-    for(int i = 0; i < 3; ++i) {
+    for(int i = 0; i < hack_iterations; ++i) {
         self->params.egl->glFlush();
         self->params.egl->glFinish();
     }

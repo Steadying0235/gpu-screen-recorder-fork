@@ -10,6 +10,7 @@ typedef struct {
     gsr_color_range color_range;
     bool hdr;
     bool record_cursor;
+    int fps;
 } gsr_capture_kms_params;
 
 gsr_capture* gsr_capture_kms_create(const gsr_capture_kms_params *params);

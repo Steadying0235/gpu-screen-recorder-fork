@@ -2018,6 +2018,7 @@ static gsr_capture* create_capture_impl(std::string &window_str, const char *scr
             kms_params.color_range = color_range;
             kms_params.record_cursor = record_cursor;
             kms_params.hdr = video_codec_is_hdr(video_codec);
+            kms_params.fps = fps;
             capture = gsr_capture_kms_create(&kms_params);
             if(!capture)
                 _exit(1);
@@ -2782,10 +2783,10 @@ int main(int argc, char **argv) {
         }
     }
 
-    if(wayland && is_monitor_capture) {
-        fprintf(stderr, "gsr warning: it's not possible to sync video to recorded monitor exactly on wayland when recording a monitor."
-            " If you experience stutter in the video then record with portal capture option instead (-w portal) or use X11 instead\n");
-    }
+    // if(wayland && is_monitor_capture) {
+    //     fprintf(stderr, "gsr warning: it's not possible to sync video to recorded monitor exactly on wayland when recording a monitor."
+    //         " If you experience stutter in the video then record with portal capture option instead (-w portal) or use X11 instead\n");
+    // }
 
     // TODO: Fix constant framerate not working properly on amd/intel because capture framerate gets locked to the same framerate as
     // game framerate, which doesn't work well when you need to encode multiple duplicate frames (AMD/Intel is slow at encoding!).
@@ -3336,8 +3337,6 @@ int main(int argc, char **argv) {
         });
     }
 
-    // Set update_fps to 24 to test if duplicate/delayed frames cause video/audio desync or too fast/slow video.
-    const double update_fps = fps;
     bool should_stop_error = false;
 
     int64_t video_pts_counter = 0;
@@ -3359,12 +3358,14 @@ int main(int argc, char **argv) {
     if(is_monitor_capture)
         gsr_damage_set_target_monitor(&damage, window_str.c_str());
 
+    double last_capture_seconds = clock_get_monotonic_seconds();
+
     while(running) {
         const double frame_start = clock_get_monotonic_seconds();
 
         while(gsr_egl_process_event(&egl)) {
-            gsr_capture_on_event(capture, &egl);
             gsr_damage_on_event(&damage, gsr_egl_get_event_data(&egl));
+            gsr_capture_on_event(capture, &egl);
         }
         gsr_damage_tick(&damage);
         gsr_capture_tick(capture);
@@ -3392,11 +3393,14 @@ int main(int argc, char **argv) {
         else
             damaged = true;
 
+        // TODO: Readd wayland sync warning when removing this
+        damaged = true;
+
         if(damaged)
             ++damage_fps_counter;
 
         ++fps_counter;
-        double time_now = clock_get_monotonic_seconds();
+        const double time_now = clock_get_monotonic_seconds();
         const double elapsed = time_now - fps_start_time;
         if (elapsed >= 1.0) {
             if(verbose) {
@@ -3408,26 +3412,29 @@ int main(int argc, char **argv) {
         }
 
         const double this_video_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
-        const int64_t expected_frames = std::round((this_video_frame_time - record_start_time) / target_fps);
-        const int num_frames = std::max((int64_t)0LL, expected_frames - video_pts_counter);
-        const double num_frames_seconds = num_frames * target_fps;
-        if((damaged || (framerate_mode == FramerateMode::CONSTANT && num_frames > 0) || (framerate_mode != FramerateMode::CONSTANT && num_frames_seconds >= damage_timeout_seconds)) && !paused) {
+        const double time_since_last_frame_captured_seconds = this_video_frame_time - last_capture_seconds;
+        const bool force_frame_capture = time_since_last_frame_captured_seconds >= damage_timeout_seconds;
+        if((damaged || force_frame_capture) && !paused) {
+            last_capture_seconds = this_video_frame_time;
+
             gsr_damage_clear(&damage);
             if(capture->clear_damage)
                 capture->clear_damage(capture);
 
-            if(damaged || video_pts_counter == 0) {
-                egl.glClear(0);
-                gsr_capture_capture(capture, video_frame, &color_conversion);
-                gsr_egl_swap_buffers(&egl);
-                gsr_video_encoder_copy_textures_to_frame(video_encoder, video_frame);
-            }
+            // TODO: Dont do this if no damage?
+            egl.glClear(0);
+            gsr_capture_capture(capture, video_frame, &color_conversion);
+            gsr_egl_swap_buffers(&egl);
+            gsr_video_encoder_copy_textures_to_frame(video_encoder, video_frame);
 
             if(hdr && !hdr_metadata_set && replay_buffer_size_secs == -1 && add_hdr_metadata_to_video_stream(capture, video_stream))
                 hdr_metadata_set = true;
 
+            const int64_t expected_frames = std::round((this_video_frame_time - record_start_time) / target_fps);
+            const int num_missed_frames = std::max((int64_t)1LL, expected_frames - video_pts_counter);
+
             // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
-            const int num_frames_to_encode = framerate_mode == FramerateMode::CONSTANT ? num_frames : 1;
+            const int num_frames_to_encode = framerate_mode == FramerateMode::CONSTANT ? num_missed_frames : 1;
             for(int i = 0; i < num_frames_to_encode; ++i) {
                 if(framerate_mode == FramerateMode::CONSTANT) {
                     video_frame->pts = video_pts_counter + i;
@@ -3449,7 +3456,7 @@ int main(int argc, char **argv) {
                 }
             }
 
-            video_pts_counter += num_frames;
+            video_pts_counter += num_frames_to_encode;
         }
 
         if(toggle_pause == 1) {
@@ -3481,15 +3488,17 @@ int main(int argc, char **argv) {
             save_replay_async(video_codec_context, VIDEO_STREAM_INDEX, audio_tracks, frame_data_queue, frames_erased, filename, container_format, file_extension, write_output_mutex, date_folders, hdr, capture);
         }
 
+        const double time_at_frame_end = clock_get_monotonic_seconds() - paused_time_offset;
+        const double time_elapsed_total = time_at_frame_end - record_start_time;
+        const double time_at_next_frame = (video_pts_counter + 1) * target_fps;
+        const double time_to_next_frame = time_at_next_frame - time_elapsed_total;
+
         const double frame_end = clock_get_monotonic_seconds();
-        const double frame_sleep_fps = 1.0 / update_fps;
-        const double sleep_time = frame_sleep_fps - (frame_end - frame_start);
-        if(sleep_time > 0.0) {
-            if(damaged)
-                av_usleep(sleep_time * 1000.0 * 1000.0);
-            else
-                av_usleep(2 * 1000.0); // 2 milliseconds
-        }
+        const double frame_time = frame_end - frame_start;
+        if(time_to_next_frame > 0.0)
+            av_usleep(time_to_next_frame * 1000.0 * 1000.0);
+        else if(frame_time < target_fps)
+            usleep(2.8 * 1000.0); // 2.8 milliseconds
     }
 
     running = 0;

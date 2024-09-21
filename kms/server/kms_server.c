@@ -528,7 +528,7 @@ int main(int argc, char **argv) {
         }
 
         if(request.version != GSR_KMS_PROTOCOL_VERSION) {
-            fprintf(stderr, "kms server error: expected gpu screen recorder protocol version to be %u, but it's %u\n", GSR_KMS_PROTOCOL_VERSION, request.version);
+            fprintf(stderr, "kms server error: expected gpu screen recorder protocol version to be %u, but it's %u. please reinstall gpu screen recorder\n", GSR_KMS_PROTOCOL_VERSION, request.version);
             /*
             if(request.new_connection_fd > 0)
                 close(request.new_connection_fd);

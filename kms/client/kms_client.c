@@ -400,7 +400,7 @@ int gsr_kms_client_replace_connection(gsr_kms_client *self) {
     }
 
     if(response.version != GSR_KMS_PROTOCOL_VERSION) {
-        fprintf(stderr, "gsr error: gsr_kms_client_replace_connection: expected gsr-kms-server protocol version to be %u, but it's %u\n", GSR_KMS_PROTOCOL_VERSION, response.version);
+        fprintf(stderr, "gsr error: gsr_kms_client_replace_connection: expected gsr-kms-server protocol version to be %u, but it's %u. please reinstall gpu screen recorder\n", GSR_KMS_PROTOCOL_VERSION, response.version);
         /*close_fds(response);*/
         return -1;
     }
@@ -435,7 +435,7 @@ int gsr_kms_client_get_kms(gsr_kms_client *self, gsr_kms_response *response) {
     }
 
     if(response->version != GSR_KMS_PROTOCOL_VERSION) {
-        fprintf(stderr, "gsr error: gsr_kms_client_get_kms: expected gsr-kms-server protocol version to be %u, but it's %u\n", GSR_KMS_PROTOCOL_VERSION, response->version);
+        fprintf(stderr, "gsr error: gsr_kms_client_get_kms: expected gsr-kms-server protocol version to be %u, but it's %u. please reinstall gpu screen recorder\n", GSR_KMS_PROTOCOL_VERSION, response->version);
         /*close_fds(response);*/
         strcpy(response->err_msg, "mismatching protocol version");
         return -1;

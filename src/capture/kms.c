@@ -570,15 +570,6 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     if(!capture_is_combined_plane)
         capture_pos = (vec2i){drm_fd->x, drm_fd->y};
 
-    // TODO: Hack!! cursor flickers without this when using vaapi copy on wayland.
-    // There is probably some sync issue between opengl and vaapi. It flickers more when capture fps is lower.
-    // Remove this when that has been figured out. Same for the below glFlush && glFinish
-    const int hack_iterations = max_int(1, roundf(1000.0 / (double)self->params.fps));
-    for(int i = 0; i < hack_iterations; ++i) {
-        self->params.egl->glFlush();
-        self->params.egl->glFinish();
-    }
-
     /* Fast opengl free path */
     if(self->monitor_rotation == GSR_MONITOR_ROT_0 && video_codec_context_is_vaapi(self->video_codec_context) && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD) {
         int fds[4];
@@ -599,18 +590,10 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
             self->params.egl->eglDestroyImage(self->params.egl->egl_display, image);
         }
 
-        self->params.egl->glFlush();
-        self->params.egl->glFinish();
-
         gsr_color_conversion_draw(color_conversion, self->external_texture_fallback ? self->external_input_texture_id : self->input_texture_id,
             target_pos, self->capture_size,
             capture_pos, self->capture_size,
             texture_rotation, self->external_texture_fallback);
-    }
-
-    for(int i = 0; i < hack_iterations; ++i) {
-        self->params.egl->glFlush();
-        self->params.egl->glFinish();
     }
 
     if(self->params.record_cursor) {
@@ -625,10 +608,8 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         }
     }
 
-    for(int i = 0; i < hack_iterations; ++i) {
-        self->params.egl->glFlush();
-        self->params.egl->glFinish();
-    }
+    self->params.egl->glFlush();
+    self->params.egl->glFinish();
 
     gsr_capture_kms_cleanup_kms_fds(self);
 

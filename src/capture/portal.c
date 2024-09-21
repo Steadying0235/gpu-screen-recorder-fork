@@ -333,9 +333,6 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
     } else {
         return 0;
     }
-
-    self->params.egl->glFlush();
-    self->params.egl->glFinish();
     
     const vec2i target_pos = { max_int(0, frame->width / 2 - self->capture_size.x / 2), max_int(0, frame->height / 2 - self->capture_size.y / 2) };
 

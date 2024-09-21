@@ -570,6 +570,9 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     if(!capture_is_combined_plane)
         capture_pos = (vec2i){drm_fd->x, drm_fd->y};
 
+    self->params.egl->glFlush();
+    self->params.egl->glFinish();
+
     /* Fast opengl free path */
     if(self->monitor_rotation == GSR_MONITOR_ROT_0 && video_codec_context_is_vaapi(self->video_codec_context) && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD) {
         int fds[4];

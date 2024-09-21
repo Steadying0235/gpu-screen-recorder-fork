@@ -3158,7 +3158,7 @@ int main(int argc, char **argv) {
     }
 
     double fps_start_time = clock_get_monotonic_seconds();
-    double frame_timer_start = fps_start_time - target_fps; // We want to capture the first frame immediately
+    double frame_timer_start = fps_start_time;
     int fps_counter = 0;
     int damage_fps_counter = 0;
 
@@ -3446,11 +3446,11 @@ int main(int argc, char **argv) {
         }
 
         double frame_time_overflow = frame_timer_elapsed - target_fps;
-        if (frame_time_overflow >= 0.0 && damaged) {
+        if ((frame_time_overflow >= 0.0 || video_pts_counter == 0) && damaged) {
             gsr_damage_clear(&damage);
             if(capture->clear_damage)
                 capture->clear_damage(capture);
-            frame_time_overflow = std::min(frame_time_overflow, target_fps);
+            frame_time_overflow = std::min(std::max(0.0, frame_time_overflow), target_fps);
             frame_timer_start = time_now - frame_time_overflow;
 
             const double this_video_frame_time = clock_get_monotonic_seconds() - paused_time_offset;

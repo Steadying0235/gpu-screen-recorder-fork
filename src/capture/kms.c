@@ -54,6 +54,7 @@ typedef struct {
 
     AVCodecContext *video_codec_context;
     bool performance_error_shown;
+    bool fast_path_failed;
 
     //int drm_fd;
     //uint64_t prev_sequence;
@@ -574,7 +575,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     self->params.egl->glFinish();
 
     /* Fast opengl free path */
-    if(self->monitor_rotation == GSR_MONITOR_ROT_0 && video_codec_context_is_vaapi(self->video_codec_context) && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD) {
+    if(!self->fast_path_failed && self->monitor_rotation == GSR_MONITOR_ROT_0 && video_codec_context_is_vaapi(self->video_codec_context) && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD) {
         int fds[4];
         uint32_t offsets[4];
         uint32_t pitches[4];
@@ -585,8 +586,15 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
             pitches[i] = drm_fd->dma_buf[i].pitch;
             modifiers[i] = drm_fd->modifier;
         }
-        vaapi_copy_drm_planes_to_video_surface(self->video_codec_context, frame, (vec2i){capture_pos.x, capture_pos.y}, self->capture_size, target_pos, self->capture_size, drm_fd->pixel_format, (vec2i){drm_fd->width, drm_fd->height}, fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs);
+        if(!vaapi_copy_drm_planes_to_video_surface(self->video_codec_context, frame, (vec2i){capture_pos.x, capture_pos.y}, self->capture_size, target_pos, self->capture_size, drm_fd->pixel_format, (vec2i){drm_fd->width, drm_fd->height}, fds, offsets, pitches, modifiers, drm_fd->num_dma_bufs)) {
+            fprintf(stderr, "gsr error: gsr_capture_kms_capture: vaapi_copy_drm_planes_to_video_surface failed, falling back to opengl copy. Please report this as an issue at https://github.com/dec05eba/gpu-screen-recorder-issues\n");
+            self->fast_path_failed = true;
+        }
     } else {
+        self->fast_path_failed = true;
+    }
+
+    if(self->fast_path_failed) {
         EGLImage image = gsr_capture_kms_create_egl_image_with_fallback(self, drm_fd);
         if(image) {
             gsr_capture_kms_bind_image_to_input_texture_with_fallback(self, image);

@@ -26,6 +26,7 @@ typedef struct {
     int num_dmabuf_data;
 
     AVCodecContext *video_codec_context;
+    bool fast_path_failed;
 } gsr_capture_portal;
 
 static void gsr_capture_portal_cleanup_plane_fds(gsr_capture_portal *self) {
@@ -342,7 +343,7 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
     // TODO: Handle region crop
 
     /* Fast opengl free path */
-    if(video_codec_context_is_vaapi(self->video_codec_context) && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD) {
+    if(!self->fast_path_failed && video_codec_context_is_vaapi(self->video_codec_context) && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD) {
         int fds[4];
         uint32_t offsets[4];
         uint32_t pitches[4];
@@ -353,8 +354,15 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
             pitches[i] = self->dmabuf_data[i].stride;
             modifiers[i] = pipewire_modifiers;
         }
-        vaapi_copy_drm_planes_to_video_surface(self->video_codec_context, frame, (vec2i){region.x, region.y}, self->capture_size, target_pos, self->capture_size, pipewire_fourcc, self->capture_size, fds, offsets, pitches, modifiers, self->num_dmabuf_data);
+        if(!vaapi_copy_drm_planes_to_video_surface(self->video_codec_context, frame, (vec2i){region.x, region.y}, self->capture_size, target_pos, self->capture_size, pipewire_fourcc, self->capture_size, fds, offsets, pitches, modifiers, self->num_dmabuf_data)) {
+            fprintf(stderr, "gsr error: gsr_capture_portal_capture: vaapi_copy_drm_planes_to_video_surface failed, falling back to opengl copy. Please report this as an issue at https://github.com/dec05eba/gpu-screen-recorder-issues\n");
+            self->fast_path_failed = true;
+        }
     } else {
+        self->fast_path_failed = true;
+    }
+
+    if(self->fast_path_failed) {
         gsr_color_conversion_draw(color_conversion, using_external_image ? self->texture_map.external_texture_id : self->texture_map.texture_id,
             target_pos, self->capture_size,
             (vec2i){region.x, region.y}, self->capture_size,

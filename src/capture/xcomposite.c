@@ -36,6 +36,7 @@ typedef struct {
     gsr_cursor cursor;
 
     bool clear_background;
+    bool fast_path_failed;
 } gsr_capture_xcomposite;
 
 static void gsr_capture_xcomposite_stop(gsr_capture_xcomposite *self) {
@@ -262,9 +263,16 @@ static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_
     self->params.egl->glFinish();
 
     /* Fast opengl free path */
-    if(video_codec_context_is_vaapi(self->video_codec_context) && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD) {
-        vaapi_copy_egl_image_to_video_surface(self->params.egl, self->window_texture.image, (vec2i){0, 0}, self->texture_size, target_pos, self->texture_size, self->video_codec_context, frame);
+    if(!self->fast_path_failed && video_codec_context_is_vaapi(self->video_codec_context) && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD) {
+        if(!vaapi_copy_egl_image_to_video_surface(self->params.egl, self->window_texture.image, (vec2i){0, 0}, self->texture_size, target_pos, self->texture_size, self->video_codec_context, frame)) {
+            fprintf(stderr, "gsr error: gsr_capture_xcomposite_capture: vaapi_copy_egl_image_to_video_surface failed, falling back to opengl copy. Please report this as an issue at https://github.com/dec05eba/gpu-screen-recorder-issues\n");
+            self->fast_path_failed = true;
+        }
     } else {
+        self->fast_path_failed = true;
+    }
+
+    if(self->fast_path_failed) {
         gsr_color_conversion_draw(color_conversion, window_texture_get_opengl_texture_id(&self->window_texture),
             target_pos, self->texture_size,
             (vec2i){0, 0}, self->texture_size,

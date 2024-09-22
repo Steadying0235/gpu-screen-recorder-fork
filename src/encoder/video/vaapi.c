@@ -102,6 +102,7 @@ static bool gsr_video_encoder_vaapi_setup_textures(gsr_video_encoder_vaapi *self
             uint32_t pitches[4];
             uint64_t modifiers[4];
             for(uint32_t j = 0; j < self->prime.layers[layer].num_planes; ++j) {
+                // TODO: Close these? in _stop, using self->prime
                 fds[j] = self->prime.objects[self->prime.layers[layer].object_index[j]].fd;
                 offsets[j] = self->prime.layers[layer].offset[j];
                 pitches[j] = self->prime.layers[layer].pitch[j];

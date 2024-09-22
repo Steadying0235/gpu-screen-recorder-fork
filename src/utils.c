@@ -165,7 +165,7 @@ static bool connector_get_property_by_name(int drmfd, drmModeConnectorPtr props,
     return false;
 }
 
-/* TODO: Support more connector types*/
+/* TODO: Support more connector types */
 static int get_connector_type_by_name(const char *name) {
     int len = strlen(name);
     if(len >= 5 && strncmp(name, "HDMI-", 5) == 0)

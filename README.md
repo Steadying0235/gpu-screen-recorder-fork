@@ -139,7 +139,7 @@ Look at the [scripts](https://git.dec05eba.com/gpu-screen-recorder/tree/scripts)
 # Reporting bugs
 Issues are reported on this Github page: [https://github.com/dec05eba/gpu-screen-recorder-issues/issues](https://github.com/dec05eba/gpu-screen-recorder-issues/issues).
 # Contributing patches
-See [https://git.dec05eba.com/?p=about](https://git.dec05eba.com/?p=about) to see how to contribute.
+See [https://git.dec05eba.com/?p=about](https://git.dec05eba.com/?p=about) for contribution steps.
 # Donations
 See [https://git.dec05eba.com/?p=about](https://git.dec05eba.com/?p=about) for donation options.
 

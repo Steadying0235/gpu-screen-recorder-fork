@@ -137,9 +137,11 @@ You have to reboot your computer after installing GPU Screen Recorder for the fi
 Look at the [scripts](https://git.dec05eba.com/gpu-screen-recorder/tree/scripts) directory for script examples. For example if you want to automatically save a recording/replay into a folder with the same name as the game you are recording.
 
 # Reporting bugs
-Issues are reported on this Github page: [https://github.com/dec05eba/gpu-screen-recorder-issues/issues](https://github.com/dec05eba/gpu-screen-recorder-issues/issues)
+Issues are reported on this Github page: [https://github.com/dec05eba/gpu-screen-recorder-issues/issues](https://github.com/dec05eba/gpu-screen-recorder-issues/issues).
 # Contributing patches
-See [https://git.dec05eba.com/?p=about](https://git.dec05eba.com/?p=about)
+See [https://git.dec05eba.com/?p=about](https://git.dec05eba.com/?p=about) to see how to contribute.
+# Donations
+See [https://git.dec05eba.com/?p=about](https://git.dec05eba.com/?p=about) for donation options.
 
 # Demo
 [![Click here to watch a demo video on youtube](https://img.youtube.com/vi/n5tm0g01n6A/0.jpg)](https://www.youtube.com/watch?v=n5tm0g01n6A)
@@ -166,9 +168,6 @@ Try recording to an SSD and make sure it's not using NTFS file system. Also reco
 You have to either record in hdr mode (-k `hevc_hdr` or -k `av1_hdr` option) to record a HDR video or record with desktop portal option (`-w portal`) to turn the HDR recording into SDR.
 ## GPU Screen Recorder records night light when recording in HDR mode
 You can record with desktop portal option (`-w portal`) instead which ignores night light, if you are ok with recording without HDR.
-
-# Donations
-See [https://git.dec05eba.com/?p=about](https://git.dec05eba.com/?p=about).
 
 # TODO
 * Dynamically change bitrate/resolution to match desired fps. This would be helpful when streaming for example, where the encode output speed also depends on upload speed to the streaming service.

@@ -168,9 +168,7 @@ You have to either record in hdr mode (-k `hevc_hdr` or -k `av1_hdr` option) to 
 You can record with desktop portal option (`-w portal`) instead which ignores night light, if you are ok with recording without HDR.
 
 # Donations
-If you want to donate you can donate via bitcoin or monero.
-* Bitcoin: bc1qqvuqnwrdyppf707ge27fqz2n9y9gu7lf5ypyuf
-* Monero: 4An9kp2qW1C9Gah7ewv4JzcNFQ5TAX7ineGCqXWK6vQnhsGGcRpNgcn8r9EC3tMcgY7vqCKs3nSRXhejMHBaGvFdN2egYet
+See [https://git.dec05eba.com/?p=about](https://git.dec05eba.com/?p=about).
 
 # TODO
 * Dynamically change bitrate/resolution to match desired fps. This would be helpful when streaming for example, where the encode output speed also depends on upload speed to the streaming service.

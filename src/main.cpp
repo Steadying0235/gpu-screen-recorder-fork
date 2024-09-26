@@ -9,6 +9,8 @@ extern "C" {
 #include "../include/encoder/video/cuda.h"
 #include "../include/encoder/video/vaapi.h"
 #include "../include/encoder/video/software.h"
+#include "../include/codec_query/cuda.h"
+#include "../include/codec_query/vaapi.h"
 #include "../include/egl.h"
 #include "../include/utils.h"
 #include "../include/damage.h"
@@ -1656,6 +1658,25 @@ static gsr_video_encoder* create_video_encoder(gsr_egl *egl, bool overclock, gsr
     return video_encoder;
 }
 
+static bool get_supported_video_codecs(gsr_egl *egl, bool use_software_video_encoder, bool cleanup, gsr_supported_video_codecs *video_codecs) {
+    memset(video_codecs, 0, sizeof(*video_codecs));
+
+    if(use_software_video_encoder) {
+        video_codecs->h264 = true;
+        return true;
+    }
+
+    switch(egl->gpu_info.vendor) {
+        case GSR_GPU_VENDOR_AMD:
+        case GSR_GPU_VENDOR_INTEL:
+            return gsr_get_supported_video_codecs_vaapi(video_codecs, egl->card_path, cleanup);
+        case GSR_GPU_VENDOR_NVIDIA:
+            return gsr_get_supported_video_codecs_nvenc(video_codecs, cleanup);
+    }
+
+    return false;
+}
+
 static void xwayland_check_callback(const gsr_monitor *monitor, void *userdata) {
     bool *xwayland_found = (bool*)userdata;
     if(monitor->name_len >= 8 && strncmp(monitor->name, "XWAYLAND", 8) == 0)
@@ -1756,7 +1777,8 @@ static void list_supported_video_codecs(gsr_egl *egl, bool wayland) {
     if(!video_encoder)
         return;
     
-    gsr_supported_video_codecs supported_video_codecs = gsr_video_encoder_get_supported_codecs(video_encoder, false);
+    gsr_supported_video_codecs supported_video_codecs;
+    get_supported_video_codecs(egl, false, false, &supported_video_codecs);
     set_supported_video_codecs_ffmpeg(&supported_video_codecs, egl->gpu_info.vendor);
 
     if(supported_video_codecs.h264)
@@ -2223,17 +2245,13 @@ static const char* video_codec_to_string(VideoCodec video_codec) {
 static const AVCodec* pick_video_codec(VideoCodec *video_codec, gsr_egl *egl, bool use_software_video_encoder, bool video_codec_auto, const char *video_codec_to_use, bool is_flv) {
     // TODO: software encoder for hevc, av1, vp8 and vp9
 
-    gsr_video_encoder *video_encoder = create_video_encoder(egl, false, GSR_COLOR_DEPTH_8_BITS, use_software_video_encoder);
-    if(!video_encoder) {
-        fprintf(stderr, "Error: failed to create video encoder\n");
-        _exit(1);
+    gsr_supported_video_codecs supported_video_codecs;
+    if(!get_supported_video_codecs(egl, use_software_video_encoder, true, &supported_video_codecs)) {
+        fprintf(stderr, "Error: failed to query for supported video codecs\n");
+        _exit(11);
     }
 
-    const gsr_supported_video_codecs supported_video_codecs = gsr_video_encoder_get_supported_codecs(video_encoder, true);
     const AVCodec *video_codec_f = nullptr;
-
-    // TODO: Cleanup
-    // gsr_video_encoder_destroy
 
     switch(*video_codec) {
         case VideoCodec::H264: {

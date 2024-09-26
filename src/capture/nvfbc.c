@@ -189,8 +189,6 @@ static int gsr_capture_nvfbc_setup_handle(gsr_capture_nvfbc *self) {
     create_params.glxCtx = self->params.egl->glx_context;
     create_params.glxFBConfig = self->params.egl->glx_fb_config;
 
-    fprintf(stderr, "self->nv_fbc_function_list.nvFBCCreateHandle: %p\n", (void*)self->nv_fbc_function_list.nvFBCCreateHandle);
-
     status = self->nv_fbc_function_list.nvFBCCreateHandle(&self->nv_fbc_handle, &create_params);
     if(status != NVFBC_SUCCESS) {
         // Reverse engineering for interoperability

@@ -262,12 +262,12 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
         fprintf(stderr, "gsr error: gsr_egl_create_window failed: eglInitialize failed\n");
         goto fail;
     }
-    
+
     if(!self->eglChooseConfig(self->egl_display, attr, &ecfg, 1, &num_config) || num_config != 1) {
         fprintf(stderr, "gsr error: gsr_egl_create_window failed: failed to find a matching config\n");
         goto fail;
     }
-    
+
     self->egl_context = self->eglCreateContext(self->egl_display, ecfg, NULL, ctxattr);
     if(!self->egl_context) {
         fprintf(stderr, "gsr error: gsr_egl_create_window failed: failed to create egl context\n");
@@ -708,6 +708,10 @@ bool gsr_egl_process_event(gsr_egl *self) {
 }
 
 void gsr_egl_swap_buffers(gsr_egl *self) {
+    /* This uses less cpu than swap buffer on nvidia */
+    // TODO:
+    //self->glFlush();
+    //self->glFinish();
     if(self->egl_display) {
         self->eglSwapBuffers(self->egl_display, self->egl_surface);
     } else if(self->x11.window) {

@@ -2,6 +2,7 @@
 #include "../include/library_loader.h"
 #include "../include/utils.h"
 
+#include <X11/Xlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -161,6 +162,7 @@ static void store_x11_monitor(const gsr_monitor *monitor, void *userdata) {
 #define GLX_RGBA_BIT            0x00000001
 #define GLX_WINDOW_BIT            0x00000001
 #define GLX_PIXMAP_BIT            0x00000002
+#define GLX_BIND_TO_TEXTURE_RGB_EXT        0x20D0
 #define GLX_BIND_TO_TEXTURE_RGBA_EXT      0x20D1
 #define GLX_BIND_TO_TEXTURE_TARGETS_EXT   0x20D3
 #define GLX_TEXTURE_2D_BIT_EXT            0x00000002
@@ -177,29 +179,69 @@ static void store_x11_monitor(const gsr_monitor *monitor, void *userdata) {
 #define GLX_CONTEXT_PRIORITY_MEDIUM_EXT   0x3102
 #define GLX_CONTEXT_PRIORITY_LOW_EXT      0x3103
 
-static GLXFBConfig glx_fb_config_choose(gsr_egl *self) {
-    const int glx_visual_attribs[] = {
-        GLX_RENDER_TYPE, GLX_RGBA_BIT,
-        GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
-        // TODO:
-        GLX_BIND_TO_TEXTURE_RGBA_EXT, 1,
-        GLX_BIND_TO_TEXTURE_TARGETS_EXT, GLX_TEXTURE_2D_BIT_EXT,
-        GLX_DOUBLEBUFFER, True,
-        GLX_RED_SIZE, 8,
-        GLX_GREEN_SIZE, 8,
-        GLX_BLUE_SIZE, 8,
-        GLX_ALPHA_SIZE, 0,
-        GLX_DEPTH_SIZE, 0,
-        None, None
-    };
-
-    // TODO: Cleanup
-    int c = 0;
-    GLXFBConfig *fb_configs = self->glXChooseFBConfig(self->x11.dpy, DefaultScreen(self->x11.dpy), glx_visual_attribs, &c);
-    if(c == 0 || !fb_configs)
+static GLXFBConfig glx_fb_config_choose(gsr_egl *self, GLXFBConfig **fb_configs) {
+    XWindowAttributes win_attr = {0};
+    if(!XGetWindowAttributes(self->x11.dpy, self->x11.window, &win_attr)) {
+        fprintf(stderr, "gsr error: glx_fb_config_choose: XGetWindowAttributes failed\n");
         return NULL;
+    }
+    const VisualID visual_id = XVisualIDFromVisual(win_attr.visual);
 
-    return fb_configs[0];
+    GLXFBConfig selected_fb_config = NULL;
+    int num_fb_configs = 0;
+    *fb_configs = self->glXGetFBConfigs(self->x11.dpy, DefaultScreen(self->x11.dpy), &num_fb_configs);
+    for(int i = 0; i < num_fb_configs; ++i) {
+        GLXFBConfig fb_config = (*fb_configs)[i];
+        XVisualInfo *visinfo = self->glXGetVisualFromFBConfig(self->x11.dpy, fb_config);
+        if(!visinfo || visinfo->visualid != visual_id)
+            continue;
+
+        int render_type = 0;
+        self->glXGetFBConfigAttrib(self->x11.dpy, fb_config, GLX_RENDER_TYPE, &render_type);
+        if(!(render_type & GLX_RGBA_BIT))
+            continue;
+
+        int red_size = 0;
+        self->glXGetFBConfigAttrib(self->x11.dpy, fb_config, GLX_RED_SIZE, &red_size);
+
+        int green_size = 0;
+        self->glXGetFBConfigAttrib(self->x11.dpy, fb_config, GLX_GREEN_SIZE, &green_size);
+
+        int blue_size = 0;
+        self->glXGetFBConfigAttrib(self->x11.dpy, fb_config, GLX_BLUE_SIZE, &blue_size);
+
+        if(red_size != 8 || green_size != 8 || blue_size != 8)
+            continue;
+
+        int drawable_type = 0;
+        self->glXGetFBConfigAttrib(self->x11.dpy, fb_config, GLX_DRAWABLE_TYPE, &drawable_type);
+        if(!(drawable_type & GLX_PIXMAP_BIT) || !(drawable_type & GLX_WINDOW_BIT))
+            continue;
+
+        int bind_to_texture_targets = 0;
+        self->glXGetFBConfigAttrib(self->x11.dpy, fb_config, GLX_BIND_TO_TEXTURE_TARGETS_EXT, &bind_to_texture_targets);
+        if(!(bind_to_texture_targets & GLX_TEXTURE_2D_BIT_EXT))
+            continue;
+
+        int bind_to_texture_rgba = 0;
+        self->glXGetFBConfigAttrib(self->x11.dpy, fb_config, GLX_BIND_TO_TEXTURE_RGBA_EXT, &bind_to_texture_rgba);
+        if(!bind_to_texture_rgba) {
+            int bind_to_texture_rgb = 0;
+            self->glXGetFBConfigAttrib(self->x11.dpy, fb_config, GLX_BIND_TO_TEXTURE_RGB_EXT, &bind_to_texture_rgb);
+            if(!bind_to_texture_rgb)
+                continue;
+        }
+
+        selected_fb_config = fb_config;
+        break;
+    }
+
+    if(!selected_fb_config) {
+        XFree(*fb_configs);
+        *fb_configs = NULL;
+    }
+
+    return selected_fb_config;
 }
 
 // TODO: Create egl context without surface (in other words, x11/wayland agnostic, doesn't require x11/wayland dependency)
@@ -308,8 +350,6 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
 }
 
 static bool gsr_egl_switch_to_glx_context(gsr_egl *self) {
-    // TODO: Cleanup
-
     if(self->egl_context) {
         self->eglMakeCurrent(self->egl_display, NULL, NULL, NULL);
         self->eglDestroyContext(self->egl_display, self->egl_context);
@@ -326,7 +366,7 @@ static bool gsr_egl_switch_to_glx_context(gsr_egl *self) {
         self->egl_display = NULL;
     }
 
-    self->glx_fb_config = glx_fb_config_choose(self);
+    self->glx_fb_config = glx_fb_config_choose(self, &self->glx_fb_configs);
     if(!self->glx_fb_config) {
         fprintf(stderr, "gsr error: gsr_egl_create_window failed: failed to find a suitable fb config\n");
         goto fail;
@@ -348,12 +388,16 @@ static bool gsr_egl_switch_to_glx_context(gsr_egl *self) {
     return true;
 
     fail:
+    if(!self->glx_fb_configs) {
+        XFree(self->glx_fb_configs);
+        self->glx_fb_configs = NULL;
+    }
     if(self->glx_context) {
         self->glXMakeContextCurrent(self->x11.dpy, None, None, NULL);
         self->glXDestroyContext(self->x11.dpy, self->glx_context);
         self->glx_context = NULL;
-        self->glx_fb_config = NULL;
     }
+    self->glx_fb_config = NULL;
     return false;
 }
 
@@ -416,7 +460,9 @@ static bool gsr_egl_proc_load_egl(gsr_egl *self) {
 static bool gsr_egl_load_glx(gsr_egl *self, void *library) {
     const dlsym_assign required_dlsym[] = {
         { (void**)&self->glXGetProcAddress, "glXGetProcAddress" },
-        { (void**)&self->glXChooseFBConfig, "glXChooseFBConfig" },
+        { (void**)&self->glXGetFBConfigAttrib, "glXGetFBConfigAttrib" },
+        { (void**)&self->glXGetFBConfigs, "glXGetFBConfigs" },
+        { (void**)&self->glXGetVisualFromFBConfig, "glXGetVisualFromFBConfig" },
         { (void**)&self->glXMakeContextCurrent, "glXMakeContextCurrent" },
         { (void**)&self->glXCreateNewContext, "glXCreateNewContext" },
         { (void**)&self->glXDestroyContext, "glXDestroyContext" },
@@ -612,11 +658,17 @@ void gsr_egl_unload(gsr_egl *self) {
         self->egl_display = NULL;
     }
 
+    if(!self->glx_fb_configs) {
+        XFree(self->glx_fb_configs);
+        self->glx_fb_configs = NULL;
+    }
+
+    self->glx_fb_config = NULL;
+
     if(self->glx_context) {
         self->glXMakeContextCurrent(self->x11.dpy, None, None, NULL);
         self->glXDestroyContext(self->x11.dpy, self->glx_context);
         self->glx_context = NULL;
-        self->glx_fb_config = NULL;
     }
 
     if(self->x11.window) {

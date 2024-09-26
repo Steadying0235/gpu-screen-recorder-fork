@@ -185,9 +185,7 @@ static int gsr_capture_nvfbc_setup_handle(gsr_capture_nvfbc *self) {
     NVFBC_CREATE_HANDLE_PARAMS create_params;
     memset(&create_params, 0, sizeof(create_params));
     create_params.dwVersion = NVFBC_CREATE_HANDLE_PARAMS_VER;
-    create_params.bExternallyManagedContext = NVFBC_TRUE;
-    create_params.glxCtx = self->params.egl->glx_context;
-    create_params.glxFBConfig = self->params.egl->glx_fb_config;
+    create_params.bExternallyManagedContext = NVFBC_FALSE;
 
     status = self->nv_fbc_function_list.nvFBCCreateHandle(&self->nv_fbc_handle, &create_params);
     if(status != NVFBC_SUCCESS) {

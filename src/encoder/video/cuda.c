@@ -356,22 +356,22 @@ static gsr_supported_video_codecs gsr_video_encoder_cuda_get_supported_codecs(gs
 static void gsr_video_encoder_cuda_stop(gsr_video_encoder_cuda *self, AVCodecContext *video_codec_context);
 
 static bool gsr_video_encoder_cuda_start(gsr_video_encoder *encoder, AVCodecContext *video_codec_context, AVFrame *frame) {
-    gsr_video_encoder_cuda *encoder_cuda = encoder->priv;
+    gsr_video_encoder_cuda *self = encoder->priv;
 
-    const bool overclock = gsr_egl_get_display_server(encoder_cuda->params.egl) == GSR_DISPLAY_SERVER_X11 ? encoder_cuda->params.overclock : false;
-    if(!gsr_cuda_load(&encoder_cuda->cuda, encoder_cuda->params.egl->x11.dpy, overclock)) {
+    const bool overclock = gsr_egl_get_display_server(self->params.egl) == GSR_DISPLAY_SERVER_X11 ? self->params.overclock : false;
+    if(!gsr_cuda_load(&self->cuda, self->params.egl->x11.dpy, overclock)) {
         fprintf(stderr, "gsr error: gsr_video_encoder_cuda_start: failed to load cuda\n");
-        gsr_video_encoder_cuda_stop(encoder_cuda, video_codec_context);
+        gsr_video_encoder_cuda_stop(self, video_codec_context);
         return false;
     }
 
-    if(!gsr_video_encoder_cuda_setup_context(encoder_cuda, video_codec_context)) {
-        gsr_video_encoder_cuda_stop(encoder_cuda, video_codec_context);
+    if(!gsr_video_encoder_cuda_setup_context(self, video_codec_context)) {
+        gsr_video_encoder_cuda_stop(self, video_codec_context);
         return false;
     }
 
-    if(!gsr_video_encoder_cuda_setup_textures(encoder_cuda, video_codec_context, frame)) {
-        gsr_video_encoder_cuda_stop(encoder_cuda, video_codec_context);
+    if(!gsr_video_encoder_cuda_setup_textures(self, video_codec_context, frame)) {
+        gsr_video_encoder_cuda_stop(self, video_codec_context);
         return false;
     }
 
@@ -402,7 +402,7 @@ void gsr_video_encoder_cuda_stop(gsr_video_encoder_cuda *self, AVCodecContext *v
 }
 
 static void gsr_video_encoder_cuda_copy_textures_to_frame(gsr_video_encoder *encoder, AVFrame *frame) {
-    gsr_video_encoder_cuda *encoder_cuda = encoder->priv;
+    gsr_video_encoder_cuda *self = encoder->priv;
     const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
     for(int i = 0; i < 2; ++i) {
         CUDA_MEMCPY2D memcpy_struct;
@@ -414,26 +414,26 @@ static void gsr_video_encoder_cuda_copy_textures_to_frame(gsr_video_encoder *enc
         memcpy_struct.dstY = 0;
         memcpy_struct.dstMemoryType = CU_MEMORYTYPE_DEVICE;
 
-        memcpy_struct.srcArray = encoder_cuda->mapped_arrays[i];
+        memcpy_struct.srcArray = self->mapped_arrays[i];
         memcpy_struct.srcPitch = frame->width / div[i];
         memcpy_struct.dstDevice = (CUdeviceptr)frame->data[i];
         memcpy_struct.dstPitch = frame->linesize[i];
-        memcpy_struct.WidthInBytes = frame->width * (encoder_cuda->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? 2 : 1);
+        memcpy_struct.WidthInBytes = frame->width * (self->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? 2 : 1);
         memcpy_struct.Height = frame->height / div[i];
         // TODO: Remove this copy if possible
-        encoder_cuda->cuda.cuMemcpy2DAsync_v2(&memcpy_struct, encoder_cuda->cuda_stream);
+        self->cuda.cuMemcpy2DAsync_v2(&memcpy_struct, self->cuda_stream);
     }
 
     // TODO: needed?
-    encoder_cuda->cuda.cuStreamSynchronize(encoder_cuda->cuda_stream);
+    self->cuda.cuStreamSynchronize(self->cuda_stream);
 }
 
 static void gsr_video_encoder_cuda_get_textures(gsr_video_encoder *encoder, unsigned int *textures, int *num_textures, gsr_destination_color *destination_color) {
-    gsr_video_encoder_cuda *encoder_cuda = encoder->priv;
-    textures[0] = encoder_cuda->target_textures[0];
-    textures[1] = encoder_cuda->target_textures[1];
+    gsr_video_encoder_cuda *self = encoder->priv;
+    textures[0] = self->target_textures[0];
+    textures[1] = self->target_textures[1];
     *num_textures = 2;
-    *destination_color = encoder_cuda->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? GSR_DESTINATION_COLOR_P010 : GSR_DESTINATION_COLOR_NV12;
+    *destination_color = self->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? GSR_DESTINATION_COLOR_P010 : GSR_DESTINATION_COLOR_NV12;
 }
 
 static void gsr_video_encoder_cuda_destroy(gsr_video_encoder *encoder, AVCodecContext *video_codec_context) {

@@ -86,11 +86,11 @@ void gsr_video_encoder_vulkan_stop(gsr_video_encoder_vulkan *self, AVCodecContex
 }
 
 static void gsr_video_encoder_vulkan_get_textures(gsr_video_encoder *encoder, unsigned int *textures, int *num_textures, gsr_destination_color *destination_color) {
-    gsr_video_encoder_vulkan *encoder_vaapi = encoder->priv;
-    textures[0] = encoder_vaapi->target_textures[0];
-    textures[1] = encoder_vaapi->target_textures[1];
+    gsr_video_encoder_vulkan *self = encoder->priv;
+    textures[0] = self->target_textures[0];
+    textures[1] = self->target_textures[1];
     *num_textures = 2;
-    *destination_color = encoder_vaapi->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? GSR_DESTINATION_COLOR_P010 : GSR_DESTINATION_COLOR_NV12;
+    *destination_color = self->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? GSR_DESTINATION_COLOR_P010 : GSR_DESTINATION_COLOR_NV12;
 }
 
 static void gsr_video_encoder_vulkan_destroy(gsr_video_encoder *encoder, AVCodecContext *video_codec_context) {
@@ -104,20 +104,20 @@ gsr_video_encoder* gsr_video_encoder_vulkan_create(const gsr_video_encoder_vulka
     if(!encoder)
         return NULL;
 
-    gsr_video_encoder_vulkan *encoder_vaapi = calloc(1, sizeof(gsr_video_encoder_vulkan));
-    if(!encoder_vaapi) {
+    gsr_video_encoder_vulkan *encoder_vulkan = calloc(1, sizeof(gsr_video_encoder_vulkan));
+    if(!encoder_vulkan) {
         free(encoder);
         return NULL;
     }
 
-    encoder_vaapi->params = *params;
+    encoder_vulkan->params = *params;
 
     *encoder = (gsr_video_encoder) {
         .start = gsr_video_encoder_vulkan_start,
         .copy_textures_to_frame = NULL,
         .get_textures = gsr_video_encoder_vulkan_get_textures,
         .destroy = gsr_video_encoder_vulkan_destroy,
-        .priv = encoder_vaapi
+        .priv = encoder_vulkan
     };
 
     return encoder;

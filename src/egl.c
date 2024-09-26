@@ -709,7 +709,7 @@ bool gsr_egl_process_event(gsr_egl *self) {
 
 void gsr_egl_swap_buffers(gsr_egl *self) {
     /* This uses less cpu than swap buffer on nvidia */
-    // TODO:
+    // TODO: Do these and remove swap
     //self->glFlush();
     //self->glFinish();
     if(self->egl_display) {

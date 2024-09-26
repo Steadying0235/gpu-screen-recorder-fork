@@ -77,7 +77,7 @@ static gsr_supported_video_codecs gsr_video_encoder_software_get_supported_codec
 static void gsr_video_encoder_software_stop(gsr_video_encoder_software *self, AVCodecContext *video_codec_context);
 
 static bool gsr_video_encoder_software_start(gsr_video_encoder *encoder, AVCodecContext *video_codec_context, AVFrame *frame) {
-    gsr_video_encoder_software *encoder_software = encoder->priv;
+    gsr_video_encoder_software *self = encoder->priv;
 
     video_codec_context->width = FFALIGN(video_codec_context->width, LINESIZE_ALIGNMENT);
     video_codec_context->height = FFALIGN(video_codec_context->height, 2);
@@ -85,8 +85,8 @@ static bool gsr_video_encoder_software_start(gsr_video_encoder *encoder, AVCodec
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
 
-    if(!gsr_video_encoder_software_setup_textures(encoder_software, video_codec_context, frame)) {
-        gsr_video_encoder_software_stop(encoder_software, video_codec_context);
+    if(!gsr_video_encoder_software_setup_textures(self, video_codec_context, frame)) {
+        gsr_video_encoder_software_stop(self, video_codec_context);
         return false;
     }
 
@@ -101,28 +101,28 @@ void gsr_video_encoder_software_stop(gsr_video_encoder_software *self, AVCodecCo
 }
 
 static void gsr_video_encoder_software_copy_textures_to_frame(gsr_video_encoder *encoder, AVFrame *frame) {
-    gsr_video_encoder_software *encoder_software = encoder->priv;
+    gsr_video_encoder_software *self = encoder->priv;
     // TODO: hdr support
     const unsigned int formats[2] = { GL_RED, GL_RG };
     for(int i = 0; i < 2; ++i) {
-        encoder_software->params.egl->glBindTexture(GL_TEXTURE_2D, encoder_software->target_textures[i]);
+        self->params.egl->glBindTexture(GL_TEXTURE_2D, self->target_textures[i]);
         // We could use glGetTexSubImage and then we wouldn't have to use a specific linesize (LINESIZE_ALIGNMENT) that adds padding,
         // but glGetTexSubImage is only available starting from opengl 4.5.
-        encoder_software->params.egl->glGetTexImage(GL_TEXTURE_2D, 0, formats[i], GL_UNSIGNED_BYTE, frame->data[i]);
+        self->params.egl->glGetTexImage(GL_TEXTURE_2D, 0, formats[i], GL_UNSIGNED_BYTE, frame->data[i]);
     }
-    encoder_software->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
+    self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
     // cap_kms->kms.base.egl->eglSwapBuffers(cap_kms->kms.base.egl->egl_display, cap_kms->kms.base.egl->egl_surface);
 
-    encoder_software->params.egl->glFlush();
-    encoder_software->params.egl->glFinish();
+    self->params.egl->glFlush();
+    self->params.egl->glFinish();
 }
 
 static void gsr_video_encoder_software_get_textures(gsr_video_encoder *encoder, unsigned int *textures, int *num_textures, gsr_destination_color *destination_color) {
-    gsr_video_encoder_software *encoder_software = encoder->priv;
-    textures[0] = encoder_software->target_textures[0];
-    textures[1] = encoder_software->target_textures[1];
+    gsr_video_encoder_software *self = encoder->priv;
+    textures[0] = self->target_textures[0];
+    textures[1] = self->target_textures[1];
     *num_textures = 2;
-    *destination_color = encoder_software->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? GSR_DESTINATION_COLOR_P010 : GSR_DESTINATION_COLOR_NV12;
+    *destination_color = self->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? GSR_DESTINATION_COLOR_P010 : GSR_DESTINATION_COLOR_NV12;
 }
 
 static void gsr_video_encoder_software_destroy(gsr_video_encoder *encoder, AVCodecContext *video_codec_context) {

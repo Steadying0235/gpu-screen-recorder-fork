@@ -299,12 +299,12 @@ static bool get_supported_video_codecs(VADisplay va_dpy, gsr_supported_video_cod
 }
 
 static gsr_supported_video_codecs gsr_video_encoder_vaapi_get_supported_codecs(gsr_video_encoder *encoder, bool cleanup) {
-    gsr_video_encoder_vaapi *encoder_vaapi = encoder->priv;
+    gsr_video_encoder_vaapi *self = encoder->priv;
     gsr_supported_video_codecs supported_video_codecs = {0};
 
     char render_path[128];
-    if(!gsr_card_path_get_render_path(encoder_vaapi->params.egl->card_path, render_path)) {
-        fprintf(stderr, "gsr error: gsr_video_encoder_vaapi_get_supported_codecs: failed to get /dev/dri/renderDXXX file from %s\n", encoder_vaapi->params.egl->card_path);
+    if(!gsr_card_path_get_render_path(self->params.egl->card_path, render_path)) {
+        fprintf(stderr, "gsr error: gsr_video_encoder_vaapi_get_supported_codecs: failed to get /dev/dri/renderDXXX file from %s\n", self->params.egl->card_path);
         return supported_video_codecs;
     }
 
@@ -329,13 +329,13 @@ static gsr_supported_video_codecs gsr_video_encoder_vaapi_get_supported_codecs(g
 static void gsr_video_encoder_vaapi_stop(gsr_video_encoder_vaapi *self, AVCodecContext *video_codec_context);
 
 static bool gsr_video_encoder_vaapi_start(gsr_video_encoder *encoder, AVCodecContext *video_codec_context, AVFrame *frame) {
-    gsr_video_encoder_vaapi *encoder_vaapi = encoder->priv;
+    gsr_video_encoder_vaapi *self = encoder->priv;
 
-    if(encoder_vaapi->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_HEVC) {
+    if(self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_HEVC) {
         // TODO: dont do this if using ffmpeg reports that this is not needed (AMD driver bug that was fixed recently)
         video_codec_context->width = FFALIGN(video_codec_context->width, 64);
         video_codec_context->height = FFALIGN(video_codec_context->height, 16);
-    } else if(encoder_vaapi->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_AV1) {
+    } else if(self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && video_codec_context->codec_id == AV_CODEC_ID_AV1) {
         // TODO: Dont do this for VCN 5 and forward which should fix this hardware bug
         video_codec_context->width = FFALIGN(video_codec_context->width, 64);
         // AMD driver has special case handling for 1080 height to set it to 1082 instead of 1088 (1080 aligned to 16).
@@ -354,13 +354,13 @@ static bool gsr_video_encoder_vaapi_start(gsr_video_encoder *encoder, AVCodecCon
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
 
-    if(!gsr_video_encoder_vaapi_setup_context(encoder_vaapi, video_codec_context)) {
-        gsr_video_encoder_vaapi_stop(encoder_vaapi, video_codec_context);
+    if(!gsr_video_encoder_vaapi_setup_context(self, video_codec_context)) {
+        gsr_video_encoder_vaapi_stop(self, video_codec_context);
         return false;
     }
 
-    if(!gsr_video_encoder_vaapi_setup_textures(encoder_vaapi, video_codec_context, frame)) {
-        gsr_video_encoder_vaapi_stop(encoder_vaapi, video_codec_context);
+    if(!gsr_video_encoder_vaapi_setup_textures(self, video_codec_context, frame)) {
+        gsr_video_encoder_vaapi_stop(self, video_codec_context);
         return false;
     }
 
@@ -386,11 +386,11 @@ void gsr_video_encoder_vaapi_stop(gsr_video_encoder_vaapi *self, AVCodecContext 
 }
 
 static void gsr_video_encoder_vaapi_get_textures(gsr_video_encoder *encoder, unsigned int *textures, int *num_textures, gsr_destination_color *destination_color) {
-    gsr_video_encoder_vaapi *encoder_vaapi = encoder->priv;
-    textures[0] = encoder_vaapi->target_textures[0];
-    textures[1] = encoder_vaapi->target_textures[1];
+    gsr_video_encoder_vaapi *self = encoder->priv;
+    textures[0] = self->target_textures[0];
+    textures[1] = self->target_textures[1];
     *num_textures = 2;
-    *destination_color = encoder_vaapi->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? GSR_DESTINATION_COLOR_P010 : GSR_DESTINATION_COLOR_NV12;
+    *destination_color = self->params.color_depth == GSR_COLOR_DEPTH_10_BITS ? GSR_DESTINATION_COLOR_P010 : GSR_DESTINATION_COLOR_NV12;
 }
 
 static void gsr_video_encoder_vaapi_destroy(gsr_video_encoder *encoder, AVCodecContext *video_codec_context) {

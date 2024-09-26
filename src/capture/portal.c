@@ -414,9 +414,9 @@ static void gsr_capture_portal_clear_damage(gsr_capture *cap) {
 
 static void gsr_capture_portal_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
     (void)video_codec_context;
-    gsr_capture_portal *cap_portal = cap->priv;
+    gsr_capture_portal *self = cap->priv;
     if(cap->priv) {
-        gsr_capture_portal_stop(cap_portal);
+        gsr_capture_portal_stop(self);
         free(cap->priv);
         cap->priv = NULL;
     }

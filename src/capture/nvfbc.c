@@ -189,6 +189,8 @@ static int gsr_capture_nvfbc_setup_handle(gsr_capture_nvfbc *self) {
     create_params.glxCtx = self->params.egl->glx_context;
     create_params.glxFBConfig = self->params.egl->glx_fb_config;
 
+    fprintf(stderr, "glx ctx: %p, glxfb config: %p\n", create_params.glxCtx, create_params.glxFBConfig);
+
     status = self->nv_fbc_function_list.nvFBCCreateHandle(&self->nv_fbc_handle, &create_params);
     if(status != NVFBC_SUCCESS) {
         // Reverse engineering for interoperability
@@ -204,6 +206,8 @@ static int gsr_capture_nvfbc_setup_handle(gsr_capture_nvfbc *self) {
     }
     self->fbc_handle_created = true;
 
+    fprintf(stderr, "nvfbc 2\n");
+
     NVFBC_GET_STATUS_PARAMS status_params;
     memset(&status_params, 0, sizeof(status_params));
     status_params.dwVersion = NVFBC_GET_STATUS_PARAMS_VER;
@@ -213,6 +217,8 @@ static int gsr_capture_nvfbc_setup_handle(gsr_capture_nvfbc *self) {
         fprintf(stderr, "gsr error: gsr_capture_nvfbc_start failed: %s\n", self->nv_fbc_function_list.nvFBCGetLastErrorStr(self->nv_fbc_handle));
         goto error_cleanup;
     }
+
+    fprintf(stderr, "nvfbc 3\n");
 
     if(status_params.bCanCreateNow == NVFBC_FALSE) {
         fprintf(stderr, "gsr error: gsr_capture_nvfbc_start failed: it's not possible to create a capture session on this system\n");
@@ -265,12 +271,16 @@ static int gsr_capture_nvfbc_setup_session(gsr_capture_nvfbc *self) {
     if(self->tracking_type == NVFBC_TRACKING_OUTPUT)
         create_capture_params.dwOutputId = self->output_id;
 
+    fprintf(stderr, "nvfbc 4\n");
+
     NVFBCSTATUS status = self->nv_fbc_function_list.nvFBCCreateCaptureSession(self->nv_fbc_handle, &create_capture_params);
     if(status != NVFBC_SUCCESS) {
         fprintf(stderr, "gsr error: gsr_capture_nvfbc_start failed: %s\n", self->nv_fbc_function_list.nvFBCGetLastErrorStr(self->nv_fbc_handle));
         return -1;
     }
     self->capture_session_created = true;
+
+    fprintf(stderr, "nvfbc 5\n");
 
     memset(&self->setup_params, 0, sizeof(self->setup_params));
     self->setup_params.dwVersion = NVFBC_TOGL_SETUP_PARAMS_VER;
@@ -282,6 +292,8 @@ static int gsr_capture_nvfbc_setup_session(gsr_capture_nvfbc *self) {
         gsr_capture_nvfbc_destroy_session(self);
         return -1;
     }
+
+    fprintf(stderr, "nvfbc 6\n");
 
     return 0;
 }
@@ -354,8 +366,12 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
 
+    fprintf(stderr, "nvfbc 7\n");
+
     /* Disable vsync */
     set_vertical_sync_enabled(self->params.egl, 0);
+
+    fprintf(stderr, "nvfbc 8\n");
 
     return 0;
 
@@ -400,6 +416,8 @@ static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame, gsr_color
     grab_params.pFrameGrabInfo = &frame_info;
     grab_params.dwTimeoutMs = 0;
 
+    fprintf(stderr, "nvfbc capture 1\n");
+
     NVFBCSTATUS status = self->nv_fbc_function_list.nvFBCToGLGrabFrame(self->nv_fbc_handle, &grab_params);
     if(status != NVFBC_SUCCESS) {
         fprintf(stderr, "gsr error: gsr_capture_nvfbc_capture failed: %s (%d), recreating session after %f second(s)\n", self->nv_fbc_function_list.nvFBCGetLastErrorStr(self->nv_fbc_handle), status, nvfbc_recreate_retry_time_seconds);
@@ -407,6 +425,8 @@ static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame, gsr_color
         self->nvfbc_dead_start = clock_get_monotonic_seconds();
         return 0;
     }
+
+    fprintf(stderr, "nvfbc capture 2\n");
 
     self->params.egl->glFlush();
     self->params.egl->glFinish();

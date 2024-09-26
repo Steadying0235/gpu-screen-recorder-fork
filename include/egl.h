@@ -213,8 +213,7 @@ struct gsr_egl {
     const char *dri_card_path;
 
     void *glx_context;
-    GLXFBConfig *glx_fb_configs;
-    GLXFBConfig glx_fb_config;
+    void *glx_fb_config;
 
     gsr_gpu_info gpu_info;
 
@@ -247,9 +246,7 @@ struct gsr_egl {
     FUNC_eglQueryDmaBufModifiersEXT eglQueryDmaBufModifiersEXT;
 
     __GLXextFuncPtr (*glXGetProcAddress)(const unsigned char *procName);
-    int (*glXGetFBConfigAttrib)(Display *dpy, GLXFBConfig config, int attribute, int *value);
-    GLXFBConfig* (*glXGetFBConfigs)(Display *dpy, int screen, int *nelements);
-    XVisualInfo* (*glXGetVisualFromFBConfig)(Display *dpy, GLXFBConfig config);
+    GLXFBConfig* (*glXChooseFBConfig)(Display *dpy, int screen, const int *attribList, int *nitems);
     Bool (*glXMakeContextCurrent)(Display *dpy, GLXDrawable draw, GLXDrawable read, GLXContext ctx);
     // TODO: Remove
     GLXContext (*glXCreateNewContext)(Display *dpy, GLXFBConfig config, int renderType, GLXContext shareList, Bool direct);

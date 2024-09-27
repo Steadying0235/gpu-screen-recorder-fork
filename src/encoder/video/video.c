@@ -9,10 +9,10 @@ bool gsr_video_encoder_start(gsr_video_encoder *encoder, AVCodecContext *video_c
     return res;
 }
 
-void gsr_video_encoder_copy_textures_to_frame(gsr_video_encoder *encoder, AVFrame *frame) {
+void gsr_video_encoder_copy_textures_to_frame(gsr_video_encoder *encoder, AVFrame *frame, gsr_color_conversion *color_conversion) {
     assert(encoder->started);
     if(encoder->copy_textures_to_frame)
-        encoder->copy_textures_to_frame(encoder, frame);
+        encoder->copy_textures_to_frame(encoder, frame, color_conversion);
 }
 
 void gsr_video_encoder_get_textures(gsr_video_encoder *encoder, unsigned int *textures, int *num_textures, gsr_destination_color *destination_color) {

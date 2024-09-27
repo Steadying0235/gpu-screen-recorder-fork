@@ -164,3 +164,5 @@ Test vaapi low latency mode (setenv("AMD_DEBUG", "lowlatencyenc", true);), added
 Use nvidia low latency options for better encoding times.
 
 Test ideal async_depth value. Increasing async_depth also increased gpu memory usage a lot (from 100mb to 500mb when moving from async_depth 2 to 16) at 4k resolution. Setting it to 8 increases it by 200mb which might be ok.
+
+Replace -encoder cpu with -k h264_software?

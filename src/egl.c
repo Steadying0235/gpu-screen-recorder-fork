@@ -499,6 +499,9 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
         { (void**)&self->glUniform2f, "glUniform2f" },
         { (void**)&self->glDebugMessageCallback, "glDebugMessageCallback" },
         { (void**)&self->glScissor, "glScissor" },
+        { (void**)&self->glReadPixels, "glReadPixels" },
+        { (void**)&self->glMapBuffer, "glMapBuffer" },
+        { (void**)&self->glUnmapBuffer, "glUnmapBuffer" },
 
         { NULL, NULL }
     };

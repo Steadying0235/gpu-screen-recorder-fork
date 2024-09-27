@@ -20,6 +20,7 @@ src = [
     'src/encoder/video/software.c',
     'src/codec_query/cuda.c',
     'src/codec_query/vaapi.c',
+    'src/codec_query/vulkan.c',
     'src/egl.c',
     'src/cuda.c',
     'src/xnvctrl.c',

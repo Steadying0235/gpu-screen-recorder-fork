@@ -313,6 +313,9 @@ struct gsr_egl {
     void (*glUniform2f)(int location, float v0, float v1);
     void (*glDebugMessageCallback)(GLDEBUGPROC callback, const void *userParam);
     void (*glScissor)(int x, int y, int width, int height);
+    void (*glReadPixels)(int x, int y, int width, int height, unsigned int format, unsigned int type, void *pixels);
+    void* (*glMapBuffer)(unsigned int target, unsigned int access);
+    unsigned char (*glUnmapBuffer)(unsigned int target);
 };
 
 bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland, bool is_monitor_capture);

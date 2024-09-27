@@ -8,9 +8,11 @@ extern "C" {
 #endif
 #include "../include/encoder/video/cuda.h"
 #include "../include/encoder/video/vaapi.h"
+#include "../include/encoder/video/vulkan.h"
 #include "../include/encoder/video/software.h"
 #include "../include/codec_query/cuda.h"
 #include "../include/codec_query/vaapi.h"
+#include "../include/codec_query/vulkan.h"
 #include "../include/egl.h"
 #include "../include/utils.h"
 #include "../include/damage.h"
@@ -102,7 +104,8 @@ enum class VideoCodec {
     AV1_HDR,
     AV1_10BIT,
     VP8,
-    VP9
+    VP9,
+    H264_VULKAN
 };
 
 enum class AudioCodec {
@@ -977,7 +980,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [--version] [-h|--help]\n", program_name);
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit|h264_vulkan] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [--version] [-h|--help]\n", program_name);
 }
 
 // TODO: Update with portal info
@@ -1020,8 +1023,8 @@ static void usage_full() {
     fprintf(stderr, "        and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature.\n");
     fprintf(stderr, "        This option has be between 5 and 1200. Note that the replay buffer size will not always be precise, because of keyframes. Optional, disabled by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'hevc', 'av1', 'vp8', 'vp9', 'hevc_hdr', 'av1_hdr', 'hevc_10bit' or 'av1_10bit'. Optional, set to 'auto' by default which defaults to 'h264'.\n");
-    fprintf(stderr, "        Forcefully set to 'h264' if the file container type is 'flv'.\n");
+    fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'hevc', 'av1', 'vp8', 'vp9', 'hevc_hdr', 'av1_hdr', 'hevc_10bit', 'av1_10bit' or 'h264_vulkan'.\n");
+    fprintf(stderr, "        Optional, set to 'auto' by default which defaults to 'h264'. Forcefully set to 'h264' if the file container type is 'flv'.\n");
     fprintf(stderr, "        'hevc_hdr' and 'av1_hdr' option is not available on X11 nor when using the portal capture option.\n");
     fprintf(stderr, "        'hevc_10bit' and 'av1_10bit' options allow you to select 10 bit color depth which can reduce banding and improve quality in darker areas, but not all video players support 10 bit color depth\n");
     fprintf(stderr, "        and if you upload the video to a website the website might reduce 10 bit to 8 bit.\n");
@@ -1081,7 +1084,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  --info\n");
     fprintf(stderr, "        List info about the system (for use by GPU Screen Recorder UI). Lists the following information (prints them to stdout and exits):\n");
-    fprintf(stderr, "        Supported video codecs (h264, h264_software, hevc, hevc_hdr, hevc_10bit, av1, av1_hdr, av1_10bit, vp8, vp9, (if supported)).\n");
+    fprintf(stderr, "        Supported video codecs (h264, h264_software, hevc, hevc_hdr, hevc_10bit, av1, av1_hdr, av1_10bit, vp8, vp9, h264_vulkan (if supported)).\n");
     fprintf(stderr, "        Supported capture options (window, focused, screen, monitors and portal, if supported by the system).\n");
     fprintf(stderr, "        If opengl initialization fails then the program exits with 22, if no usable drm device is found then it exits with 23. On success it exits with 0.\n");
     fprintf(stderr, "\n");
@@ -1625,7 +1628,7 @@ static int init_filter_graph(AVCodecContext *audio_codec_context, AVFilterGraph 
     return 0;
 }
 
-static gsr_video_encoder* create_video_encoder(gsr_egl *egl, bool overclock, gsr_color_depth color_depth, bool use_software_video_encoder) {
+static gsr_video_encoder* create_video_encoder(gsr_egl *egl, bool overclock, gsr_color_depth color_depth, bool use_software_video_encoder, VideoCodec video_codec) {
     gsr_video_encoder *video_encoder = nullptr;
 
     if(use_software_video_encoder) {
@@ -1633,6 +1636,14 @@ static gsr_video_encoder* create_video_encoder(gsr_egl *egl, bool overclock, gsr
         params.egl = egl;
         params.color_depth = color_depth;
         video_encoder = gsr_video_encoder_software_create(&params);
+        return video_encoder;
+    }
+
+    if(video_codec == VideoCodec::H264_VULKAN) {
+        gsr_video_encoder_vulkan_params params;
+        params.egl = egl;
+        params.color_depth = color_depth;
+        video_encoder = gsr_video_encoder_vulkan_create(&params);
         return video_encoder;
     }
 
@@ -1658,13 +1669,16 @@ static gsr_video_encoder* create_video_encoder(gsr_egl *egl, bool overclock, gsr
     return video_encoder;
 }
 
-static bool get_supported_video_codecs(gsr_egl *egl, bool use_software_video_encoder, bool cleanup, gsr_supported_video_codecs *video_codecs) {
+static bool get_supported_video_codecs(gsr_egl *egl, VideoCodec video_codec, bool use_software_video_encoder, bool cleanup, gsr_supported_video_codecs *video_codecs) {
     memset(video_codecs, 0, sizeof(*video_codecs));
 
     if(use_software_video_encoder) {
         video_codecs->h264 = true;
         return true;
     }
+
+    if(video_codec == VideoCodec::H264_VULKAN)
+        return gsr_get_supported_video_codecs_vulkan(video_codecs, egl->card_path, cleanup);
 
     switch(egl->gpu_info.vendor) {
         case GSR_GPU_VENDOR_AMD:
@@ -1741,6 +1755,8 @@ static const AVCodec* get_ffmpeg_video_codec(VideoCodec video_codec, gsr_gpu_ven
             return avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "vp8_nvenc" : "vp8_vaapi");
         case VideoCodec::VP9:
             return avcodec_find_encoder_by_name(vendor == GSR_GPU_VENDOR_NVIDIA ? "vp9_nvenc" : "vp9_vaapi");
+        case VideoCodec::H264_VULKAN:
+            return avcodec_find_encoder_by_name("h264_vulkan");
     }
     return nullptr;
 }
@@ -1773,13 +1789,14 @@ static void set_supported_video_codecs_ffmpeg(gsr_supported_video_codecs *suppor
 
 static void list_supported_video_codecs(gsr_egl *egl, bool wayland) {
     // Dont clean it up on purpose to increase shutdown speed
-    gsr_video_encoder *video_encoder = create_video_encoder(egl, false, GSR_COLOR_DEPTH_8_BITS, false);
-    if(!video_encoder)
-        return;
-    
     gsr_supported_video_codecs supported_video_codecs;
-    get_supported_video_codecs(egl, false, false, &supported_video_codecs);
+    get_supported_video_codecs(egl, VideoCodec::H264, false, false, &supported_video_codecs);
     set_supported_video_codecs_ffmpeg(&supported_video_codecs, egl->gpu_info.vendor);
+
+    gsr_supported_video_codecs supported_video_codecs_vulkan;
+    get_supported_video_codecs(egl, VideoCodec::H264_VULKAN, false, false, &supported_video_codecs_vulkan);
+    if(!get_ffmpeg_video_codec(VideoCodec::H264_VULKAN, egl->gpu_info.vendor))
+        memset(&supported_video_codecs_vulkan, 0, sizeof(supported_video_codecs_vulkan));
 
     if(supported_video_codecs.h264)
         puts("h264");
@@ -1801,6 +1818,8 @@ static void list_supported_video_codecs(gsr_egl *egl, bool wayland) {
         puts("vp8");
     if(supported_video_codecs.vp9)
         puts("vp9");
+    if(supported_video_codecs_vulkan.h264)
+        puts("h264_vulkan");
 }
 
 static bool monitor_capture_use_drm(gsr_egl *egl, bool wayland) {
@@ -2107,11 +2126,14 @@ static gsr_capture* create_capture_impl(std::string &window_str, const char *scr
     return capture;
 }
 
-static AVPixelFormat get_pixel_format(gsr_gpu_vendor vendor, bool use_software_video_encoder) {
+static AVPixelFormat get_pixel_format(VideoCodec video_codec, gsr_gpu_vendor vendor, bool use_software_video_encoder) {
     if(use_software_video_encoder) {
         return AV_PIX_FMT_NV12;
     } else {
-        return vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_CUDA : AV_PIX_FMT_VAAPI;
+        if(video_codec == VideoCodec::H264_VULKAN)
+            return AV_PIX_FMT_VULKAN;
+        else
+            return vendor == GSR_GPU_VENDOR_NVIDIA ? AV_PIX_FMT_CUDA : AV_PIX_FMT_VAAPI;
     }
 }
 
@@ -2228,16 +2250,17 @@ static AudioCodec select_audio_codec_with_fallback(AudioCodec audio_codec, const
 }
 
 static const char* video_codec_to_string(VideoCodec video_codec) {
-    switch(video_codec) {
-        case VideoCodec::H264:       return "h264";
-        case VideoCodec::HEVC:       return "hevc";
-        case VideoCodec::HEVC_HDR:   return "hevc_hdr";
-        case VideoCodec::HEVC_10BIT: return "hevc_10bit";
-        case VideoCodec::AV1:        return "av1";
-        case VideoCodec::AV1_HDR:    return "av1_hdr";
-        case VideoCodec::AV1_10BIT:  return "av1_10bit";
-        case VideoCodec::VP8:        return "vp8";
-        case VideoCodec::VP9:        return "vp9";
+    switch(video_codec) { 
+        case VideoCodec::H264:        return "h264";
+        case VideoCodec::HEVC:        return "hevc";
+        case VideoCodec::HEVC_HDR:    return "hevc_hdr";
+        case VideoCodec::HEVC_10BIT:  return "hevc_10bit";
+        case VideoCodec::AV1:         return "av1";
+        case VideoCodec::AV1_HDR:     return "av1_hdr";
+        case VideoCodec::AV1_10BIT:   return "av1_10bit";
+        case VideoCodec::VP8:         return "vp8";
+        case VideoCodec::VP9:         return "vp9";
+        case VideoCodec::H264_VULKAN: return "h264_vulkan";
     }
     return "";
 }
@@ -2246,7 +2269,7 @@ static const AVCodec* pick_video_codec(VideoCodec *video_codec, gsr_egl *egl, bo
     // TODO: software encoder for hevc, av1, vp8 and vp9
 
     gsr_supported_video_codecs supported_video_codecs;
-    if(!get_supported_video_codecs(egl, use_software_video_encoder, true, &supported_video_codecs)) {
+    if(!get_supported_video_codecs(egl, *video_codec, use_software_video_encoder, true, &supported_video_codecs)) {
         fprintf(stderr, "Error: failed to query for supported video codecs\n");
         _exit(11);
     }
@@ -2301,6 +2324,11 @@ static const AVCodec* pick_video_codec(VideoCodec *video_codec, gsr_egl *egl, bo
                 video_codec_f = get_ffmpeg_video_codec(*video_codec, egl->gpu_info.vendor);
             break;
         }
+        case VideoCodec::H264_VULKAN: {
+            if(supported_video_codecs.h264)
+                video_codec_f = get_ffmpeg_video_codec(*video_codec, egl->gpu_info.vendor);
+            break;
+        }
     }
 
     if(!video_codec_auto && !video_codec_f && !is_flv) {
@@ -2336,6 +2364,19 @@ static const AVCodec* pick_video_codec(VideoCodec *video_codec, gsr_egl *egl, bo
             case VideoCodec::VP9:
                 // TODO: Cant fallback to other codec because webm only supports vp8/vp9
                 break;
+            case VideoCodec::H264_VULKAN: {
+                fprintf(stderr, "Warning: selected video codec h264_vulkan is not supported, trying h264 instead\n");
+                video_codec_to_use = "h264";
+                *video_codec = VideoCodec::H264;
+                // Need to do a query again because this time it's without vulkan
+                if(!get_supported_video_codecs(egl, *video_codec, use_software_video_encoder, true, &supported_video_codecs)) {
+                    fprintf(stderr, "Error: failed to query for supported video codecs\n");
+                    _exit(11);
+                }
+                if(supported_video_codecs.h264)
+                    video_codec_f = get_ffmpeg_video_codec(*video_codec, egl->gpu_info.vendor);
+                break;
+            }
         }
     }
 
@@ -2532,8 +2573,10 @@ int main(int argc, char **argv) {
         video_codec = VideoCodec::VP8;
     } else if(strcmp(video_codec_to_use, "vp9") == 0) {
         video_codec = VideoCodec::VP9;
+    } else if(strcmp(video_codec_to_use, "h264_vulkan") == 0) {
+        video_codec = VideoCodec::H264_VULKAN;
     } else if(strcmp(video_codec_to_use, "auto") != 0) {
-        fprintf(stderr, "Error: -k should either be either 'auto', 'h264', 'hevc', 'av1', 'vp8', 'vp9', 'hevc_hdr', 'av1_hdr', 'hevc_10bit' or 'av1_10bit', got: '%s'\n", video_codec_to_use);
+        fprintf(stderr, "Error: -k should either be either 'auto', 'h264', 'hevc', 'av1', 'vp8', 'vp9', 'hevc_hdr', 'av1_hdr', 'hevc_10bit', 'av1_10bit' or 'h264_vulkan', got: '%s'\n", video_codec_to_use);
         usage();
     }
 
@@ -3010,7 +3053,8 @@ int main(int argc, char **argv) {
     const bool hdr = video_codec_is_hdr(video_codec);
     const bool low_latency_recording = is_livestream || is_output_piped;
 
-    AVCodecContext *video_codec_context = create_video_codec_context(get_pixel_format(egl.gpu_info.vendor, use_software_video_encoder), quality, fps, video_codec_f, low_latency_recording, egl.gpu_info.vendor, framerate_mode, hdr, color_range, keyint, use_software_video_encoder, bitrate_mode);
+    const enum AVPixelFormat video_pix_fmt = get_pixel_format(video_codec, egl.gpu_info.vendor, use_software_video_encoder);
+    AVCodecContext *video_codec_context = create_video_codec_context(video_pix_fmt, quality, fps, video_codec_f, low_latency_recording, egl.gpu_info.vendor, framerate_mode, hdr, color_range, keyint, use_software_video_encoder, bitrate_mode);
     if(replay_buffer_size_secs == -1)
         video_stream = create_stream(av_format_context, video_codec_context);
 
@@ -3034,7 +3078,7 @@ int main(int argc, char **argv) {
         _exit(capture_result);
     }
 
-    gsr_video_encoder *video_encoder = create_video_encoder(&egl, overclock, color_depth, use_software_video_encoder);
+    gsr_video_encoder *video_encoder = create_video_encoder(&egl, overclock, color_depth, use_software_video_encoder, video_codec);
     if(!video_encoder) {
         fprintf(stderr, "Error: failed to create video encoder\n");
         _exit(1);
@@ -3479,8 +3523,7 @@ int main(int argc, char **argv) {
                 egl.glClear(0);
                 gsr_capture_capture(capture, video_frame, &color_conversion);
                 gsr_egl_swap_buffers(&egl);
-
-                gsr_video_encoder_copy_textures_to_frame(video_encoder, video_frame);
+                gsr_video_encoder_copy_textures_to_frame(video_encoder, video_frame, &color_conversion);
 
                 if(hdr && !hdr_metadata_set && replay_buffer_size_secs == -1 && add_hdr_metadata_to_video_stream(capture, video_stream))
                     hdr_metadata_set = true;

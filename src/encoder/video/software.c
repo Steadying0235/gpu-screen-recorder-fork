@@ -84,7 +84,7 @@ void gsr_video_encoder_software_stop(gsr_video_encoder_software *self, AVCodecCo
     self->target_textures[1] = 0;
 }
 
-static void gsr_video_encoder_software_copy_textures_to_frame(gsr_video_encoder *encoder, AVFrame *frame) {
+static void gsr_video_encoder_software_copy_textures_to_frame(gsr_video_encoder *encoder, AVFrame *frame, gsr_color_conversion *color_conversion) {
     gsr_video_encoder_software *self = encoder->priv;
     // TODO: hdr support
     const unsigned int formats[2] = { GL_RED, GL_RG };

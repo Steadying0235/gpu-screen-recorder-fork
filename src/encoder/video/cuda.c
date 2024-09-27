@@ -171,7 +171,7 @@ void gsr_video_encoder_cuda_stop(gsr_video_encoder_cuda *self, AVCodecContext *v
     gsr_cuda_unload(&self->cuda);
 }
 
-static void gsr_video_encoder_cuda_copy_textures_to_frame(gsr_video_encoder *encoder, AVFrame *frame) {
+static void gsr_video_encoder_cuda_copy_textures_to_frame(gsr_video_encoder *encoder, AVFrame *frame, gsr_color_conversion *color_conversion) {
     gsr_video_encoder_cuda *self = encoder->priv;
     const int div[2] = {1, 2}; // divide UV texture size by 2 because chroma is half size
     for(int i = 0; i < 2; ++i) {

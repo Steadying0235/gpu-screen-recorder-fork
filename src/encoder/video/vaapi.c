@@ -235,7 +235,6 @@ gsr_video_encoder* gsr_video_encoder_vaapi_create(const gsr_video_encoder_vaapi_
 
     *encoder = (gsr_video_encoder) {
         .start = gsr_video_encoder_vaapi_start,
-        .copy_textures_to_frame = NULL,
         .get_textures = gsr_video_encoder_vaapi_get_textures,
         .destroy = gsr_video_encoder_vaapi_destroy,
         .priv = encoder_vaapi

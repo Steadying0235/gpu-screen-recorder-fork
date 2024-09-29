@@ -30,8 +30,12 @@ typedef struct {
 } gsr_video_encoder_vulkan;
 
 static bool gsr_video_encoder_vulkan_setup_context(gsr_video_encoder_vulkan *self, AVCodecContext *video_codec_context) {
+    AVDictionary *options = NULL;
+    //av_dict_set(&options, "linear_images", "1", 0);
+    //av_dict_set(&options, "disable_multiplane", "1", 0);
+
     // TODO: Use correct device
-    if(av_hwdevice_ctx_create(&self->device_ctx, AV_HWDEVICE_TYPE_VULKAN, NULL, NULL, 0) < 0) {
+    if(av_hwdevice_ctx_create(&self->device_ctx, AV_HWDEVICE_TYPE_VULKAN, NULL, options, 0) < 0) {
         fprintf(stderr, "gsr error: gsr_video_encoder_vulkan_setup_context: failed to create hardware device context\n");
         return false;
     }

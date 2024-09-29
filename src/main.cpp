@@ -471,7 +471,7 @@ static int vbr_get_quality_parameter(AVCodecContext *codec_context, VideoQuality
 static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
                             VideoQuality video_quality,
                             int fps, const AVCodec *codec, bool low_latency, gsr_gpu_vendor vendor, FramerateMode framerate_mode,
-                            bool hdr, gsr_color_range color_range, float keyint, bool use_software_video_encoder, BitrateMode bitrate_mode) {
+                            bool hdr, gsr_color_range color_range, float keyint, bool use_software_video_encoder, BitrateMode bitrate_mode, VideoCodec video_codec) {
 
     AVCodecContext *codec_context = avcodec_alloc_context3(codec);
 
@@ -606,10 +606,26 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     if(vendor != GSR_GPU_VENDOR_NVIDIA) {
         // TODO: More options, better options
         //codec_context->bit_rate = codec_context->width * codec_context->height;
-        if(bitrate_mode == BitrateMode::QP)
-            av_opt_set(codec_context->priv_data, "rc_mode", "CQP", 0);
-        else
-            av_opt_set(codec_context->priv_data, "rc_mode", "VBR", 0);
+        switch(bitrate_mode) {
+            case BitrateMode::QP: {
+                if(video_codec == VideoCodec::H264_VULKAN)
+                    av_opt_set(codec_context->priv_data, "rc_mode", "cqp", 0);
+                else if(vendor == GSR_GPU_VENDOR_NVIDIA)
+                    av_opt_set(codec_context->priv_data, "rc", "constqp", 0);
+                else
+                    av_opt_set(codec_context->priv_data, "rc_mode", "CQP", 0);
+                break;
+            }
+            case BitrateMode::VBR: {
+                if(video_codec == VideoCodec::H264_VULKAN)
+                    av_opt_set(codec_context->priv_data, "rc_mode", "vbr", 0);
+                else if(vendor == GSR_GPU_VENDOR_NVIDIA)
+                    av_opt_set(codec_context->priv_data, "rc", "vbr", 0);
+                else
+                    av_opt_set(codec_context->priv_data, "rc_mode", "VBR", 0);
+                break;
+            }
+        }
         //codec_context->global_quality = 4;
         //codec_context->compression_level = 2;
     }
@@ -779,6 +795,29 @@ static void open_video_software(AVCodecContext *codec_context, VideoQuality vide
     }
 }
 
+static void video_set_rc(VideoCodec video_codec, gsr_gpu_vendor vendor, BitrateMode bitrate_mode, AVDictionary **options) {
+    switch(bitrate_mode) {
+        case BitrateMode::QP: {
+            if(video_codec == VideoCodec::H264_VULKAN)
+                av_dict_set(options, "rc_mode", "cqp", 0);
+            else if(vendor == GSR_GPU_VENDOR_NVIDIA)
+                av_dict_set(options, "rc", "constqp", 0);
+            else
+                av_dict_set(options, "rc_mode", "CQP", 0);
+            break;
+        }
+        case BitrateMode::VBR: {
+            if(video_codec == VideoCodec::H264_VULKAN)
+                av_dict_set(options, "rc_mode", "vbr", 0);
+            else if(vendor == GSR_GPU_VENDOR_NVIDIA)
+                av_dict_set(options, "rc", "vbr", 0);
+            else
+                av_dict_set(options, "rc_mode", "VBR", 0);
+            break;
+        }
+    }
+}
+
 static void video_hardware_set_qp(AVCodecContext *codec_context, VideoQuality video_quality, gsr_gpu_vendor vendor, bool hdr, AVDictionary **options) {
     // 8 bit / 10 bit = 80%
     const float qp_multiply = hdr ? 8.0f/10.0f : 1.0f;
@@ -845,8 +884,6 @@ static void video_hardware_set_qp(AVCodecContext *codec_context, VideoQuality vi
                     break;
             }
         }
-
-        av_dict_set(options, "rc", "constqp", 0);
     } else {
         if(codec_context->codec_id == AV_CODEC_ID_AV1) {
             // Using global_quality option
@@ -896,24 +933,17 @@ static void video_hardware_set_qp(AVCodecContext *codec_context, VideoQuality vi
                     break;
             }
         }
-
-        av_dict_set(options, "rc_mode", "CQP", 0);
     }
 }
 
-static void open_video_hardware(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu, gsr_gpu_vendor vendor, PixelFormat pixel_format, bool hdr, gsr_color_depth color_depth, BitrateMode bitrate_mode) {
+static void open_video_hardware(AVCodecContext *codec_context, VideoQuality video_quality, bool very_old_gpu, gsr_gpu_vendor vendor, PixelFormat pixel_format, bool hdr, gsr_color_depth color_depth, BitrateMode bitrate_mode, VideoCodec video_codec) {
     (void)very_old_gpu;
     AVDictionary *options = nullptr;
 
-    if(bitrate_mode == BitrateMode::QP) {
+    if(bitrate_mode == BitrateMode::QP)
         video_hardware_set_qp(codec_context, video_quality, vendor, hdr, &options);
-    } else {
-        if(vendor == GSR_GPU_VENDOR_NVIDIA) {
-            av_dict_set(&options, "rc", "vbr", 0);
-        } else {
-            av_dict_set(&options, "rc_mode", "VBR", 0);
-        }
-    }
+
+    video_set_rc(video_codec, vendor, bitrate_mode, &options);
 
     // TODO: Enable multipass
 
@@ -3054,7 +3084,7 @@ int main(int argc, char **argv) {
     const bool low_latency_recording = is_livestream || is_output_piped;
 
     const enum AVPixelFormat video_pix_fmt = get_pixel_format(video_codec, egl.gpu_info.vendor, use_software_video_encoder);
-    AVCodecContext *video_codec_context = create_video_codec_context(video_pix_fmt, quality, fps, video_codec_f, low_latency_recording, egl.gpu_info.vendor, framerate_mode, hdr, color_range, keyint, use_software_video_encoder, bitrate_mode);
+    AVCodecContext *video_codec_context = create_video_codec_context(video_pix_fmt, quality, fps, video_codec_f, low_latency_recording, egl.gpu_info.vendor, framerate_mode, hdr, color_range, keyint, use_software_video_encoder, bitrate_mode, video_codec);
     if(replay_buffer_size_secs == -1)
         video_stream = create_stream(av_format_context, video_codec_context);
 
@@ -3108,7 +3138,7 @@ int main(int argc, char **argv) {
     if(use_software_video_encoder) {
         open_video_software(video_codec_context, quality, pixel_format, hdr, color_depth, bitrate_mode);
     } else {
-        open_video_hardware(video_codec_context, quality, very_old_gpu, egl.gpu_info.vendor, pixel_format, hdr, color_depth, bitrate_mode);
+        open_video_hardware(video_codec_context, quality, very_old_gpu, egl.gpu_info.vendor, pixel_format, hdr, color_depth, bitrate_mode, video_codec);
     }
     if(video_stream)
         avcodec_parameters_from_context(video_stream->codecpar, video_codec_context);

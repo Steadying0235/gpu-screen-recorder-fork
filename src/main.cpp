@@ -10,7 +10,7 @@ extern "C" {
 #include "../include/encoder/video/vaapi.h"
 #include "../include/encoder/video/vulkan.h"
 #include "../include/encoder/video/software.h"
-#include "../include/codec_query/cuda.h"
+#include "../include/codec_query/nvenc.h"
 #include "../include/codec_query/vaapi.h"
 #include "../include/codec_query/vulkan.h"
 #include "../include/egl.h"

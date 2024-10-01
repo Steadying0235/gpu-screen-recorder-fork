@@ -18,7 +18,7 @@ src = [
     'src/encoder/video/vaapi.c',
     'src/encoder/video/vulkan.c',
     'src/encoder/video/software.c',
-    'src/codec_query/cuda.c',
+    'src/codec_query/nvenc.c',
     'src/codec_query/vaapi.c',
     'src/codec_query/vulkan.c',
     'src/egl.c',

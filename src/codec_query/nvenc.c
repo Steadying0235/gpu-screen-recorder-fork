@@ -1,4 +1,4 @@
-#include "../../include/codec_query/cuda.h"
+#include "../../include/codec_query/nvenc.h"
 #include "../../include/cuda.h"
 #include "../../external/nvEncodeAPI.h"
 

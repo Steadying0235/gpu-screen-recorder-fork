@@ -78,7 +78,7 @@ Mesa doesn't support global headers (AV_CODEC_FLAG_GLOBAL_HEADER) with h264... w
 
 Drop frames if live streaming cant keep up with target fps, or dynamically change resolution/quality.
 
-Support low power option (does it even work with vaapi in ffmpeg??). Would be very useful for steam deck.
+Support low power option.
 
 Instead of sending a big list of drm data back to kms client, send the monitor we want to record to kms server and the server should respond with only the matching monitor, and cursor.
 
@@ -166,3 +166,5 @@ Use nvidia low latency options for better encoding times.
 Test ideal async_depth value. Increasing async_depth also increased gpu memory usage a lot (from 100mb to 500mb when moving from async_depth 2 to 16) at 4k resolution. Setting it to 8 increases it by 200mb which might be ok.
 
 Replace -encoder cpu with -k h264_software?
+
+Change vp8/vp9 quality options, right now the file size is too large (for vp9 at least at very_high quality).

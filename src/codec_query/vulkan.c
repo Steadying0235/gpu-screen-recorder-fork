@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <xf86drm.h>
-#include <vulkan/vulkan.h>
+//#include <vulkan/vulkan.h>
 
 #define MAX_PHYSICAL_DEVICES 32
 

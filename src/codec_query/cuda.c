@@ -101,16 +101,16 @@ static bool encoder_get_supported_profiles(const NV_ENCODE_API_FUNCTION_LIST *fu
 
     for(uint32_t i = 0; i < profile_guid_count; ++i) {
         if(profile_is_h264(&profile_guids[i])) {
-            supported_video_codecs->h264 = true;
+            supported_video_codecs->h264 = (gsr_supported_video_codec){ true, false };
         } else if(profile_is_hevc(&profile_guids[i])) {
-            supported_video_codecs->hevc = true;
+            supported_video_codecs->hevc = (gsr_supported_video_codec){ true, false };
         } else if(profile_is_hevc_10bit(&profile_guids[i])) {
-            supported_video_codecs->hevc_hdr = true;
-            supported_video_codecs->hevc_10bit = true;
+            supported_video_codecs->hevc_hdr = (gsr_supported_video_codec){ true, false };
+            supported_video_codecs->hevc_10bit = (gsr_supported_video_codec){ true, false };
         } else if(profile_is_av1(&profile_guids[i])) {
-            supported_video_codecs->av1 = true;
-            supported_video_codecs->av1_hdr = true;
-            supported_video_codecs->av1_10bit = true;
+            supported_video_codecs->av1 = (gsr_supported_video_codec){ true, false };
+            supported_video_codecs->av1_hdr = (gsr_supported_video_codec){ true, false };
+            supported_video_codecs->av1_10bit = (gsr_supported_video_codec){ true, false };
         }
     }
 

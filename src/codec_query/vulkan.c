@@ -147,7 +147,8 @@ bool gsr_get_supported_video_codecs_vulkan(gsr_supported_video_codecs *video_cod
         free(device_extensions);
     return success;
 #else
-    video_codecs->h264 = true;
+    // TODO: Low power query
+    video_codecs->h264 = (gsr_supported_video_codec){ true, false };
     return true;
 #endif
 }

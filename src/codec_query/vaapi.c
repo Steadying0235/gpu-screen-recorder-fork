@@ -77,7 +77,8 @@ static bool profile_is_vp9(VAProfile profile) {
     }
 }
 
-static bool profile_supports_video_encoding(VADisplay va_dpy, VAProfile profile) {
+static bool profile_supports_video_encoding(VADisplay va_dpy, VAProfile profile, bool *low_power) {
+    *low_power = false;
     int num_entrypoints = vaMaxNumEntrypoints(va_dpy);
     if(num_entrypoints <= 0)
         return false;
@@ -86,18 +87,22 @@ static bool profile_supports_video_encoding(VADisplay va_dpy, VAProfile profile)
     if(!entrypoint_list)
         return false;
 
-    bool supported = false;
+    bool supports_encoding = false;
+    bool supports_low_power_encoding = false;
     if(vaQueryConfigEntrypoints(va_dpy, profile, entrypoint_list, &num_entrypoints) == VA_STATUS_SUCCESS) {
         for(int i = 0; i < num_entrypoints; ++i) {
-            if(entrypoint_list[i] == VAEntrypointEncSlice) {
-                supported = true;
-                break;
-            }
+            if(entrypoint_list[i] == VAEntrypointEncSlice)
+                supports_encoding = true;
+            else if(entrypoint_list[i] == VAEntrypointEncSliceLP)
+                supports_low_power_encoding = true;
         }
     }
 
+    if(!supports_encoding && supports_low_power_encoding)
+        *low_power = true;
+
     free(entrypoint_list);
-    return supported;
+    return supports_encoding || supports_low_power_encoding;
 }
 
 static bool get_supported_video_codecs(VADisplay va_dpy, gsr_supported_video_codecs *video_codecs, bool cleanup) {
@@ -123,29 +128,31 @@ static bool get_supported_video_codecs(VADisplay va_dpy, gsr_supported_video_cod
         goto fail;
 
     for(int i = 0; i < num_profiles; ++i) {
+        bool low_power = false;
         if(profile_is_h264(profile_list[i])) {
-            if(profile_supports_video_encoding(va_dpy, profile_list[i]))
-                video_codecs->h264 = true;
+            if(profile_supports_video_encoding(va_dpy, profile_list[i], &low_power)) {
+                video_codecs->h264 = (gsr_supported_video_codec){ true, low_power };
+            }
         } else if(profile_is_hevc_8bit(profile_list[i])) {
-            if(profile_supports_video_encoding(va_dpy, profile_list[i]))
-                video_codecs->hevc = true;
+            if(profile_supports_video_encoding(va_dpy, profile_list[i], &low_power))
+                video_codecs->hevc = (gsr_supported_video_codec){ true, low_power };
         } else if(profile_is_hevc_10bit(profile_list[i])) {
-            if(profile_supports_video_encoding(va_dpy, profile_list[i])) {
-                video_codecs->hevc_hdr = true;
-                video_codecs->hevc_10bit = true;
+            if(profile_supports_video_encoding(va_dpy, profile_list[i], &low_power)) {
+                video_codecs->hevc_hdr = (gsr_supported_video_codec){ true, low_power };
+                video_codecs->hevc_10bit = (gsr_supported_video_codec){ true, low_power };
             }
         } else if(profile_is_av1(profile_list[i])) {
-            if(profile_supports_video_encoding(va_dpy, profile_list[i])) {
-                video_codecs->av1 = true;
-                video_codecs->av1_hdr = true;
-                video_codecs->av1_10bit = true;
+            if(profile_supports_video_encoding(va_dpy, profile_list[i], &low_power)) {
+                video_codecs->av1 = (gsr_supported_video_codec){ true, low_power };
+                video_codecs->av1_hdr = (gsr_supported_video_codec){ true, low_power };
+                video_codecs->av1_10bit = (gsr_supported_video_codec){ true, low_power };
             }
         } else if(profile_is_vp8(profile_list[i])) {
-            if(profile_supports_video_encoding(va_dpy, profile_list[i]))
-                video_codecs->vp8 = true;
+            if(profile_supports_video_encoding(va_dpy, profile_list[i], &low_power))
+                video_codecs->vp8 = (gsr_supported_video_codec){ true, low_power };
         } else if(profile_is_vp9(profile_list[i])) {
-            if(profile_supports_video_encoding(va_dpy, profile_list[i]))
-                video_codecs->vp9 = true;
+            if(profile_supports_video_encoding(va_dpy, profile_list[i], &low_power))
+                video_codecs->vp9 = (gsr_supported_video_codec){ true, low_power };
         }
     }
 

@@ -4,15 +4,20 @@
 #include <stdbool.h>
 
 typedef struct {
-    bool h264;
-    bool hevc;
-    bool hevc_hdr;
-    bool hevc_10bit;
-    bool av1;
-    bool av1_hdr;
-    bool av1_10bit;
-    bool vp8;
-    bool vp9;
+    bool supported;
+    bool low_power;
+} gsr_supported_video_codec;
+
+typedef struct {
+    gsr_supported_video_codec h264;
+    gsr_supported_video_codec hevc;
+    gsr_supported_video_codec hevc_hdr;
+    gsr_supported_video_codec hevc_10bit;
+    gsr_supported_video_codec av1;
+    gsr_supported_video_codec av1_hdr;
+    gsr_supported_video_codec av1_10bit;
+    gsr_supported_video_codec vp8;
+    gsr_supported_video_codec vp9;
 } gsr_supported_video_codecs;
 
 #endif /* GSR_CODEC_QUERY_H */

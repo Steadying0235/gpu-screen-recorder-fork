@@ -170,6 +170,7 @@ static bool get_supported_video_codecs(VADisplay va_dpy, gsr_supported_video_cod
 bool gsr_get_supported_video_codecs_vaapi(gsr_supported_video_codecs *video_codecs, const char *card_path, bool cleanup) {
     memset(video_codecs, 0, sizeof(*video_codecs));
     bool success = false;
+    int drm_fd = -1;
 
     char render_path[128];
     if(!gsr_card_path_get_render_path(card_path, render_path)) {
@@ -177,7 +178,7 @@ bool gsr_get_supported_video_codecs_vaapi(gsr_supported_video_codecs *video_code
         goto done;
     }
 
-    const int drm_fd = open(render_path, O_RDWR);
+    drm_fd = open(render_path, O_RDWR);
     if(drm_fd == -1) {
         fprintf(stderr, "gsr error: gsr_get_supported_video_codecs_vaapi: failed to open device %s\n", render_path);
         goto done;
@@ -193,8 +194,10 @@ bool gsr_get_supported_video_codecs_vaapi(gsr_supported_video_codecs *video_code
     }
 
     done:
-    if(cleanup)
-        close(drm_fd);
+    if(cleanup) {
+        if(drm_fd > 0)
+            close(drm_fd);
+    }
 
     return success;
 }

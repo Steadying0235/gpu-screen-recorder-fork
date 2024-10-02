@@ -3,6 +3,7 @@
 #include "../../../include/egl.h"
 
 #include <libavcodec/avcodec.h>
+#define VK_NO_PROTOTYPES
 #include <libavutil/hwcontext_vulkan.h>
 
 //#include <vulkan/vulkan_core.h>

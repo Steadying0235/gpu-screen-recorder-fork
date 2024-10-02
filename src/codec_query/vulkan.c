@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <xf86drm.h>
+#define VK_NO_PROTOTYPES
 //#include <vulkan/vulkan.h>
 
 #define MAX_PHYSICAL_DEVICES 32

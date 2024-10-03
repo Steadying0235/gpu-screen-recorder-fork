@@ -126,20 +126,20 @@ static bool gsr_video_encoder_vulkan_setup_textures(gsr_video_encoder_vulkan *se
     self->params.egl->glGenBuffers(2, self->pbo_y);
 
     self->params.egl->glBindBuffer(GL_PIXEL_PACK_BUFFER, self->pbo_y[0]);
-    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, 3840 * 2160, 0, GL_STREAM_READ);
+    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, frame->width * frame->height, 0, GL_STREAM_READ);
 
     self->params.egl->glBindBuffer(GL_PIXEL_PACK_BUFFER, self->pbo_y[1]);
-    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, 3840 * 2160, 0, GL_STREAM_READ);
+    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, frame->width * frame->height, 0, GL_STREAM_READ);
 
     self->params.egl->glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 
     self->params.egl->glGenBuffers(2, self->pbo_uv);
 
     self->params.egl->glBindBuffer(GL_PIXEL_PACK_BUFFER, self->pbo_uv[0]);
-    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, 1920 * 1080 * 2, 0, GL_STREAM_READ);
+    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, (frame->width/2 * frame->height/2) * 2, 0, GL_STREAM_READ);
 
     self->params.egl->glBindBuffer(GL_PIXEL_PACK_BUFFER, self->pbo_uv[1]);
-    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, 1920 * 1080 * 2, 0, GL_STREAM_READ);
+    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, (frame->width/2 * frame->height/2) * 2, 0, GL_STREAM_READ);
 
     self->params.egl->glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 
@@ -207,13 +207,13 @@ static void gsr_video_encoder_vulkan_copy_textures_to_frame(gsr_video_encoder *e
     self->params.egl->glBindFramebuffer(GL_READ_FRAMEBUFFER, color_conversion->framebuffers[0]);
     //fprintf(stderr, "1 gl err: %d\n", self->params.egl->glGetError());
     self->params.egl->glBindBuffer(GL_PIXEL_PACK_BUFFER, self->pbo_y[counter % 2]);
-    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, 3840 * 2160, 0, GL_STREAM_READ);
-    self->params.egl->glReadPixels(0, 0, 3840, 2160, GL_RED, GL_UNSIGNED_BYTE, 0);
+    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, frame->width * frame->height, 0, GL_STREAM_READ);
+    self->params.egl->glReadPixels(0, 0, frame->width, frame->height, GL_RED, GL_UNSIGNED_BYTE, 0);
     //fprintf(stderr, "2 gl err: %d\n", self->params.egl->glGetError());
 
     const int next_pbo_y = (counter + 1) % 2;
     self->params.egl->glBindBuffer(GL_PIXEL_PACK_BUFFER, self->pbo_y[next_pbo_y]);
-    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, 3840 * 2160, 0, GL_STREAM_READ);
+    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, frame->width * frame->height, 0, GL_STREAM_READ);
     //fprintf(stderr, "3 gl err: %d\n", self->params.egl->glGetError());
     uint8_t *ptr_y = (uint8_t*)self->params.egl->glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
     //fprintf(stderr, "4 gl err: %d\n", self->params.egl->glGetError());
@@ -225,14 +225,14 @@ static void gsr_video_encoder_vulkan_copy_textures_to_frame(gsr_video_encoder *e
     self->params.egl->glBindFramebuffer(GL_READ_FRAMEBUFFER, color_conversion->framebuffers[1]);
     //fprintf(stderr, "5 gl err: %d\n", self->params.egl->glGetError());
     self->params.egl->glBindBuffer(GL_PIXEL_PACK_BUFFER, self->pbo_uv[counter % 2]);
-    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, 1920 * 1080 * 2, 0, GL_STREAM_READ);
+    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, (frame->width/2 * frame->height/2) * 2, 0, GL_STREAM_READ);
     //fprintf(stderr, "5.5 gl err: %d\n", self->params.egl->glGetError());
-    self->params.egl->glReadPixels(0, 0, 1920, 1080, GL_RG, GL_UNSIGNED_BYTE, 0);
+    self->params.egl->glReadPixels(0, 0, frame->width/2, frame->height/2, GL_RG, GL_UNSIGNED_BYTE, 0);
     //fprintf(stderr, "6 gl err: %d\n", self->params.egl->glGetError());
 
     const int next_pbo_uv = (counter + 1) % 2;
     self->params.egl->glBindBuffer(GL_PIXEL_PACK_BUFFER, self->pbo_uv[next_pbo_uv]);
-    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, 1920 * 1080 * 2, 0, GL_STREAM_READ);
+    self->params.egl->glBufferData(GL_PIXEL_PACK_BUFFER, (frame->width/2 * frame->height/2) * 2, 0, GL_STREAM_READ);
     //fprintf(stderr, "7 gl err: %d\n", self->params.egl->glGetError());
     uint8_t *ptr_uv = (uint8_t*)self->params.egl->glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
     //fprintf(stderr, "8 gl err: %d\n", self->params.egl->glGetError());

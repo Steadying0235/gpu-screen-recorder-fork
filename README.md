@@ -27,7 +27,7 @@ This software works on X11 and Wayland on AMD, Intel and NVIDIA.
 ### AMD/Intel/Wayland root permission
 When recording a window or when using the `-w portal` option under AMD/Intel no special user permission is required,
 however when recording a monitor (or when using wayland) the program needs root permission (to access KMS).\
-This is safe in GPU Screen Recorder as the part that needs root access has been moved to its own small program that only does one thing.\
+This is safe in GPU Screen Recorder as the part that needs root access has been moved to its own small program that only does one thing and it only allows GPU Screen Recorder to run it.\
 For you as a user this only means that if you installed GPU Screen Recorder as a flatpak then a prompt asking for root password will show up when you start recording.
 # Performance
 On a system with a i5 4690k CPU and a GTX 1080 GPU:\

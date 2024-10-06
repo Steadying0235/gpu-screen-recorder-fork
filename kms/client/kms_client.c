@@ -146,47 +146,41 @@ static bool create_socket_path(char *output_path, size_t output_path_size) {
     return true;
 }
 
-static void string_copy(char *dst, const char *src, int len) {
-    int src_len = strlen(src);
-    int min_len = src_len;
-    if(len - 1 < min_len)
-        min_len = len - 1;
-    memcpy(dst, src, min_len);
-    dst[min_len] = '\0';
-}
-
-static bool find_program_in_path(const char *program_name, char *filepath, int filepath_len) {
-    const char *path = getenv("PATH");
-    if(!path)
+static bool readlink_realpath(const char *filepath, char *buffer) {
+    char symlinked_path[PATH_MAX];
+    ssize_t bytes_written = readlink(filepath, symlinked_path, sizeof(symlinked_path) - 1);
+    if(bytes_written == -1 && errno == EINVAL) {
+        /* Not a symlink */
+        snprintf(symlinked_path, sizeof(symlinked_path), "%s", filepath);
+    } else if(bytes_written == -1) {
         return false;
-
-    int program_name_len = strlen(program_name);
-    const char *end = path + strlen(path);
-    while(path != end) {
-        const char *part_end = strchr(path, ':');
-        const char *next = part_end;
-        if(part_end) {
-            next = part_end + 1;
-        } else {
-            part_end = end;
-            next = end;
-        }
-
-        int len = part_end - path;
-        if(len + 1 + program_name_len < filepath_len) {
-            memcpy(filepath, path, len);
-            filepath[len] = '/';
-            memcpy(filepath + len + 1, program_name, program_name_len);
-            filepath[len + 1 + program_name_len] = '\0';
-
-            if(access(filepath, F_OK) == 0)
-                return true;
-        }
-
-        path = next;
+    } else {
+        symlinked_path[bytes_written] = '\0';
     }
 
-    return false;
+    if(!realpath(symlinked_path, buffer))
+        return false;
+
+    return true;
+}
+
+static bool strcat_safe(char *str, int size, const char *str_to_add) {
+    const int str_len = strlen(str);
+    const int str_to_add_len = strlen(str_to_add);
+    if(str_len + str_to_add_len + 1 >= size)
+        return false;
+
+    memcpy(str + str_len, str_to_add, str_to_add_len);
+    str[str_len + str_to_add_len] = '\0';
+    return true;
+}
+
+static void file_get_directory(char *filepath) {
+    char *end = strrchr(filepath, '/');
+    if(end == NULL)
+        filepath[0] = '\0';
+    else
+        *end = '\0';
 }
 
 int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
@@ -206,10 +200,23 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     }
 
     char server_filepath[PATH_MAX];
-    if(!find_program_in_path("gsr-kms-server", server_filepath, sizeof(server_filepath))) {
-        fprintf(stderr, "gsr error: gsr_kms_client_init: gsr-kms-server is not installed\n");
+    if(!readlink_realpath("/proc/self/exe", server_filepath)) {
+        fprintf(stderr, "gsr error: gsr_kms_client_init: failed to resolve /proc/self/exe\n");
         return -1;
     }
+    file_get_directory(server_filepath);
+
+    if(!strcat_safe(server_filepath, sizeof(server_filepath), "/gsr-kms-server")) {
+        fprintf(stderr, "gsr error: gsr_kms_client_init: gsr-kms-server path too long\n");
+        return -1;
+    }
+
+    if(access(server_filepath, F_OK) != 0) {
+        fprintf(stderr, "gsr error: gsr_kms_client_init: gsr-kms-server is not installed (%s not found)\n", server_filepath);
+        return -1;
+    }
+
+    fprintf(stderr, "gsr info: gsr_kms_client_init: setting up connection to %s\n", server_filepath);
 
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *home = getenv("HOME");
@@ -251,7 +258,7 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     }
 
     local_addr.sun_family = AF_UNIX;
-    string_copy(local_addr.sun_path, self->initial_socket_path, sizeof(local_addr.sun_path));
+    snprintf(local_addr.sun_path, sizeof(local_addr.sun_path), "%s", (const char*)self->initial_socket_path);
 
     const mode_t prev_mask = umask(0000);
     const int bind_res = bind(self->initial_socket_fd, (struct sockaddr*)&local_addr, sizeof(local_addr.sun_family) + strlen(local_addr.sun_path));

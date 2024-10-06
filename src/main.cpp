@@ -32,6 +32,7 @@ extern "C" {
 #include <sys/stat.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <inttypes.h>
 #include <libgen.h>
 
 #include "../include/sound.hpp"
@@ -128,7 +129,8 @@ enum class FramerateMode {
 
 enum class BitrateMode {
     QP,
-    VBR
+    VBR,
+    CBR
 };
 
 static int x11_error_handler(Display*, XErrorEvent*) {
@@ -487,7 +489,7 @@ static int vbr_get_quality_parameter(AVCodecContext *codec_context, VideoQuality
 static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
                             VideoQuality video_quality,
                             int fps, const AVCodec *codec, bool low_latency, gsr_gpu_vendor vendor, FramerateMode framerate_mode,
-                            bool hdr, gsr_color_range color_range, float keyint, bool use_software_video_encoder, BitrateMode bitrate_mode, VideoCodec video_codec) {
+                            bool hdr, gsr_color_range color_range, float keyint, bool use_software_video_encoder, BitrateMode bitrate_mode, VideoCodec video_codec, int64_t bitrate) {
 
     AVCodecContext *codec_context = avcodec_alloc_context3(codec);
 
@@ -531,7 +533,13 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     if(codec->id == AV_CODEC_ID_HEVC)
         codec_context->codec_tag = MKTAG('h', 'v', 'c', '1'); // QuickTime on MacOS requires this or the video wont be playable
 
-    if(bitrate_mode == BitrateMode::VBR) {
+    if(bitrate_mode == BitrateMode::CBR) {
+        codec_context->bit_rate = bitrate;
+        codec_context->rc_max_rate = codec_context->bit_rate;
+        codec_context->rc_min_rate = codec_context->bit_rate;
+        codec_context->rc_buffer_size = codec_context->bit_rate;//codec_context->bit_rate / 10;
+        codec_context->rc_initial_buffer_occupancy = codec_context->bit_rate;//codec_context->bit_rate * 1000;
+    } else if(bitrate_mode == BitrateMode::VBR) {
         const int quality = vbr_get_quality_parameter(codec_context, video_quality, hdr);
         switch(video_quality) {
             case VideoQuality::MEDIUM:
@@ -639,6 +647,15 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
                     av_opt_set(codec_context->priv_data, "rc", "vbr", 0);
                 else
                     av_opt_set(codec_context->priv_data, "rc_mode", "VBR", 0);
+                break;
+            }
+            case BitrateMode::CBR: {
+                if(video_codec_is_vulkan(video_codec))
+                    av_opt_set(codec_context->priv_data, "rc_mode", "cbr", 0);
+                else if(vendor == GSR_GPU_VENDOR_NVIDIA)
+                    av_opt_set(codec_context->priv_data, "rc", "cbr", 0);
+                else
+                    av_opt_set(codec_context->priv_data, "rc_mode", "CBR", 0);
                 break;
             }
         }
@@ -829,6 +846,15 @@ static void video_set_rc(VideoCodec video_codec, gsr_gpu_vendor vendor, BitrateM
                 av_dict_set(options, "rc", "vbr", 0);
             else
                 av_dict_set(options, "rc_mode", "VBR", 0);
+            break;
+        }
+        case BitrateMode::CBR: {
+            if(video_codec_is_vulkan(video_codec))
+                av_dict_set(options, "rc_mode", "cbr", 0);
+            else if(vendor == GSR_GPU_VENDOR_NVIDIA)
+                av_dict_set(options, "rc", "cbr", 0);
+            else
+                av_dict_set(options, "rc_mode", "CBR", 0);
             break;
         }
     }
@@ -1027,7 +1053,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [--version] [-h|--help]\n", program_name);
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-vb <bitrate>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr|cbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [--version] [-h|--help]\n", program_name);
 }
 
 // TODO: Update with portal info
@@ -1065,6 +1091,10 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "  -q    Video quality. Should be either 'medium', 'high', 'very_high' or 'ultra'. 'high' is the recommended option when live streaming or when you have a slower harddrive.\n");
     fprintf(stderr, "        Optional, set to 'very_high' be default.\n");
+    fprintf(stderr, "        Note: this option is only used when using '-bm qp' (the default option) or '-bm vbr' options. When using '-bm cbr' option then '-vb' should be used instead.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  -vb   Video bitrate to use. This should be an integer value that specifies the bitrate (quality) of the video. This option is required when using the '-bm cbr' option.\n");
+    fprintf(stderr, "        Note: this option should only be used when using '-bm cbr' option. When using '-bm qp' or '-bm vbr' options then '-q' option should be used instead.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -r    Replay buffer size in seconds. If this is set, then only the last seconds as set by this option will be stored\n");
     fprintf(stderr, "        and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature.\n");
@@ -1092,9 +1122,9 @@ static void usage_full() {
     fprintf(stderr, "        'vfr' is recommended for recording for less issue with very high system load but some applications such as video editors may not support it properly.\n");
     fprintf(stderr, "        'content' is currently only supported on X11 or when using portal capture option. The 'content' option matches the recording frame rate to the captured content.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -bm   Bitrate mode. Should be either 'auto', 'qp' (constant quality) or 'vbr' (variable bitrate). Optional, set to 'auto' by default which defaults to 'qp' on all devices\n");
+    fprintf(stderr, "  -bm   Bitrate mode. Should be either 'auto', 'qp' (constant quality), 'vbr' (variable bitrate) or 'cbr' (constant bitrate). Optional, set to 'auto' by default which defaults to 'qp' on all devices\n");
     fprintf(stderr, "        except steam deck that has broken drivers and doesn't support qp.\n");
-    fprintf(stderr, "        'vbr' option is not supported when using '-encoder cpu' option.\n");
+    fprintf(stderr, "        Note: 'vbr' option is not supported when using '-encoder cpu' option.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -cr   Color range. Should be either 'limited' (aka mpeg) or 'full' (aka jpeg). Optional, set to 'limited' by default.\n");
     fprintf(stderr, "        Limited color range means that colors are in range 16-235 (4112-60395 for hdr) while full color range means that colors are in range 0-255 (0-65535 for hdr).\n");
@@ -1165,6 +1195,7 @@ static void usage_full() {
     fprintf(stderr, "  %s -w screen -f 60 -a default_output -c mkv -r 60 -o \"$HOME/Videos\"\n", program_name);
     fprintf(stderr, "  %s -w screen -f 60 -a default_output -c mkv -sc script.sh -r 60 -o \"$HOME/Videos\"\n", program_name);
     fprintf(stderr, "  %s -w portal -f 60 -a default_output -restore-portal-session yes -o \"$HOME/Videos/video.mp4\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -a default_output -bm cbr -vb 340000 -o \"$HOME/Videos/video.mp4\"\n", program_name);
     //fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -q ultra -pixfmt yuv444 -o video.mp4\n");
     _exit(1);
 }
@@ -2609,6 +2640,7 @@ int main(int argc, char **argv) {
         { "-s", Arg { {}, true, false } },
         { "-a", Arg { {}, true, true } },
         { "-q", Arg { {}, true, false } },
+        { "-vb", Arg { {}, true, false } },
         { "-o", Arg { {}, true, false } },
         { "-r", Arg { {}, true, false } },
         { "-k", Arg { {}, true, false } },
@@ -2729,7 +2761,7 @@ int main(int argc, char **argv) {
         }
 
         if(keyint < 0) {
-            fprintf(stderr, "Error: -keyint is expected to be 0 or larger\n");
+            fprintf(stderr, "Error: -keyint is expected to be 0 or larger, got %f\n", keyint);
             usage();
         }
     }
@@ -2879,24 +2911,6 @@ int main(int argc, char **argv) {
     if(fps < 1)
         fps = 1;
 
-    VideoQuality quality = VideoQuality::VERY_HIGH;
-    const char *quality_str = args["-q"].value();
-    if(!quality_str)
-        quality_str = "very_high";
-
-    if(strcmp(quality_str, "medium") == 0) {
-        quality = VideoQuality::MEDIUM;
-    } else if(strcmp(quality_str, "high") == 0) {
-        quality = VideoQuality::HIGH;
-    } else if(strcmp(quality_str, "very_high") == 0) {
-        quality = VideoQuality::VERY_HIGH;
-    } else if(strcmp(quality_str, "ultra") == 0) {
-        quality = VideoQuality::ULTRA;
-    } else {
-        fprintf(stderr, "Error: -q should either be either 'medium', 'high', 'very_high' or 'ultra', got: '%s'\n", quality_str);
-        usage();
-    }
-
     int replay_buffer_size_secs = -1;
     const char *replay_buffer_size_secs_str = args["-r"].value();
     if(replay_buffer_size_secs_str) {
@@ -3022,8 +3036,10 @@ int main(int argc, char **argv) {
         bitrate_mode = BitrateMode::QP;
     } else if(strcmp(bitrate_mode_str, "vbr") == 0) {
         bitrate_mode = BitrateMode::VBR;
+    } else if(strcmp(bitrate_mode_str, "cbr") == 0) {
+        bitrate_mode = BitrateMode::CBR;
     } else if(strcmp(bitrate_mode_str, "auto") != 0) {
-        fprintf(stderr, "Error: -bm should either be either 'auto', 'qp', 'vbr', got: '%s'\n", bitrate_mode_str);
+        fprintf(stderr, "Error: -bm should either be either 'auto', 'qp', 'vbr' or 'cbr', got: '%s'\n", bitrate_mode_str);
         usage();
     }
 
@@ -3032,9 +3048,62 @@ int main(int argc, char **argv) {
         bitrate_mode = egl.gpu_info.is_steam_deck ? BitrateMode::VBR : BitrateMode::QP;
     }
 
-    if(use_software_video_encoder && bitrate_mode != BitrateMode::QP) {
+    if(egl.gpu_info.is_steam_deck && bitrate_mode == BitrateMode::QP) {
+        fprintf(stderr, "Warning: qp bitrate mode is not supported on Steam Deck because of Steam Deck driver bugs. Using vbr instead\n");
+        bitrate_mode = BitrateMode::VBR;
+    }
+
+    if(use_software_video_encoder && bitrate_mode == BitrateMode::VBR) {
         fprintf(stderr, "Warning: bitrate mode has been forcefully set to qp because software encoding option doesn't support vbr option\n");
         bitrate_mode = BitrateMode::QP;
+    }
+
+    const char *quality_str = args["-q"].value();
+    const char *video_bitrate_str = args["-vb"].value();
+
+    if(bitrate_mode == BitrateMode::CBR && quality_str) {
+        fprintf(stderr, "Error: '-q' option can't be used when using the '-bm cbr' option. Use '-vb' option instead to specify the video quality\n");
+        usage();
+    }
+
+    if(bitrate_mode != BitrateMode::CBR && video_bitrate_str) {
+        fprintf(stderr, "Error: '-vb' option can't be used when using the '-bm qp' (default option) or '-bm vbr' option. Use '-q' option instead to specify the video quality\n");
+        usage();
+    }
+
+    if(bitrate_mode == BitrateMode::CBR && !video_bitrate_str) {
+        fprintf(stderr, "Error: option '-vb' is required when using '-bm cbr' option\n");
+        usage();
+    }
+
+    VideoQuality quality = VideoQuality::VERY_HIGH;
+    if(!quality_str)
+        quality_str = "very_high";
+
+    if(strcmp(quality_str, "medium") == 0) {
+        quality = VideoQuality::MEDIUM;
+    } else if(strcmp(quality_str, "high") == 0) {
+        quality = VideoQuality::HIGH;
+    } else if(strcmp(quality_str, "very_high") == 0) {
+        quality = VideoQuality::VERY_HIGH;
+    } else if(strcmp(quality_str, "ultra") == 0) {
+        quality = VideoQuality::ULTRA;
+    } else {
+        fprintf(stderr, "Error: -q should either be either 'medium', 'high', 'very_high' or 'ultra', got: '%s'\n", quality_str);
+        usage();
+    }
+
+    int64_t video_bitrate = 0;
+    if(video_bitrate_str) {
+        if(sscanf(video_bitrate_str, "%" PRIi64, &video_bitrate) != 1) {
+            fprintf(stderr, "Error: -vb argument \"%s\" is not an integer value\n", video_bitrate_str);
+            usage();
+        }
+
+        if(video_bitrate < 0) {
+            fprintf(stderr, "Error: -vb is expected to be 0 or larger, got %" PRIi64 "\n", video_bitrate);
+            usage();
+        }
     }
 
     gsr_color_range color_range = GSR_COLOR_RANGE_LIMITED;
@@ -3164,7 +3233,7 @@ int main(int argc, char **argv) {
     const bool low_latency_recording = is_livestream || is_output_piped;
 
     const enum AVPixelFormat video_pix_fmt = get_pixel_format(video_codec, egl.gpu_info.vendor, use_software_video_encoder);
-    AVCodecContext *video_codec_context = create_video_codec_context(video_pix_fmt, quality, fps, video_codec_f, low_latency_recording, egl.gpu_info.vendor, framerate_mode, hdr, color_range, keyint, use_software_video_encoder, bitrate_mode, video_codec);
+    AVCodecContext *video_codec_context = create_video_codec_context(video_pix_fmt, quality, fps, video_codec_f, low_latency_recording, egl.gpu_info.vendor, framerate_mode, hdr, color_range, keyint, use_software_video_encoder, bitrate_mode, video_codec, video_bitrate);
     if(replay_buffer_size_secs == -1)
         video_stream = create_stream(av_format_context, video_codec_context);
 

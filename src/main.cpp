@@ -402,7 +402,7 @@ static AVSampleFormat audio_format_to_sample_format(const AudioFormat audio_form
     return AV_SAMPLE_FMT_S16;
 }
 
-static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_codec, bool mix_audio, int audio_bitrate) {
+static AVCodecContext* create_audio_codec_context(int fps, AudioCodec audio_codec, bool mix_audio, int64_t audio_bitrate) {
     (void)fps;
     const AVCodec *codec = avcodec_find_encoder(audio_codec_get_id(audio_codec));
     if (!codec) {
@@ -1093,7 +1093,7 @@ static void usage_full() {
     fprintf(stderr, "        Optional, set to 'very_high' be default.\n");
     fprintf(stderr, "        Note: this option is only used when using '-bm qp' (the default option) or '-bm vbr' options. When using '-bm cbr' option then '-vb' should be used instead.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -vb   Video bitrate to use. This should be an integer value that specifies the bitrate (quality) of the video. This option is required when using the '-bm cbr' option.\n");
+    fprintf(stderr, "  -vb   Video bitrate in kbps. This should be an integer value that specifies the bitrate (quality) of the video. This option is required when using the '-bm cbr' option.\n");
     fprintf(stderr, "        Note: this option should only be used when using '-bm cbr' option. When using '-bm qp' or '-bm vbr' options then '-q' option should be used instead.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -r    Replay buffer size in seconds. If this is set, then only the last seconds as set by this option will be stored\n");
@@ -1111,8 +1111,8 @@ static void usage_full() {
     fprintf(stderr, "        'opus' and 'flac' is only supported by .mp4/.mkv files. 'opus' is recommended for best performance and smallest audio size.\n");
     fprintf(stderr, "        Flac audio codec is option is disable at the moment because of a temporary issue.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -ab   Audio bitrate to use. If this is set to 0 then it's the same as if it's absent, in which case the bitrate is determined automatically depending on the audio codec.\n");
-    fprintf(stderr, "        Optional, by default the bitrate is 128000 for opus and flac and 160000 for aac.\n");
+    fprintf(stderr, "  -ab   Audio bitrate in kbps. If this is set to 0 then it's the same as if it's absent, in which case the bitrate is determined automatically depending on the audio codec.\n");
+    fprintf(stderr, "        Optional, by default the bitrate is 128kbps for opus and flac and 160kbps for aac.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -oc   Overclock memory transfer rate to the maximum performance level. This only applies to NVIDIA on X11 and exists to overcome a bug in NVIDIA driver where performance level\n");
     fprintf(stderr, "        is dropped when you record a game. Only needed if you are recording a game that is bottlenecked by GPU. The same issue exists on Wayland but overclocking is not possible on Wayland.\n");
@@ -2743,13 +2743,25 @@ int main(int argc, char **argv) {
         audio_codec = AudioCodec::OPUS;
     }
 
-    int audio_bitrate = 0;
+    int64_t audio_bitrate = 0;
     const char *audio_bitrate_str = args["-ab"].value();
     if(audio_bitrate_str) {
-        if(sscanf(audio_bitrate_str, "%d", &audio_bitrate) != 1) {
+        if(sscanf(audio_bitrate_str, "%" PRIi64, &audio_bitrate) != 1) {
             fprintf(stderr, "Error: -ab argument \"%s\" is not an integer\n", audio_bitrate_str);
             usage();
         }
+
+        if(audio_bitrate < 0) {
+            fprintf(stderr, "Error: -ab is expected to be 0 or larger, got %" PRIi64 "\n", audio_bitrate);
+            usage();
+        }
+
+        if(audio_bitrate > 50000) {
+            fprintf(stderr, "Error: audio bitrate %" PRIi64 "is too high. It's expected to be in kbps, normally in the range 54-300\n", audio_bitrate);
+            usage();
+        }
+
+        audio_bitrate *= 1000LL;
     }
 
     float keyint = 2.0;
@@ -3104,6 +3116,8 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Error: -vb is expected to be 0 or larger, got %" PRIi64 "\n", video_bitrate);
             usage();
         }
+
+        video_bitrate *= 1000LL;
     }
 
     gsr_color_range color_range = GSR_COLOR_RANGE_LIMITED;

@@ -168,3 +168,9 @@ Test ideal async_depth value. Increasing async_depth also increased gpu memory u
 Replace -encoder cpu with -k h264_software?
 
 Change vp8/vp9 quality options, right now the file size is too large (for vp9 at least at very_high quality).
+
+Support recording while in replay mode. This will be needed when enabling replay on system startup with systemd service and wanting to record a video besides that.
+    The harder and more bloat solution for this would be to make an IPC.
+    The simple solution would be to use SIGUSR2 for starting/stopping recording since SIGUSR2 is unused for replays. That would mean SIGUSR2 for pausing recording would be ignored.
+    It also means that the video will be created in the same directory as the replay (or have option to specify another location for that) but the filename would have to be generated automatically.
+    To rename the file you would have to use -sc to rename it with a script, or add an option to provide a template for the name.

@@ -174,3 +174,7 @@ Support recording while in replay mode. This will be needed when enabling replay
     The simple solution would be to use SIGUSR2 for starting/stopping recording since SIGUSR2 is unused for replays. That would mean SIGUSR2 for pausing recording would be ignored.
     It also means that the video will be created in the same directory as the replay (or have option to specify another location for that) but the filename would have to be generated automatically.
     To rename the file you would have to use -sc to rename it with a script, or add an option to provide a template for the name.
+
+Dynamically change bitrate/resolution to match desired fps. This would be helpful when streaming for example, where the encode output speed also depends on upload speed to the streaming service.
+Implement opengl injection to capture texture. This fixes VRR without having to use NvFBC direct capture and also allows perfect frame timing.
+Always use direct capture with NvFBC once the capture issue in mpv fullscreen has been resolved (maybe detect if direct capture fails in nvfbc and switch to non-direct recording. NvFBC says if direct capture fails).

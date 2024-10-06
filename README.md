@@ -169,8 +169,3 @@ Try recording to an SSD and make sure it's not using NTFS file system. Also reco
 You have to either record in hdr mode (-k `hevc_hdr` or -k `av1_hdr` option) to record a HDR video or record with desktop portal option (`-w portal`) to turn the HDR recording into SDR.
 ## GPU Screen Recorder records night light when recording in HDR mode
 You can record with desktop portal option (`-w portal`) instead which ignores night light, if you are ok with recording without HDR.
-
-# TODO
-* Dynamically change bitrate/resolution to match desired fps. This would be helpful when streaming for example, where the encode output speed also depends on upload speed to the streaming service.
-* Implement opengl injection to capture texture. This fixes VRR without having to use NvFBC direct capture.
-* Always use direct capture with NvFBC once the capture issue in mpv fullscreen has been resolved (maybe detect if direct capture fails in nvfbc and switch to non-direct recording. NvFBC says if direct capture fails).

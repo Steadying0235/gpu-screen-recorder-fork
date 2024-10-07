@@ -1092,7 +1092,8 @@ static void usage_full() {
     fprintf(stderr, "  -q    Video quality. Should be either 'medium', 'high', 'very_high' or 'ultra' when using '-bm qp' or '-bm vbr' options, and '-bm qp' is the default option used.\n");
     fprintf(stderr, "        'high' is the recommended option when live streaming or when you have a slower harddrive.\n");
     fprintf(stderr, "        When using '-bm cbr' option then this is option is instead used to specify the video bitrate in kbps.\n");
-    fprintf(stderr, "        Optional, set to 'very_high' be default.\n");
+    fprintf(stderr, "        Optional when using '-bm qp' or '-bm vbr' options, set to 'very_high' be default.\n");
+    fprintf(stderr, "        Required when using '-bm cbr' option.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -r    Replay buffer size in seconds. If this is set, then only the last seconds as set by this option will be stored\n");
     fprintf(stderr, "        and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature.\n");

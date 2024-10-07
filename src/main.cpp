@@ -1053,7 +1053,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-vb <bitrate>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr|cbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [--version] [-h|--help]\n", program_name);
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr|cbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [--version] [-h|--help]\n", program_name);
 }
 
 // TODO: Update with portal info
@@ -1089,12 +1089,10 @@ static void usage_full() {
     fprintf(stderr, "        If the audio device is an empty string then the audio device is ignored.\n");
     fprintf(stderr, "        Optional, no audio track is added by default.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -q    Video quality. Should be either 'medium', 'high', 'very_high' or 'ultra'. 'high' is the recommended option when live streaming or when you have a slower harddrive.\n");
+    fprintf(stderr, "  -q    Video quality. Should be either 'medium', 'high', 'very_high' or 'ultra' when using '-bm qp' or '-bm vbr' options, and '-bm qp' is the default option used.\n");
+    fprintf(stderr, "        'high' is the recommended option when live streaming or when you have a slower harddrive.\n");
+    fprintf(stderr, "        When using '-bm cbr' option then this is option is instead used to specify the video bitrate in kbps.\n");
     fprintf(stderr, "        Optional, set to 'very_high' be default.\n");
-    fprintf(stderr, "        Note: this option is only used when using '-bm qp' (the default option) or '-bm vbr' options. When using '-bm cbr' option then '-vb' should be used instead.\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "  -vb   Video bitrate in kbps. This should be an integer value that specifies the bitrate (quality) of the video. This option is required when using the '-bm cbr' option.\n");
-    fprintf(stderr, "        Note: this option should only be used when using '-bm cbr' option. When using '-bm qp' or '-bm vbr' options then '-q' option should be used instead.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -r    Replay buffer size in seconds. If this is set, then only the last seconds as set by this option will be stored\n");
     fprintf(stderr, "        and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature.\n");
@@ -1195,7 +1193,7 @@ static void usage_full() {
     fprintf(stderr, "  %s -w screen -f 60 -a default_output -c mkv -r 60 -o \"$HOME/Videos\"\n", program_name);
     fprintf(stderr, "  %s -w screen -f 60 -a default_output -c mkv -sc script.sh -r 60 -o \"$HOME/Videos\"\n", program_name);
     fprintf(stderr, "  %s -w portal -f 60 -a default_output -restore-portal-session yes -o \"$HOME/Videos/video.mp4\"\n", program_name);
-    fprintf(stderr, "  %s -w screen -f 60 -a default_output -bm cbr -vb 340000 -o \"$HOME/Videos/video.mp4\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -a default_output -bm cbr -q 5400 -o \"$HOME/Videos/video.mp4\"\n", program_name);
     //fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -q ultra -pixfmt yuv444 -o video.mp4\n");
     _exit(1);
 }
@@ -2640,7 +2638,6 @@ int main(int argc, char **argv) {
         { "-s", Arg { {}, true, false } },
         { "-a", Arg { {}, true, true } },
         { "-q", Arg { {}, true, false } },
-        { "-vb", Arg { {}, true, false } },
         { "-o", Arg { {}, true, false } },
         { "-r", Arg { {}, true, false } },
         { "-k", Arg { {}, true, false } },
@@ -3071,53 +3068,42 @@ int main(int argc, char **argv) {
     }
 
     const char *quality_str = args["-q"].value();
-    const char *video_bitrate_str = args["-vb"].value();
-
-    if(bitrate_mode == BitrateMode::CBR && quality_str) {
-        fprintf(stderr, "Error: '-q' option can't be used when using the '-bm cbr' option. Use '-vb' option instead to specify the video quality\n");
-        usage();
-    }
-
-    if(bitrate_mode != BitrateMode::CBR && video_bitrate_str) {
-        fprintf(stderr, "Error: '-vb' option can't be used when using the '-bm qp' (default option) or '-bm vbr' option. Use '-q' option instead to specify the video quality\n");
-        usage();
-    }
-
-    if(bitrate_mode == BitrateMode::CBR && !video_bitrate_str) {
-        fprintf(stderr, "Error: option '-vb' is required when using '-bm cbr' option\n");
-        usage();
-    }
-
     VideoQuality quality = VideoQuality::VERY_HIGH;
-    if(!quality_str)
-        quality_str = "very_high";
-
-    if(strcmp(quality_str, "medium") == 0) {
-        quality = VideoQuality::MEDIUM;
-    } else if(strcmp(quality_str, "high") == 0) {
-        quality = VideoQuality::HIGH;
-    } else if(strcmp(quality_str, "very_high") == 0) {
-        quality = VideoQuality::VERY_HIGH;
-    } else if(strcmp(quality_str, "ultra") == 0) {
-        quality = VideoQuality::ULTRA;
-    } else {
-        fprintf(stderr, "Error: -q should either be either 'medium', 'high', 'very_high' or 'ultra', got: '%s'\n", quality_str);
-        usage();
-    }
-
     int64_t video_bitrate = 0;
-    if(video_bitrate_str) {
-        if(sscanf(video_bitrate_str, "%" PRIi64, &video_bitrate) != 1) {
-            fprintf(stderr, "Error: -vb argument \"%s\" is not an integer value\n", video_bitrate_str);
+
+    if(bitrate_mode == BitrateMode::CBR) {
+        if(!quality_str) {
+            fprintf(stderr, "Error: option '-q' is required when using '-bm cbr' option\n");
+            usage();
+        }
+
+        if(sscanf(quality_str, "%" PRIi64, &video_bitrate) != 1) {
+            fprintf(stderr, "Error: -q argument \"%s\" is not an integer value. When using '-bm cbr' option '-q' is expected to be an integer value\n", quality_str);
             usage();
         }
 
         if(video_bitrate < 0) {
-            fprintf(stderr, "Error: -vb is expected to be 0 or larger, got %" PRIi64 "\n", video_bitrate);
+            fprintf(stderr, "Error: -q is expected to be 0 or larger, got %" PRIi64 "\n", video_bitrate);
             usage();
         }
 
         video_bitrate *= 1000LL;
+    } else {
+        if(!quality_str)
+            quality_str = "very_high";
+
+        if(strcmp(quality_str, "medium") == 0) {
+            quality = VideoQuality::MEDIUM;
+        } else if(strcmp(quality_str, "high") == 0) {
+            quality = VideoQuality::HIGH;
+        } else if(strcmp(quality_str, "very_high") == 0) {
+            quality = VideoQuality::VERY_HIGH;
+        } else if(strcmp(quality_str, "ultra") == 0) {
+            quality = VideoQuality::ULTRA;
+        } else {
+            fprintf(stderr, "Error: -q should either be either 'medium', 'high', 'very_high' or 'ultra', got: '%s'\n", quality_str);
+            usage();
+        }
     }
 
     gsr_color_range color_range = GSR_COLOR_RANGE_LIMITED;

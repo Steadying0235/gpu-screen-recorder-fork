@@ -6,6 +6,7 @@ EnvironmentFile=-%h/.config/gpu-screen-recorder.env
 Environment=WINDOW=screen
 Environment=CONTAINER=mp4
 Environment=QUALITY=very_high
+Environment=BITRATE_MODE=qp
 Environment=CODEC=auto
 Environment=AUDIO_CODEC=opus
 Environment=AUDIO_DEVICE=default_output
@@ -19,7 +20,7 @@ Environment=KEYINT=2
 Environment=ENCODER=gpu
 Environment=RESTORE_PORTAL_SESSION=yes
 Environment=ADDITIONAL_ARGS=
-ExecStart=gpu-screen-recorder -v no -w "${WINDOW}" -c "${CONTAINER}" -q "${QUALITY}" -k "${CODEC}" -ac "${AUDIO_CODEC}" -a "${AUDIO_DEVICE}" -a "${SECONDARY_AUDIO_DEVICE}" -f "${FRAMERATE}" -r "${REPLAYDURATION}" -o "${OUTPUTDIR}" -df "${MAKEFOLDERS}" $ADDITIONAL_ARGS -cr "${COLOR_RANGE}" -keyint "${KEYINT}" -restore-portal-session "${RESTORE_PORTAL_SESSION}" -encoder "${ENCODER}"
+ExecStart=gpu-screen-recorder -v no -w "${WINDOW}" -c "${CONTAINER}" -q "${QUALITY}" -k "${CODEC}" -ac "${AUDIO_CODEC}" -a "${AUDIO_DEVICE}" -a "${SECONDARY_AUDIO_DEVICE}" -f "${FRAMERATE}" -r "${REPLAYDURATION}" -o "${OUTPUTDIR}" -df "${MAKEFOLDERS}" $ADDITIONAL_ARGS -cr "${COLOR_RANGE}" -keyint "${KEYINT}" -restore-portal-session "${RESTORE_PORTAL_SESSION}" -encoder "${ENCODER}" -bm "${BITRATE_MODE}"
 KillSignal=SIGINT
 Restart=on-failure
 RestartSec=5s

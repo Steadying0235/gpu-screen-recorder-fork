@@ -536,9 +536,9 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
     if(bitrate_mode == BitrateMode::CBR) {
         codec_context->bit_rate = bitrate;
         codec_context->rc_max_rate = codec_context->bit_rate;
-        codec_context->rc_min_rate = codec_context->bit_rate;
-        codec_context->rc_buffer_size = codec_context->bit_rate;//codec_context->bit_rate / 10;
-        codec_context->rc_initial_buffer_occupancy = codec_context->bit_rate;//codec_context->bit_rate * 1000;
+        //codec_context->rc_min_rate = codec_context->bit_rate;
+        //codec_context->rc_buffer_size = codec_context->bit_rate;//codec_context->bit_rate / 10;
+        codec_context->rc_initial_buffer_occupancy = 0;//codec_context->bit_rate;//codec_context->bit_rate * 1000;
     } else if(bitrate_mode == BitrateMode::VBR) {
         const int quality = vbr_get_quality_parameter(codec_context, video_quality, hdr);
         switch(video_quality) {
@@ -565,15 +565,15 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
         }
 
         codec_context->rc_max_rate = codec_context->bit_rate;
-        codec_context->rc_min_rate = codec_context->bit_rate;
-        codec_context->rc_buffer_size = codec_context->bit_rate;//codec_context->bit_rate / 10;
-        codec_context->rc_initial_buffer_occupancy = 100000;//codec_context->bit_rate * 1000;
+        //codec_context->rc_min_rate = codec_context->bit_rate;
+        //codec_context->rc_buffer_size = codec_context->bit_rate;//codec_context->bit_rate / 10;
+        codec_context->rc_initial_buffer_occupancy = codec_context->bit_rate;//codec_context->bit_rate * 1000;
     }
     //codec_context->profile = FF_PROFILE_H264_MAIN;
     if (codec_context->codec_id == AV_CODEC_ID_MPEG1VIDEO)
         codec_context->mb_decision = 2;
 
-    if(!use_software_video_encoder && vendor != GSR_GPU_VENDOR_NVIDIA) {
+    if(!use_software_video_encoder && vendor != GSR_GPU_VENDOR_NVIDIA && bitrate_mode != BitrateMode::CBR) {
         // 8 bit / 10 bit = 80%, and increase it even more
         const float quality_multiply = hdr ? (8.0f/10.0f * 0.7f) : 1.0f;
         if(codec_context->codec_id == AV_CODEC_ID_AV1 || codec_context->codec_id == AV_CODEC_ID_H264 || codec_context->codec_id == AV_CODEC_ID_HEVC) {

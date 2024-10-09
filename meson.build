@@ -14,7 +14,7 @@ src = [
     'src/capture/xcomposite.c',
     'src/capture/kms.c',
     'src/encoder/video/video.c',
-    'src/encoder/video/cuda.c',
+    'src/encoder/video/nvenc.c',
     'src/encoder/video/vaapi.c',
     'src/encoder/video/vulkan.c',
     'src/encoder/video/software.c',

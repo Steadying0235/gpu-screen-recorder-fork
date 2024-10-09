@@ -6,7 +6,7 @@ extern "C" {
 #include "../include/capture/portal.h"
 #include "../include/dbus.h"
 #endif
-#include "../include/encoder/video/cuda.h"
+#include "../include/encoder/video/nvenc.h"
 #include "../include/encoder/video/vaapi.h"
 #include "../include/encoder/video/vulkan.h"
 #include "../include/encoder/video/software.h"
@@ -1741,11 +1741,11 @@ static gsr_video_encoder* create_video_encoder(gsr_egl *egl, bool overclock, gsr
             break;
         }
         case GSR_GPU_VENDOR_NVIDIA: {
-            gsr_video_encoder_cuda_params params;
+            gsr_video_encoder_nvenc_params params;
             params.egl = egl;
             params.overclock = overclock;
             params.color_depth = color_depth;
-            video_encoder = gsr_video_encoder_cuda_create(&params);
+            video_encoder = gsr_video_encoder_nvenc_create(&params);
             break;
         }
     }

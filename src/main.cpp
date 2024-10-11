@@ -3612,7 +3612,7 @@ int main(int argc, char **argv) {
     }
 
     // Set update_fps to 24 to test if duplicate/delayed frames cause video/audio desync or too fast/slow video.
-    const double update_fps = fps + 190;
+    //const double update_fps = fps + 190;
     bool should_stop_error = false;
 
     int64_t video_pts_counter = 0;
@@ -3634,8 +3634,11 @@ int main(int argc, char **argv) {
     if(is_monitor_capture)
         gsr_damage_set_target_monitor(&damage, window_str.c_str());
 
+    double last_capture_seconds = record_start_time;
+    bool wait_until_frame_time_elapsed = false;
+
     while(running) {
-        const double frame_start = clock_get_monotonic_seconds();
+        //const double frame_start = clock_get_monotonic_seconds();
 
         while(gsr_egl_process_event(&egl)) {
             gsr_damage_on_event(&damage, gsr_egl_get_event_data(&egl));
@@ -3676,7 +3679,7 @@ int main(int argc, char **argv) {
 
         ++fps_counter;
         const double time_now = clock_get_monotonic_seconds();
-        const double frame_timer_elapsed = time_now - frame_timer_start;
+        //const double frame_timer_elapsed = time_now - frame_timer_start;
         const double elapsed = time_now - fps_start_time;
         if (elapsed >= 1.0) {
             if(verbose) {
@@ -3687,51 +3690,61 @@ int main(int argc, char **argv) {
             damage_fps_counter = 0;
         }
 
-        double frame_time_overflow = frame_timer_elapsed - target_fps;
-        if ((frame_time_overflow >= 0.0 || video_pts_counter == 0) && damaged) {
+        const double this_video_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
+        const double time_since_last_frame_captured_seconds = this_video_frame_time - last_capture_seconds;
+        const bool frame_timeout = time_since_last_frame_captured_seconds >= target_fps;
+
+        bool force_frame_capture = wait_until_frame_time_elapsed && frame_timeout;
+        bool allow_capture = true;
+        if(framerate_mode == FramerateMode::CONTENT) {
+            force_frame_capture = false;
+            allow_capture = time_since_last_frame_captured_seconds >= target_fps * 0.75;
+        }
+
+        if((damaged || force_frame_capture) && allow_capture && !paused) {
+            last_capture_seconds = this_video_frame_time;
+            wait_until_frame_time_elapsed = false;
+
             gsr_damage_clear(&damage);
             if(capture->clear_damage)
                 capture->clear_damage(capture);
-            frame_time_overflow = std::min(std::max(0.0, frame_time_overflow), target_fps);
-            frame_timer_start = time_now - frame_time_overflow;
 
-            const double this_video_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
+            // TODO: Dont do this if no damage?
+            egl.glClear(0);
+            gsr_capture_capture(capture, video_frame, &color_conversion);
+            gsr_egl_swap_buffers(&egl);
+            gsr_video_encoder_copy_textures_to_frame(video_encoder, video_frame, &color_conversion);
+
+            if(hdr && !hdr_metadata_set && replay_buffer_size_secs == -1 && add_hdr_metadata_to_video_stream(capture, video_stream))
+                hdr_metadata_set = true;
+
             const int64_t expected_frames = std::round((this_video_frame_time - record_start_time) / target_fps);
-            const int num_frames = framerate_mode == FramerateMode::CONSTANT ? std::max((int64_t)0LL, expected_frames - video_pts_counter) : 1;
+            const int num_missed_frames = std::max((int64_t)1LL, expected_frames - video_pts_counter);
 
-            if(num_frames > 0 && !paused) {
-                egl.glClear(0);
-                gsr_capture_capture(capture, video_frame, &color_conversion);
-                gsr_egl_swap_buffers(&egl);
-                gsr_video_encoder_copy_textures_to_frame(video_encoder, video_frame, &color_conversion);
-
-                if(hdr && !hdr_metadata_set && replay_buffer_size_secs == -1 && add_hdr_metadata_to_video_stream(capture, video_stream))
-                    hdr_metadata_set = true;
-
-                // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
-                for(int i = 0; i < num_frames; ++i) {
-                    if(framerate_mode == FramerateMode::CONSTANT) {
-                        video_frame->pts = video_pts_counter + i;
-                    } else {
-                        video_frame->pts = (this_video_frame_time - record_start_time) * (double)AV_TIME_BASE;
-                        const bool same_pts = video_frame->pts == video_prev_pts;
-                        video_prev_pts = video_frame->pts;
-                        if(same_pts)
-                            continue;
-                    }
-
-                    int ret = avcodec_send_frame(video_codec_context, video_frame);
-                    if(ret == 0) {
-                        // TODO: Move to separate thread because this could write to network (for example when livestreaming)
-                        receive_frames(video_codec_context, VIDEO_STREAM_INDEX, video_stream, video_frame->pts, av_format_context,
-                            record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
-                    } else {
-                        fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
-                    }
+            // TODO: Check if duplicate frame can be saved just by writing it with a different pts instead of sending it again
+            const int num_frames_to_encode = framerate_mode == FramerateMode::CONSTANT ? num_missed_frames : 1;
+            for(int i = 0; i < num_frames_to_encode; ++i) {
+                if(framerate_mode == FramerateMode::CONSTANT) {
+                    video_frame->pts = video_pts_counter + i;
+                } else {
+                    video_frame->pts = (this_video_frame_time - record_start_time) * (double)AV_TIME_BASE;
+                    const bool same_pts = video_frame->pts == video_prev_pts;
+                    video_prev_pts = video_frame->pts;
+                    if(same_pts)
+                        continue;
                 }
 
-                video_pts_counter += num_frames;
+                int ret = avcodec_send_frame(video_codec_context, video_frame);
+                if(ret == 0) {
+                    // TODO: Move to separate thread because this could write to network (for example when livestreaming)
+                    receive_frames(video_codec_context, VIDEO_STREAM_INDEX, video_stream, video_frame->pts, av_format_context,
+                        record_start_time, frame_data_queue, replay_buffer_size_secs, frames_erased, write_output_mutex, paused_time_offset);
+                } else {
+                    fprintf(stderr, "Error: avcodec_send_frame failed, error: %s\n", av_error_to_string(ret));
+                }
             }
+
+            video_pts_counter += num_frames_to_encode;
         }
 
         if(toggle_pause == 1) {
@@ -3763,11 +3776,25 @@ int main(int argc, char **argv) {
             save_replay_async(video_codec_context, VIDEO_STREAM_INDEX, audio_tracks, frame_data_queue, frames_erased, filename, container_format, file_extension, write_output_mutex, date_folders, hdr, capture);
         }
 
-        double frame_end = clock_get_monotonic_seconds();
-        double frame_sleep_fps = 1.0 / update_fps;
-        double sleep_time = frame_sleep_fps - (frame_end - frame_start);
-        if(sleep_time > 0.0)
-            av_usleep(sleep_time * 1000.0 * 1000.0);
+        const double time_at_frame_end = clock_get_monotonic_seconds() - paused_time_offset;
+        const double time_elapsed_total = time_at_frame_end - record_start_time;
+        //const int64_t frames_elapsed = std::round(time_elapsed_total / target_fps);
+        const double time_at_next_frame = (video_pts_counter + 1) * target_fps;
+        const double time_to_next_frame = time_at_next_frame - time_elapsed_total;
+
+        //const double frame_end = clock_get_monotonic_seconds();
+        //const double frame_time = frame_end - frame_start;
+        if(time_to_next_frame > 0.0)
+            av_usleep(time_to_next_frame * 1000.0 * 1000.0);
+        else {
+            if(paused)
+                av_usleep(20.0 * 1000.0); // 10 milliseconds
+            else if(framerate_mode == FramerateMode::CONTENT)
+                av_usleep(2.8 * 1000.0); // 2.8 milliseconds
+            else if(!damaged)
+                av_usleep(1.0 * 1000.0); // 1 milliseconds
+            wait_until_frame_time_elapsed = true;
+        }
     }
 
     running = 0;

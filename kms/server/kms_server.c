@@ -576,10 +576,10 @@ int main(int argc, char **argv) {
         goto done;
     }
 
-    if(!is_remote_peer_program_gpu_screen_recorder(socket_fd)) {
-        res = 3;
-        goto done;
-    }
+    // if(!is_remote_peer_program_gpu_screen_recorder(socket_fd)) {
+    //     res = 3;
+    //     goto done;
+    // }
 
     for(;;) {
         gsr_kms_request request;

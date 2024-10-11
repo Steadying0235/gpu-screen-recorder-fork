@@ -418,80 +418,80 @@ static double clock_get_monotonic_seconds(void) {
     return (double)ts.tv_sec + (double)ts.tv_nsec * 0.000000001;
 }
 
-static bool readlink_realpath(const char *filepath, char *buffer) {
-    char symlinked_path[PATH_MAX];
-    ssize_t bytes_written = readlink(filepath, symlinked_path, sizeof(symlinked_path) - 1);
-    if(bytes_written == -1 && errno == EINVAL) {
-        /* Not a symlink */
-        snprintf(symlinked_path, sizeof(symlinked_path), "%s", filepath);
-    } else if(bytes_written == -1) {
-        return false;
-    } else {
-        symlinked_path[bytes_written] = '\0';
-    }
+// static bool readlink_realpath(const char *filepath, char *buffer) {
+//     char symlinked_path[PATH_MAX];
+//     ssize_t bytes_written = readlink(filepath, symlinked_path, sizeof(symlinked_path) - 1);
+//     if(bytes_written == -1 && errno == EINVAL) {
+//         /* Not a symlink */
+//         snprintf(symlinked_path, sizeof(symlinked_path), "%s", filepath);
+//     } else if(bytes_written == -1) {
+//         return false;
+//     } else {
+//         symlinked_path[bytes_written] = '\0';
+//     }
 
-    if(!realpath(symlinked_path, buffer))
-        return false;
+//     if(!realpath(symlinked_path, buffer))
+//         return false;
 
-    return true;
-}
+//     return true;
+// }
 
-static void file_get_directory(char *filepath) {
-    char *end = strrchr(filepath, '/');
-    if(end == NULL)
-        filepath[0] = '\0';
-    else
-        *end = '\0';
-}
+// static void file_get_directory(char *filepath) {
+//     char *end = strrchr(filepath, '/');
+//     if(end == NULL)
+//         filepath[0] = '\0';
+//     else
+//         *end = '\0';
+// }
 
-static bool string_ends_with(const char *str, const char *ends_with) {
-    const int len = strlen(str);
-    const int ends_with_len = strlen(ends_with);
-    return len >= ends_with_len && memcmp(str + len - ends_with_len, ends_with, ends_with_len) == 0;
-}
+// static bool string_ends_with(const char *str, const char *ends_with) {
+//     const int len = strlen(str);
+//     const int ends_with_len = strlen(ends_with);
+//     return len >= ends_with_len && memcmp(str + len - ends_with_len, ends_with, ends_with_len) == 0;
+// }
 
 // This is not foolproof, but the assumption is that gsr-kms-server and gpu-screen-recorder are installed in the same directory
 // in a location that only the root user can write to (usually /usr/bin or /usr/local/bin) and if the client runs from that location
 // and is called gpu-screen-recorder then gsr-kms-server can only be used by a malicious program if the malicious program
 // had root access, to modify that program install directory.
-static bool is_remote_peer_program_gpu_screen_recorder(int socket_fd) {
-    // TODO: Use SO_PEERPIDFD on kernel >= 6.5 to avoid a race condition in the /proc/<pid> check
-    struct ucred cred;
-    socklen_t ucred_len = sizeof(cred);
-    if(getsockopt(socket_fd, SOL_SOCKET, SO_PEERCRED, &cred, &ucred_len) == -1) {
-        fprintf(stderr, "kms server error: failed to get peer credentials, error: %s\n", strerror(errno));
-        return false;
-    }
+// static bool is_remote_peer_program_gpu_screen_recorder(int socket_fd) {
+//     // TODO: Use SO_PEERPIDFD on kernel >= 6.5 to avoid a race condition in the /proc/<pid> check
+//     struct ucred cred;
+//     socklen_t ucred_len = sizeof(cred);
+//     if(getsockopt(socket_fd, SOL_SOCKET, SO_PEERCRED, &cred, &ucred_len) == -1) {
+//         fprintf(stderr, "kms server error: failed to get peer credentials, error: %s\n", strerror(errno));
+//         return false;
+//     }
 
-    char self_directory[PATH_MAX];
-    if(!readlink_realpath("/proc/self/exe", self_directory)) {
-        fprintf(stderr, "kms server error: failed to resolve /proc/self/exe\n");
-        return false;
-    }
-    file_get_directory(self_directory);
+//     char self_directory[PATH_MAX];
+//     if(!readlink_realpath("/proc/self/exe", self_directory)) {
+//         fprintf(stderr, "kms server error: failed to resolve /proc/self/exe\n");
+//         return false;
+//     }
+//     file_get_directory(self_directory);
 
-    char peer_directory[PATH_MAX];
-    char peer_exe_path[PATH_MAX];
-    snprintf(peer_exe_path, sizeof(peer_exe_path), "/proc/%d/exe", (int)cred.pid);
-    if(!readlink_realpath(peer_exe_path, peer_directory)) {
-        fprintf(stderr, "kms server error: failed to resolve /proc/self/exe\n");
-        return false;
-    }
+//     char peer_directory[PATH_MAX];
+//     char peer_exe_path[PATH_MAX];
+//     snprintf(peer_exe_path, sizeof(peer_exe_path), "/proc/%d/exe", (int)cred.pid);
+//     if(!readlink_realpath(peer_exe_path, peer_directory)) {
+//         fprintf(stderr, "kms server error: failed to resolve /proc/self/exe\n");
+//         return false;
+//     }
 
-    if(!string_ends_with(peer_directory, "/gpu-screen-recorder")) {
-        fprintf(stderr, "kms server error: only gpu-screen-recorder can use gsr-kms-server. client program location is %s\n", peer_directory);
-        return false;
-    }
+//     if(!string_ends_with(peer_directory, "/gpu-screen-recorder")) {
+//         fprintf(stderr, "kms server error: only gpu-screen-recorder can use gsr-kms-server. client program location is %s\n", peer_directory);
+//         return false;
+//     }
 
-    file_get_directory(peer_directory);
+//     file_get_directory(peer_directory);
 
-    if(strcmp(self_directory, peer_directory) != 0) {
-        fprintf(stderr, "kms server error: the client program is in directory %s but only programs in %s can run gsr-kms-server\n", peer_directory, self_directory);
-        return false;
-    }
+//     if(strcmp(self_directory, peer_directory) != 0) {
+//         fprintf(stderr, "kms server error: the client program is in directory %s but only programs in %s can run gsr-kms-server\n", peer_directory, self_directory);
+//         return false;
+//     }
 
-    return true;
-}
+//     return true;
+// }
 
 int main(int argc, char **argv) {
     int res = 0;

@@ -3782,9 +3782,11 @@ int main(int argc, char **argv) {
 
         const double time_at_frame_end = clock_get_monotonic_seconds() - paused_time_offset;
         const double time_elapsed_total = time_at_frame_end - record_start_time;
-        //const int64_t frames_elapsed = std::round(time_elapsed_total / target_fps);
-        const double time_at_next_frame = (video_pts_counter + 1) * target_fps;
-        const double time_to_next_frame = time_at_next_frame - time_elapsed_total;
+        const int64_t frames_elapsed = (int64_t)(time_elapsed_total / target_fps);
+        const double time_at_next_frame = (frames_elapsed + 1) * target_fps;
+        double time_to_next_frame = time_at_next_frame - time_elapsed_total;
+        if(time_to_next_frame > target_fps*1.1)
+            time_to_next_frame = target_fps;
 
         //const double frame_end = clock_get_monotonic_seconds();
         //const double frame_time = frame_end - frame_start;

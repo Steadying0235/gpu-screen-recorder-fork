@@ -3692,17 +3692,21 @@ int main(int argc, char **argv) {
 
         const double this_video_frame_time = clock_get_monotonic_seconds() - paused_time_offset;
         const double time_since_last_frame_captured_seconds = this_video_frame_time - last_capture_seconds;
-        const bool frame_timeout = time_since_last_frame_captured_seconds >= target_fps;
+        double frame_time_overflow = time_since_last_frame_captured_seconds - target_fps;
+        const bool frame_timeout = frame_time_overflow >= 0.0;
 
         bool force_frame_capture = wait_until_frame_time_elapsed && frame_timeout;
-        bool allow_capture = true;
+        bool allow_capture = !wait_until_frame_time_elapsed || force_frame_capture;
         if(framerate_mode == FramerateMode::CONTENT) {
             force_frame_capture = false;
-            allow_capture = time_since_last_frame_captured_seconds >= target_fps * 0.75;
+            allow_capture = frame_timeout;
         }
 
+        bool frame_captured = false;
         if((damaged || force_frame_capture) && allow_capture && !paused) {
-            last_capture_seconds = this_video_frame_time;
+            frame_captured = true;
+            frame_time_overflow = std::min(std::max(0.0, frame_time_overflow), target_fps);
+            last_capture_seconds = this_video_frame_time - frame_time_overflow;
             wait_until_frame_time_elapsed = false;
 
             gsr_damage_clear(&damage);
@@ -3789,7 +3793,7 @@ int main(int argc, char **argv) {
         else {
             if(paused)
                 av_usleep(20.0 * 1000.0); // 10 milliseconds
-            else if(framerate_mode == FramerateMode::CONTENT)
+            else if(framerate_mode == FramerateMode::CONTENT || !frame_captured)
                 av_usleep(2.8 * 1000.0); // 2.8 milliseconds
             else if(!damaged)
                 av_usleep(1.0 * 1000.0); // 1 milliseconds

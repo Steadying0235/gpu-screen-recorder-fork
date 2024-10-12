@@ -3791,7 +3791,7 @@ int main(int argc, char **argv) {
 
         const double frame_time = frame_end - frame_start;
         const bool frame_deadline_missed = frame_time > target_fps;
-        if(time_to_next_frame > 0.0 && !frame_deadline_missed)
+        if(time_to_next_frame > 0.0 && !frame_deadline_missed && frame_captured)
             av_usleep(time_to_next_frame * 1000.0 * 1000.0);
         else {
             if(paused)
@@ -3800,7 +3800,7 @@ int main(int argc, char **argv) {
             {}
             else if(framerate_mode == FramerateMode::CONTENT || !frame_captured)
                 av_usleep(2.8 * 1000.0); // 2.8 milliseconds
-            else if(!damaged)
+            else if(!frame_captured)
                 av_usleep(1.0 * 1000.0); // 1 milliseconds
             wait_until_frame_time_elapsed = true;
         }

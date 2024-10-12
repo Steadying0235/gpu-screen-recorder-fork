@@ -3400,7 +3400,7 @@ int main(int argc, char **argv) {
     }
 
     double fps_start_time = clock_get_monotonic_seconds();
-    double frame_timer_start = fps_start_time;
+    //double frame_timer_start = fps_start_time;
     int fps_counter = 0;
     int damage_fps_counter = 0;
 
@@ -3638,7 +3638,7 @@ int main(int argc, char **argv) {
     bool wait_until_frame_time_elapsed = false;
 
     while(running) {
-        //const double frame_start = clock_get_monotonic_seconds();
+        const double frame_start = clock_get_monotonic_seconds();
 
         while(gsr_egl_process_event(&egl)) {
             gsr_damage_on_event(&damage, gsr_egl_get_event_data(&egl));
@@ -3780,7 +3780,8 @@ int main(int argc, char **argv) {
             save_replay_async(video_codec_context, VIDEO_STREAM_INDEX, audio_tracks, frame_data_queue, frames_erased, filename, container_format, file_extension, write_output_mutex, date_folders, hdr, capture);
         }
 
-        const double time_at_frame_end = clock_get_monotonic_seconds() - paused_time_offset;
+        const double frame_end = clock_get_monotonic_seconds();
+        const double time_at_frame_end = frame_end - paused_time_offset;
         const double time_elapsed_total = time_at_frame_end - record_start_time;
         const int64_t frames_elapsed = (int64_t)(time_elapsed_total / target_fps);
         const double time_at_next_frame = (frames_elapsed + 1) * target_fps;
@@ -3788,13 +3789,15 @@ int main(int argc, char **argv) {
         if(time_to_next_frame > target_fps*1.1)
             time_to_next_frame = target_fps;
 
-        //const double frame_end = clock_get_monotonic_seconds();
-        //const double frame_time = frame_end - frame_start;
-        if(time_to_next_frame > 0.0)
+        const double frame_time = frame_end - frame_start;
+        const bool frame_deadline_missed = frame_time > target_fps;
+        if(time_to_next_frame > 0.0 && !frame_deadline_missed)
             av_usleep(time_to_next_frame * 1000.0 * 1000.0);
         else {
             if(paused)
                 av_usleep(20.0 * 1000.0); // 10 milliseconds
+            else if(frame_deadline_missed)
+            {}
             else if(framerate_mode == FramerateMode::CONTENT || !frame_captured)
                 av_usleep(2.8 * 1000.0); // 2.8 milliseconds
             else if(!damaged)

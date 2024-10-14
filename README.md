@@ -169,3 +169,5 @@ Try recording to an SSD and make sure it's not using NTFS file system. Also reco
 You have to either record in hdr mode (-k `hevc_hdr` or -k `av1_hdr` option) to record a HDR video or record with desktop portal option (`-w portal`) to turn the HDR recording into SDR.
 ## GPU Screen Recorder records night light when recording in HDR mode
 You can record with desktop portal option (`-w portal`) instead which ignores night light, if you are ok with recording without HDR.
+## Kdenlive says that the video is not usable for editing because it has variable frame rate
+To fix this you can either record the video in .mkv format or constant frame rate (-fm cfr).

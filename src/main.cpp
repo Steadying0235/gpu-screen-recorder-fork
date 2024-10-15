@@ -2611,6 +2611,8 @@ int main(int argc, char **argv) {
     // The downside of this is that it always uses maximum power, which is not ideal for replay mode that runs on system startup.
     // This option was added in mesa 24.1.4, released on july 17, 2024.
     // TODO: Add an option to enable/disable this?
+    // Seems like the performance issue is not in encoding, but rendering the frame.
+    // Some frames end up taking 10 times longer. Seems to be an issue with amd gpu power management when letting the application sleep on the cpu side?
     setenv("AMD_DEBUG", "lowlatencyenc", true);
     // Some people set this to nvidia (for nvdec) or vdpau (for nvidia vdpau), which breaks gpu screen recorder since
     // nvidia doesn't support vaapi and nvidia-vaapi-driver doesn't support encoding yet.

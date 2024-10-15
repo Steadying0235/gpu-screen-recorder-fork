@@ -810,10 +810,9 @@ static void open_video_software(AVCodecContext *codec_context, VideoQuality vide
     if(bitrate_mode == BitrateMode::QP)
         video_software_set_qp(codec_context, video_quality, hdr, &options);
 
-    av_dict_set(&options, "preset", "medium", 0);
+    av_dict_set(&options, "preset", "fast", 0);
     dict_set_profile(codec_context, GSR_GPU_VENDOR_INTEL, color_depth, &options);
-    // TODO: If streaming or piping output set this to zerolatency
-    av_dict_set(&options, "tune", "fastdecode", 0);
+    av_dict_set(&options, "tune", "zerolatency", 0);
 
     if(codec_context->codec_id == AV_CODEC_ID_H264) {
         av_dict_set(&options, "coder", "cabac", 0); // TODO: cavlc is faster than cabac but worse compression. Which to use?
@@ -990,6 +989,14 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
     // TODO: Enable multipass
 
     if(vendor == GSR_GPU_VENDOR_NVIDIA) {
+        // TODO: Test these, if they are needed, if they should be used
+        // av_dict_set_int(&options, "zerolatency", 1, 0);
+        // if(codec_context->codec_id == AV_CODEC_ID_AV1) {
+        //     av_dict_set(&options, "tune", "ll", 0);
+        // } else if(codec_context->codec_id == AV_CODEC_ID_H264 || codec_context->codec_id == AV_CODEC_ID_HEVC) {
+        //     av_dict_set(&options, "preset", "llhq", 0);
+        //     av_dict_set(&options, "tune", "ll", 0);
+        // }
         av_dict_set(&options, "tune", "hq", 0);
 
         dict_set_profile(codec_context, vendor, color_depth, &options);
@@ -2600,6 +2607,11 @@ int main(int argc, char **argv) {
     // If this is set to 1 then cuGraphicsGLRegisterImage will fail for egl context with error: invalid OpenGL or DirectX context,
     // so we overwrite it
     setenv("__GL_THREADED_OPTIMIZATIONS", "0", true);
+    // Forces low latency encoding mode. Use this environment variable until vaapi supports setting this as a parameter.
+    // The downside of this is that it always uses maximum power, which is not ideal for replay mode that runs on system startup.
+    // This option was added in mesa 24.1.4, released on july 17, 2024.
+    // TODO: Add an option to enable/disable this?
+    setenv("AMD_DEBUG", "lowlatencyenc", true);
     // Some people set this to nvidia (for nvdec) or vdpau (for nvidia vdpau), which breaks gpu screen recorder since
     // nvidia doesn't support vaapi and nvidia-vaapi-driver doesn't support encoding yet.
     // Let vaapi find the match vaapi driver instead of forcing a specific one.
@@ -3795,7 +3807,7 @@ int main(int argc, char **argv) {
             av_usleep(time_to_next_frame * 1000.0 * 1000.0);
         else {
             if(paused)
-                av_usleep(20.0 * 1000.0); // 10 milliseconds
+                av_usleep(20.0 * 1000.0); // 20 milliseconds
             else if(frame_deadline_missed)
             {}
             else if(framerate_mode == FramerateMode::CONTENT || !frame_captured)

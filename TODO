@@ -156,9 +156,6 @@ Restart replay/update video resolution if monitor resolution changes.
 
 Fix pure vaapi copy on intel.
 
-ffmpeg supports vulkan encoding now (h264!). Doesn't work on amd yet because mesa is missing VK_KHR_video_maintenance1, see https://gitlab.freedesktop.org/mesa/mesa/-/issues/11857. Test on nvidia!
-
-Test vaapi low latency mode (setenv("AMD_DEBUG", "lowlatencyenc", true);), added in mesa 24.1.4, released on july 17, 2024. Note that this forces gpu power usage to max at all times, even when recording at 2 fps.
 Use nvidia low latency options for better encoding times.
 
 Test ideal async_depth value. Increasing async_depth also increased gpu memory usage a lot (from 100mb to 500mb when moving from async_depth 2 to 16) at 4k resolution. Setting it to 8 increases it by 200mb which might be ok.
@@ -180,3 +177,5 @@ Always use direct capture with NvFBC once the capture issue in mpv fullscreen ha
 Support ROI (AV_FRAME_DATA_REGIONS_OF_INTEREST).
 
 Default to hevc if capture size is larger than 4096 in width or height.
+
+Set low latency mode on vulkan encoding.

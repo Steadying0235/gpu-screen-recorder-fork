@@ -183,6 +183,40 @@ static void file_get_directory(char *filepath) {
         *end = '\0';
 }
 
+static bool find_program_in_path(const char *program_name, char *filepath, int filepath_len) {
+    const char *path = getenv("PATH");
+    if(!path)
+        return false;
+
+    int program_name_len = strlen(program_name);
+    const char *end = path + strlen(path);
+    while(path != end) {
+        const char *part_end = strchr(path, ':');
+        const char *next = part_end;
+        if(part_end) {
+            next = part_end + 1;
+        } else {
+            part_end = end;
+            next = end;
+        }
+
+        int len = part_end - path;
+        if(len + 1 + program_name_len < filepath_len) {
+            memcpy(filepath, path, len);
+            filepath[len] = '/';
+            memcpy(filepath + len + 1, program_name, program_name_len);
+            filepath[len + 1 + program_name_len] = '\0';
+
+            if(access(filepath, F_OK) == 0)
+                return true;
+        }
+
+        path = next;
+    }
+
+    return false;
+}
+
 int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     int result = -1;
     self->kms_server_pid = -1;
@@ -212,8 +246,11 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     }
 
     if(access(server_filepath, F_OK) != 0) {
-        fprintf(stderr, "gsr error: gsr_kms_client_init: gsr-kms-server is not installed (%s not found)\n", server_filepath);
-        return -1;
+        fprintf(stderr, "gsr info: gsr_kms_client_init: gsr-kms-server is not installed in the same directory as gpu-screen-recorder (%s not found), looking for gsr-kms-server in PATH instead\n", server_filepath);
+        if(!find_program_in_path("gsr-kms-server", server_filepath, sizeof(server_filepath)) || access(server_filepath, F_OK) != 0) {
+            fprintf(stderr, "gsr error: gsr_kms_client_init: gsr-kms-server was not found in PATH. Please install gpu-screen-recorder properly\n");
+            return -1;
+        }
     }
 
     fprintf(stderr, "gsr info: gsr_kms_client_init: setting up connection to %s\n", server_filepath);

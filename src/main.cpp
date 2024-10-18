@@ -1162,7 +1162,7 @@ static void usage_full() {
     fprintf(stderr, "        Note: the directory to the portal session token file is created automatically if it doesn't exist.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -encoder\n");
-    fprintf(stderr, "        Which device should be used for video encoding. Should either be 'gpu' or 'cpu'. Does currently only work with h264 codec option (-k).\n");
+    fprintf(stderr, "        Which device should be used for video encoding. Should either be 'gpu' or 'cpu'. 'cpu' option currently only work with h264 codec option (-k).\n");
     fprintf(stderr, "        Optional, set to 'gpu' by default.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  --info\n");
@@ -1177,6 +1177,7 @@ static void usage_full() {
     fprintf(stderr, "        For example:\n");
     fprintf(stderr, "          bluez_input.88:C9:E8:66:A2:27|WH-1000XM4\n");
     fprintf(stderr, "        The <audio_device_name> is the name to pass to GPU Screen Recorder in a -a option.\n");
+    fprintf(stderr, "\n");
     fprintf(stderr, "  --version\n");
     fprintf(stderr, "        Print version (%s) and exit\n", GSR_VERSION);
     fprintf(stderr, "\n");
@@ -1185,7 +1186,7 @@ static void usage_full() {
     fprintf(stderr, "        In replay mode this has to be a directory instead of a file.\n");
     fprintf(stderr, "        Note: the directory to the file is created automatically if it doesn't already exist.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -v    Prints per second, fps updates. Optional, set to 'yes' by default.\n");
+    fprintf(stderr, "  -v    Prints fps and damage info once per second. Optional, set to 'yes' by default.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -h, --help\n");
     fprintf(stderr, "        Show this help.\n");
@@ -2609,7 +2610,7 @@ int main(int argc, char **argv) {
     setenv("__GL_THREADED_OPTIMIZATIONS", "0", true);
     // Forces low latency encoding mode. Use this environment variable until vaapi supports setting this as a parameter.
     // The downside of this is that it always uses maximum power, which is not ideal for replay mode that runs on system startup.
-    // This option was added in mesa 24.1.4, released on july 17, 2024.
+    // This option was added in mesa 24.1.4, released in july 17, 2024.
     // TODO: Add an option to enable/disable this?
     // Seems like the performance issue is not in encoding, but rendering the frame.
     // Some frames end up taking 10 times longer. Seems to be an issue with amd gpu power management when letting the application sleep on the cpu side?

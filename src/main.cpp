@@ -2310,8 +2310,8 @@ static std::vector<MergedAudioInputs> parse_audio_inputs(const AudioDevices &aud
                     fprintf(stderr, "    default_output (Default output)\n");
                 if(!audio_devices.default_input.empty())
                     fprintf(stderr, "    default_input (Default input)\n");
-                for(const auto &existing_audio_input : audio_devices.audio_inputs) {
-                    fprintf(stderr, "    %s (%s)\n", existing_audio_input.name.c_str(), existing_audio_input.description.c_str());
+                for(const auto &audio_input : audio_devices.audio_inputs) {
+                    fprintf(stderr, "    %s (%s)\n", audio_input.name.c_str(), audio_input.description.c_str());
                 }
                 _exit(2);
             }

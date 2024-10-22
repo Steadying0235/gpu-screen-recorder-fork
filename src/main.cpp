@@ -989,7 +989,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
     // TODO: Enable multipass
 
     if(vendor == GSR_GPU_VENDOR_NVIDIA) {
-        // TODO: Test these, if they are needed, if they should be used
+        // TODO: These dont seem to be necessary
         // av_dict_set_int(&options, "zerolatency", 1, 0);
         // if(codec_context->codec_id == AV_CODEC_ID_AV1) {
         //     av_dict_set(&options, "tune", "ll", 0);
@@ -1581,16 +1581,27 @@ static void split_string(const std::string &str, char delimiter, std::function<b
     }
 }
 
-static std::vector<AudioInput> parse_audio_input_arg(const char *str) {
+static const AudioInput* get_audio_device_by_name(const std::vector<AudioInput> &audio_inputs, const std::string &name) {
+    for(const auto &audio_input : audio_inputs) {
+        if(audio_input.name == name)
+            return &audio_input;
+    }
+    return nullptr;
+}
+
+static std::vector<AudioInput> parse_audio_input_arg(const char *str, const AudioDevices &audio_devices) {
     std::vector<AudioInput> audio_inputs;
-    split_string(str, '|', [&audio_inputs](const char *sub, size_t size) {
+    split_string(str, '|', [&](const char *sub, size_t size) {
         AudioInput audio_input;
         audio_input.name.assign(sub, size);
+
+        const bool name_is_existing_audio_device = get_audio_device_by_name(audio_devices.audio_inputs, audio_input.name);
         const size_t index = audio_input.name.find('/');
-        if(index != std::string::npos) {
+        if(!name_is_existing_audio_device && index != std::string::npos) {
             audio_input.description = audio_input.name.substr(0, index);
             audio_input.name.erase(audio_input.name.begin(), audio_input.name.begin() + index + 1);
         }
+
         audio_inputs.push_back(std::move(audio_input));
         return true;
     });
@@ -2265,7 +2276,7 @@ static std::vector<MergedAudioInputs> parse_audio_inputs(const AudioDevices &aud
         if(!audio_input || audio_input[0] == '\0')
             continue;
 
-        requested_audio_inputs.push_back({parse_audio_input_arg(audio_input)});
+        requested_audio_inputs.push_back({parse_audio_input_arg(audio_input, audio_devices)});
         if(requested_audio_inputs.back().audio_inputs.size() > 1)
             uses_amix = true;
 
@@ -2286,14 +2297,11 @@ static std::vector<MergedAudioInputs> parse_audio_inputs(const AudioDevices &aud
                 match = true;
             }
 
-            for(const auto &existing_audio_input : audio_devices.audio_inputs) {
-                if(request_audio_input.name == existing_audio_input.name) {
-                    if(request_audio_input.description.empty())
-                        request_audio_input.description = "gsr-" + existing_audio_input.description;
-
-                    match = true;
-                    break;
-                }
+            const AudioInput* existing_audio_input = get_audio_device_by_name(audio_devices.audio_inputs, request_audio_input.name);
+            if(existing_audio_input) {
+                if(request_audio_input.description.empty())
+                    request_audio_input.description = "gsr-" + existing_audio_input->description;
+                match = true;
             }
 
             if(!match) {

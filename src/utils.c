@@ -398,7 +398,7 @@ bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info) {
         }
     }
 
-    if(strstr((const char*)gl_vendor, "AMD"))
+    if(strstr((const char*)gl_vendor, "AMD") || strstr((const char*)gl_vendor, "Mesa"))
         info->vendor = GSR_GPU_VENDOR_AMD;
     else if(strstr((const char*)gl_vendor, "Intel"))
         info->vendor = GSR_GPU_VENDOR_INTEL;

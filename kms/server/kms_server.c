@@ -307,11 +307,14 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
             goto next;
         }
 
-        if(!plane->fb_id)
+        if(!plane->fb_id) {
+            fprintf(stderr, "no fb id\n");
             goto next;
+        }
 
         drmfb = drmModeGetFB2(drm->drmfd, plane->fb_id);
         if(!drmfb) {
+            fprintf(stderr, "failed to get drm fb\n");
             // Commented out for now because we get here if the cursor is moved to another monitor and we dont care about the cursor
             //response->result = KMS_RESULT_FAILED_TO_GET_PLANE;
             //snprintf(response->err_msg, sizeof(response->err_msg), "drmModeGetFB2 failed, error: %s", strerror(errno));
@@ -331,8 +334,10 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
 
         int x = 0, y = 0, src_x = 0, src_y = 0, src_w = 0, src_h = 0;
         plane_property_mask property_mask = plane_get_properties(drm->drmfd, plane->plane_id, &x, &y, &src_x, &src_y, &src_w, &src_h);
-        if(!(property_mask & PLANE_PROPERTY_IS_PRIMARY) && !(property_mask & PLANE_PROPERTY_IS_CURSOR))
+        if(!(property_mask & PLANE_PROPERTY_IS_PRIMARY) && !(property_mask & PLANE_PROPERTY_IS_CURSOR)) {
+            fprintf(stderr, "No property mask\n");
             continue;
+        }
 
         int fb_fds[GSR_KMS_MAX_DMA_BUFS];
         const int num_fb_fds = drm_prime_handles_to_fds(drm, drmfb, fb_fds);
@@ -377,6 +382,8 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
             response->items[item_index].src_h = src_h;
         }
         ++response->num_items;
+
+        fprintf(stderr, "got valid drm fd: %u, %u\n", drmfb->width, drmfb->height);
 
         cleanup_handles:
         drm_mode_cleanup_handles(drm->drmfd, drmfb);

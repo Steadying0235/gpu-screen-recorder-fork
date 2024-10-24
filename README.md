@@ -46,13 +46,20 @@ This should work fine on AMD/Intel X11 or Wayland. On Nvidia X11 G-SYNC only wor
 For example it can cause your computer to freeze when recording certain games.
 
 # Installation
-If you are running an Arch Linux based distro, then you can find gpu screen recorder on aur under the name gpu-screen-recorder-git (`yay -S gpu-screen-recorder-git`).\
+If you are running an Arch Linux based distro then you can find gpu screen recorder on aur under the name gpu-screen-recorder-git (`yay -S gpu-screen-recorder-git`).\
 If you are running another distro then you can run `sudo ./install.sh`, but you need to manually install the dependencies, as described below.\
 You can also install gpu screen recorder ([the gtk gui version](https://git.dec05eba.com/gpu-screen-recorder-gtk/)) from [flathub](https://flathub.org/apps/details/com.dec05eba.gpu_screen_recorder), which is the easiest method
 to install GPU Screen Recorder on non-arch based distros.\
-The only official ways to install GPU Screen Recorder is either from source, AUR or flathub. If you install GPU Screen Recorder from somewhere else and have an issue then try installing it
-from one of the official sources before reporting it as an issue.
 If you install GPU Screen Recorder flatpak, which is the gtk gui version then you can still run GPU Screen Recorder command line by using the flatpak command option, for example `flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder -w screen -f 60 -o video.mp4`. Note that if you want to record your monitor on AMD/Intel then you need to install the flatpak system-wide (like so: `flatpak install flathub --system com.dec05eba.gpu_screen_recorder`).
+
+## Unofficial install methods
+The only official ways to install GPU Screen Recorder is either from source, AUR or flathub. Other sources may be out of date and missing features or may not work correctly.\
+If you install GPU Screen Recorder from somewhere else and have an issue then try installing it from one of the official sources before reporting it as an issue.\
+If you still prefer to install GPU Screen Recorder with a package manager instead of from source or as a flatpak then you may be able to find a package for your distro.\
+Here are some known unofficial packages:
+* Debian/Ubuntu: [Pacstall](https://pacstall.dev/packages/gpu-screen-recorder)
+* Nix: [NixOS wiki](https://wiki.nixos.org/wiki/Gpu-screen-recorder)
+* Gentoo: [Guru](https://github.com/gentoo/guru/blob/master/media-video/gpu-screen-recorder/gpu-screen-recorder-9999.ebuild)
 
 # Dependencies
 GPU Screen Recorder uses meson build system so you need to install `meson` to build GPU Screen Recorder.

@@ -549,6 +549,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     bool capture_is_combined_plane = false;
     const gsr_kms_response_item *drm_fd = find_monitor_drm(self, &capture_is_combined_plane);
     if(!drm_fd) {
+        fprintf(stderr, "monitor drm not found\n");
         gsr_capture_kms_cleanup_kms_fds(self);
         return -1;
     }
@@ -575,6 +576,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
     self->params.egl->glFinish();
 
     /* Fast opengl free path */
+    self->fast_path_failed = true;
     if(!self->fast_path_failed && self->monitor_rotation == GSR_MONITOR_ROT_0 && video_codec_context_is_vaapi(self->video_codec_context) && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD) {
         int fds[4];
         uint32_t offsets[4];

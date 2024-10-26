@@ -113,13 +113,14 @@ static int gsr_capture_xcomposite_start(gsr_capture *cap, AVCodecContext *video_
     self->params.egl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &self->texture_size.y);
     self->params.egl->glBindTexture(GL_TEXTURE_2D, 0);
 
-    vec2i video_size = self->texture_size;
-
-    if(self->params.region_size.x > 0 && self->params.region_size.y > 0)
-        video_size = self->params.region_size;
-
-    video_codec_context->width = FFALIGN(video_size.x, 2);
-    video_codec_context->height = FFALIGN(video_size.y, 2);
+    if(self->params.output_resolution.x == 0 && self->params.output_resolution.y == 0) {
+        self->params.output_resolution = self->texture_size;
+        video_codec_context->width = FFALIGN(self->texture_size.x, 2);
+        video_codec_context->height = FFALIGN(self->texture_size.y, 2);
+    } else {
+        video_codec_context->width = FFALIGN(self->params.output_resolution.x, 2);
+        video_codec_context->height = FFALIGN(self->params.output_resolution.y, 2);
+    }
 
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
@@ -257,14 +258,18 @@ static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_
         gsr_color_conversion_clear(color_conversion);
     }
 
-    const vec2i target_pos = { max_int(0, frame->width / 2 - self->texture_size.x / 2), max_int(0, frame->height / 2 - self->texture_size.y / 2) };
+    const bool is_scaled = self->params.output_resolution.x > 0 && self->params.output_resolution.y > 0;
+    vec2i output_size = is_scaled ? self->params.output_resolution : self->texture_size;
+    output_size = scale_keep_aspect_ratio(self->texture_size, output_size);
+
+    const vec2i target_pos = { max_int(0, frame->width / 2 - output_size.x / 2), max_int(0, frame->height / 2 - output_size.y / 2) };
 
     self->params.egl->glFlush();
     self->params.egl->glFinish();
 
     /* Fast opengl free path */
     if(!self->fast_path_failed && video_codec_context_is_vaapi(self->video_codec_context) && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD) {
-        if(!vaapi_copy_egl_image_to_video_surface(self->params.egl, self->window_texture.image, (vec2i){0, 0}, self->texture_size, target_pos, self->texture_size, self->video_codec_context, frame)) {
+        if(!vaapi_copy_egl_image_to_video_surface(self->params.egl, self->window_texture.image, (vec2i){0, 0}, self->texture_size, target_pos, output_size, self->video_codec_context, frame)) {
             fprintf(stderr, "gsr error: gsr_capture_xcomposite_capture: vaapi_copy_egl_image_to_video_surface failed, falling back to opengl copy. Please report this as an issue at https://github.com/dec05eba/gpu-screen-recorder-issues\n");
             self->fast_path_failed = true;
         }
@@ -274,24 +279,29 @@ static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_
 
     if(self->fast_path_failed) {
         gsr_color_conversion_draw(color_conversion, window_texture_get_opengl_texture_id(&self->window_texture),
-            target_pos, self->texture_size,
+            target_pos, output_size,
             (vec2i){0, 0}, self->texture_size,
             0.0f, false);
     }
 
     if(self->params.record_cursor && self->cursor.visible) {
+        const vec2d scale = {
+            self->texture_size.x == 0 ? 0 : (double)output_size.x / (double)self->texture_size.x,
+            self->texture_size.y == 0 ? 0 : (double)output_size.y / (double)self->texture_size.y
+        };
+
         gsr_cursor_tick(&self->cursor, self->window);
 
         const vec2i cursor_pos = {
-            target_pos.x + self->cursor.position.x - self->cursor.hotspot.x,
-            target_pos.y + self->cursor.position.y - self->cursor.hotspot.y
+            target_pos.x + (self->cursor.position.x - self->cursor.hotspot.x) * scale.x,
+            target_pos.y + (self->cursor.position.y - self->cursor.hotspot.y) * scale.y
         };
 
         self->params.egl->glEnable(GL_SCISSOR_TEST);
-        self->params.egl->glScissor(target_pos.x, target_pos.y, self->texture_size.x, self->texture_size.y);
+        self->params.egl->glScissor(target_pos.x, target_pos.y, output_size.x, output_size.y);
 
         gsr_color_conversion_draw(color_conversion, self->cursor.texture_id,
-            cursor_pos, self->cursor.size,
+            cursor_pos, (vec2i){self->cursor.size.x * scale.x, self->cursor.size.y * scale.y},
             (vec2i){0, 0}, self->cursor.size,
             0.0f, false);
 

@@ -240,6 +240,11 @@ static int gsr_capture_nvfbc_setup_handle(gsr_capture_nvfbc *self) {
         }
     }
 
+    if(!self->capture_region) {
+        self->width = self->tracking_width;
+        self->height = self->tracking_height;
+    }
+
     return 0;
 
     error_cleanup:
@@ -351,6 +356,14 @@ static int gsr_capture_nvfbc_start(gsr_capture *cap, AVCodecContext *video_codec
         video_codec_context->height = FFALIGN(self->tracking_height, 2);
     }
 
+    if(self->params.output_resolution.x == 0 && self->params.output_resolution.y == 0) {
+        self->params.output_resolution = (vec2i){video_codec_context->width, video_codec_context->height};
+    } else {
+        self->params.output_resolution = scale_keep_aspect_ratio((vec2i){video_codec_context->width, video_codec_context->height}, self->params.output_resolution);
+        video_codec_context->width = FFALIGN(self->params.output_resolution.x, 2);
+        video_codec_context->height = FFALIGN(self->params.output_resolution.y, 2);
+    }
+
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
 
@@ -390,6 +403,13 @@ static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame, gsr_color
         }
     }
 
+    const vec2i frame_size = (vec2i){self->width, self->height};
+    const bool is_scaled = self->params.output_resolution.x > 0 && self->params.output_resolution.y > 0;
+    vec2i output_size = is_scaled ? self->params.output_resolution : frame_size;
+    output_size = scale_keep_aspect_ratio(frame_size, output_size);
+
+    const vec2i target_pos = { max_int(0, frame->width / 2 - output_size.x / 2), max_int(0, frame->height / 2 - output_size.y / 2) };
+
     NVFBC_FRAME_GRAB_INFO frame_info;
     memset(&frame_info, 0, sizeof(frame_info));
 
@@ -412,8 +432,8 @@ static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame, gsr_color
     self->params.egl->glFinish();
 
     gsr_color_conversion_draw(color_conversion, self->setup_params.dwTextures[grab_params.dwTextureIndex],
-        (vec2i){0, 0}, (vec2i){frame->width, frame->height},
-        (vec2i){0, 0}, (vec2i){frame->width, frame->height},
+        target_pos, (vec2i){output_size.x, output_size.y},
+        (vec2i){0, 0}, frame_size,
         0.0f, false);
 
     self->params.egl->glFlush();

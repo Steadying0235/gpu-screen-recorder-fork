@@ -19,8 +19,9 @@ Environment=COLOR_RANGE=limited
 Environment=KEYINT=2
 Environment=ENCODER=gpu
 Environment=RESTORE_PORTAL_SESSION=yes
+Environment=OUTPUT_RESOLUTION=0x0
 Environment=ADDITIONAL_ARGS=
-ExecStart=gpu-screen-recorder -v no -w "${WINDOW}" -c "${CONTAINER}" -q "${QUALITY}" -k "${CODEC}" -ac "${AUDIO_CODEC}" -a "${AUDIO_DEVICE}" -a "${SECONDARY_AUDIO_DEVICE}" -f "${FRAMERATE}" -r "${REPLAYDURATION}" -o "${OUTPUTDIR}" -df "${MAKEFOLDERS}" $ADDITIONAL_ARGS -cr "${COLOR_RANGE}" -keyint "${KEYINT}" -restore-portal-session "${RESTORE_PORTAL_SESSION}" -encoder "${ENCODER}" -bm "${BITRATE_MODE}"
+ExecStart=gpu-screen-recorder -v no -w "${WINDOW}" -s "${OUTPUT_RESOLUTION}" -c "${CONTAINER}" -q "${QUALITY}" -k "${CODEC}" -ac "${AUDIO_CODEC}" -a "${AUDIO_DEVICE}" -a "${SECONDARY_AUDIO_DEVICE}" -f "${FRAMERATE}" -r "${REPLAYDURATION}" -o "${OUTPUTDIR}" -df "${MAKEFOLDERS}" $ADDITIONAL_ARGS -cr "${COLOR_RANGE}" -keyint "${KEYINT}" -restore-portal-session "${RESTORE_PORTAL_SESSION}" -encoder "${ENCODER}" -bm "${BITRATE_MODE}"
 KillSignal=SIGINT
 Restart=on-failure
 RestartSec=5s

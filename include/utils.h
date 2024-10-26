@@ -51,4 +51,6 @@ bool video_codec_context_is_vaapi(AVCodecContext *video_codec_context);
 bool vaapi_copy_drm_planes_to_video_surface(AVCodecContext *video_codec_context, AVFrame *video_frame, vec2i source_pos, vec2i source_size, vec2i dest_pos, vec2i dest_size, uint32_t format, vec2i size, const int *fds, const uint32_t *offsets, const uint32_t *pitches, const uint64_t *modifiers, int num_planes);
 bool vaapi_copy_egl_image_to_video_surface(gsr_egl *egl, EGLImage image, vec2i source_pos, vec2i source_size, vec2i dest_pos, vec2i dest_size, AVCodecContext *video_codec_context, AVFrame *video_frame);
 
+vec2i scale_keep_aspect_ratio(vec2i from, vec2i to);
+
 #endif /* GSR_UTILS_H */

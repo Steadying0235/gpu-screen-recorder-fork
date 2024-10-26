@@ -300,8 +300,15 @@ static int gsr_capture_portal_start(gsr_capture *cap, AVCodecContext *video_code
     /* Disable vsync */
     self->params.egl->eglSwapInterval(self->params.egl->egl_display, 0);
 
-    video_codec_context->width = FFALIGN(self->capture_size.x, 2);
-    video_codec_context->height = FFALIGN(self->capture_size.y, 2);
+    if(self->params.output_resolution.x == 0 && self->params.output_resolution.y == 0) {
+        self->params.output_resolution = self->capture_size;
+        video_codec_context->width = FFALIGN(self->capture_size.x, 2);
+        video_codec_context->height = FFALIGN(self->capture_size.y, 2);
+    } else {
+        self->params.output_resolution = scale_keep_aspect_ratio(self->capture_size, self->params.output_resolution);
+        video_codec_context->width = FFALIGN(self->params.output_resolution.x, 2);
+        video_codec_context->height = FFALIGN(self->params.output_resolution.y, 2);
+    }
 
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
@@ -334,8 +341,12 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
     } else {
         return 0;
     }
+
+    const bool is_scaled = self->params.output_resolution.x > 0 && self->params.output_resolution.y > 0;
+    vec2i output_size = is_scaled ? self->params.output_resolution : self->capture_size;
+    output_size = scale_keep_aspect_ratio(self->capture_size, output_size);
     
-    const vec2i target_pos = { max_int(0, frame->width / 2 - self->capture_size.x / 2), max_int(0, frame->height / 2 - self->capture_size.y / 2) };
+    const vec2i target_pos = { max_int(0, frame->width / 2 - output_size.x / 2), max_int(0, frame->height / 2 - output_size.y / 2) };
 
     self->params.egl->glFlush();
     self->params.egl->glFinish();
@@ -354,7 +365,7 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
             pitches[i] = self->dmabuf_data[i].stride;
             modifiers[i] = pipewire_modifiers;
         }
-        if(!vaapi_copy_drm_planes_to_video_surface(self->video_codec_context, frame, (vec2i){region.x, region.y}, self->capture_size, target_pos, self->capture_size, pipewire_fourcc, self->capture_size, fds, offsets, pitches, modifiers, self->num_dmabuf_data)) {
+        if(!vaapi_copy_drm_planes_to_video_surface(self->video_codec_context, frame, (vec2i){region.x, region.y}, self->capture_size, target_pos, output_size, pipewire_fourcc, self->capture_size, fds, offsets, pitches, modifiers, self->num_dmabuf_data)) {
             fprintf(stderr, "gsr error: gsr_capture_portal_capture: vaapi_copy_drm_planes_to_video_surface failed, falling back to opengl copy. Please report this as an issue at https://github.com/dec05eba/gpu-screen-recorder-issues\n");
             self->fast_path_failed = true;
         }
@@ -364,21 +375,26 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
 
     if(self->fast_path_failed) {
         gsr_color_conversion_draw(color_conversion, using_external_image ? self->texture_map.external_texture_id : self->texture_map.texture_id,
-            target_pos, self->capture_size,
+            target_pos, output_size,
             (vec2i){region.x, region.y}, self->capture_size,
             0.0f, using_external_image);
     }
 
-    if(self->params.record_cursor) {
+    if(self->params.record_cursor && self->texture_map.cursor_texture_id > 0 && cursor_region.width > 0) {
+        const vec2d scale = {
+            self->capture_size.x == 0 ? 0 : (double)output_size.x / (double)self->capture_size.x,
+            self->capture_size.y == 0 ? 0 : (double)output_size.y / (double)self->capture_size.y
+        };
+
         const vec2i cursor_pos = {
-            target_pos.x + cursor_region.x,
-            target_pos.y + cursor_region.y
+            target_pos.x + (cursor_region.x * scale.x),
+            target_pos.y + (cursor_region.y * scale.y)
         };
 
         self->params.egl->glEnable(GL_SCISSOR_TEST);
-        self->params.egl->glScissor(target_pos.x, target_pos.y, self->capture_size.x, self->capture_size.y);
+        self->params.egl->glScissor(target_pos.x, target_pos.y, output_size.x, output_size.y);
         gsr_color_conversion_draw(color_conversion, self->texture_map.cursor_texture_id,
-            (vec2i){cursor_pos.x, cursor_pos.y}, (vec2i){cursor_region.width, cursor_region.height},
+            (vec2i){cursor_pos.x, cursor_pos.y}, (vec2i){cursor_region.width * scale.x, cursor_region.height * scale.y},
             (vec2i){0, 0}, (vec2i){cursor_region.width, cursor_region.height},
             0.0f, false);
         self->params.egl->glDisable(GL_SCISSOR_TEST);

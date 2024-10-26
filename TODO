@@ -74,8 +74,6 @@ Make it possible to select which /dev/dri/card* to use, but that requires opengl
 Test if p2 state can be worked around by using pure nvenc api and overwriting cuInit/cuCtxCreate* to not do anything. Cuda might be loaded when using nvenc but it might not be used, with certain record options? (such as h264 p5).
     nvenc uses cuda when using b frames and rgb->yuv conversion, so convert the image ourselves instead.-
 
-Mesa doesn't support global headers (AV_CODEC_FLAG_GLOBAL_HEADER) with h264... which also breaks mkv since mkv requires global header. Right now gpu screen recorder will forcefully set video codec to hevc when h264 is requested for mkv files.
-
 Drop frames if live streaming cant keep up with target fps, or dynamically change resolution/quality.
 
 Support low power option.
@@ -103,7 +101,7 @@ Investigate if there is a way to do gpu->gpu copy directly without touching syst
 
 Go back to using pure vaapi without opengl for video encoding? rotation (transpose) can be done if its done after (rgb to yuv) color conversion.
 
-Implement scaling and use lanczos resampling for better quality. Lanczos resampling can also be used for YUV chroma for better color quality on small text.
+Use lanczos resampling for better scaling quality. Lanczos resampling can also be used for YUV chroma for better color quality on small text.
 
 Flac is disabled because the frame sizes are too large which causes big audio/video desync.
 

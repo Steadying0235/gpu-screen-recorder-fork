@@ -101,7 +101,8 @@ When compiling GPU Screen Recorder with portal support (`-Dportal=true`, which i
 * libpipewire (and libspa which is usually part of libpipewire)
 
 # How to use
-Run `gpu-screen-recorder --help` to see all options and also examples.
+Run `gpu-screen-recorder --help` to see all options and also examples.\
+There is also a gui for the gpu screen recorder called [gpu-screen-recorder-gtk](https://git.dec05eba.com/gpu-screen-recorder-gtk/).
 ## Recording
 Here is an example of how to record your monitor and the default audio output: `gpu-screen-recorder -w screen -f 60 -a default_output -o ~/Videos/test_video.mp4`.
 Yyou can stop and save the recording with `Ctrl+C` or by running `killall -SIGINT gpu-screen-recorder`.
@@ -119,15 +120,14 @@ The replay buffer is stored in ram (as encoded video), so don't use a too large 
 To save a video in replay mode, you need to send signal SIGUSR1 to gpu screen recorder. You can do this by running `killall -SIGUSR1 gpu-screen-recorder`.\
 To stop recording send SIGINT to gpu screen recorder. You can do this by running `killall -SIGINT gpu-screen-recorder` or pressing `Ctrl-C` in the terminal that runs gpu screen recorder. When recording a regular non-replay video this will also save the video.\
 To pause/unpause recording send SIGUSR2 to gpu screen recorder. You can do this by running `killall -SIGUSR2 gpu-screen-recorder`. This is only applicable and useful when recording (not streaming nor replay).\
-## Finding audio device name
-You can find the default output audio device (headset, speakers (in other words, desktop audio)) with the command `pactl get-default-sink`. Add `monitor` to the end of that to use that as an audio input in gpu screen recorder.\
-You can find the default input audio device (microphone) with the command `pactl get-default-source`. This input should not have `monitor` added to the end when used in gpu screen recorder.\
-Example of recording both desktop audio and microphone: `gpu-screen-recorder -w screen -f 60 -a "$(pactl get-default-sink).monitor" -a "$(pactl get-default-source)" -o ~/Videos/test_video.mp4`.\
-A name (that is visible to pipewire) can be given to an audio input device by prefixing the audio input with `<name>/`, for example `dummy/$(pactl get-default-sink).monitor`.\
-Note that if you use multiple audio inputs then they are each recorded into separate audio tracks in the video file. If you want to merge multiple audio inputs into one audio track then separate the audio inputs by "|" in one -a argument,
-for example `-a "$(pactl get-default-sink).monitor|$(pactl get-default-source)"`.
+## Audio device name
+To record the default output device (desktop audio) you can use the `default_output` option, for example `-a default_output`.\
+To record the default input device (microphone) you can use the `default_input` option, for example `-a default_input`.\
+To list all available audio devices run `gpu-screen-recorder --list-audio-devices`. The name to use with GPU Screen Recorder will be on the left side and the human readable name is on the right side.\
+To record multiple audio devices to multiple audio tracks specify the `-a` option multiple times, for example `-a default_output -a default_input`.\
+To record multiple audio devices into one audio track (merged) specify the `-a` option once split with `|` for each audio device, for example `-a "default_output|default_input"`.\
+In wireplumber the name of the audio will be in the format `gsr-<audio_device>`, but you can change that name by prefixing the audio device with a name and then a forward slash, for example: `-a "name/default_output"`.
 
-There is also a gui for the gpu screen recorder called [gpu-screen-recorder-gtk](https://git.dec05eba.com/gpu-screen-recorder-gtk/).
 ## Simple way to run replay without gui
 Run the script `scripts/start-replay.sh` to start replay and then `scripts/save-replay.sh` to save a replay and `scripts/stop-replay.sh` to stop the replay. The videos are saved to `$HOME/Videos`.
 You can use these scripts to start replay at system startup if you add `scripts/start-replay.sh` to startup (this can be done differently depending on your desktop environment / window manager) and then go into

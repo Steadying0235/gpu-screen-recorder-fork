@@ -1082,7 +1082,9 @@ static void usage_full() {
     fprintf(stderr, "        If an output file is specified and -c is not used then the container format is determined from the output filename extension.\n");
     fprintf(stderr, "        Only containers that support h264, hevc, av1, vp8 or vp9 are supported, which means that only mp4, mkv, flv, webm (and some others) are supported.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -s    The size (area) to record at in the format WxH, for example 1920x1080. This option is only supported (and required) when -w is \"focused\".\n");
+    fprintf(stderr, "  -s    The output resolution of the video in the format WxH, for example 1920x1080. If this is 0x0 then the original resolution is used. Optional, except when -w is \"focused\".\n");
+    fprintf(stderr, "        Note: the captured content is scaled to this size. The output resolution might not be exactly as specified by this option. The original aspect ratio is respected so the resolution will match that.\n");
+    fprintf(stderr, "        The video encoder might also need to add padding, which will result in black bars on the sides of the video. This is especially an issue on AMD.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -f    Frame rate to record at. Recording will only capture frames at this target frame rate.\n");
     fprintf(stderr, "        For constant frame rate mode this option is the frame rate every frame will be captured at and if the capture frame rate is below this target frame rate then the frames will be duplicated.\n");
@@ -1198,6 +1200,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "EXAMPLES:\n");
     fprintf(stderr, "  %s -w screen -f 60 -a default_output -o \"$HOME/Videos/video.mp4\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -a default_output -a default_input -o \"$HOME/Videos/video.mp4\"\n", program_name);
     fprintf(stderr, "  %s -w screen -f 60 -a \"default_output|default_input\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
     fprintf(stderr, "  %s -w screen -f 60 -a default_output -c mkv -r 60 -o \"$HOME/Videos\"\n", program_name);
     fprintf(stderr, "  %s -w screen -f 60 -a default_output -c mkv -sc script.sh -r 60 -o \"$HOME/Videos\"\n", program_name);
@@ -2075,11 +2078,10 @@ static void list_audio_devices_command() {
     _exit(0);
 }
 
-static gsr_capture* create_capture_impl(std::string &window_str, const char *screen_region, bool wayland, gsr_egl *egl, int fps, VideoCodec video_codec, gsr_color_range color_range,
+static gsr_capture* create_capture_impl(std::string &window_str, vec2i output_resolution, bool wayland, gsr_egl *egl, int fps, VideoCodec video_codec, gsr_color_range color_range,
     bool record_cursor, bool use_software_video_encoder, bool restore_portal_session, const char *portal_session_token_filepath,
     gsr_color_depth color_depth)
 {
-    vec2i region_size = { 0, 0 };
     Window src_window_id = None;
     bool follow_focused = false;
 
@@ -2090,18 +2092,8 @@ static gsr_capture* create_capture_impl(std::string &window_str, const char *scr
             _exit(2);
         }
 
-        if(!screen_region) {
-            fprintf(stderr, "Error: option -s is required when using -w focused\n");
-            usage();
-        }
-
-        if(sscanf(screen_region, "%dx%d", &region_size.x, &region_size.y) != 2) {
-            fprintf(stderr, "Error: invalid value for option -s '%s', expected a value in format WxH\n", screen_region);
-            usage();
-        }
-
-        if(region_size.x <= 0 || region_size.y <= 0) {
-            fprintf(stderr, "Error: invalud value for option -s '%s', expected width and height to be greater than 0\n", screen_region);
+        if(output_resolution.x <= 0 || output_resolution.y <= 0) {
+            fprintf(stderr, "Error: invalid value for option -s '%dx%d' when using -w focused option. expected width and height to be greater than 0\n", output_resolution.x, output_resolution.y);
             usage();
         }
 
@@ -2121,6 +2113,7 @@ static gsr_capture* create_capture_impl(std::string &window_str, const char *scr
         portal_params.record_cursor = record_cursor;
         portal_params.restore_portal_session = restore_portal_session;
         portal_params.portal_session_token_filepath = portal_session_token_filepath;
+        portal_params.output_resolution = output_resolution;
         capture = gsr_capture_portal_create(&portal_params);
         if(!capture)
             _exit(1);
@@ -2195,6 +2188,7 @@ static gsr_capture* create_capture_impl(std::string &window_str, const char *scr
             nvfbc_params.color_range = color_range;
             nvfbc_params.record_cursor = record_cursor;
             nvfbc_params.use_software_video_encoder = use_software_video_encoder;
+            nvfbc_params.output_resolution = output_resolution;
             capture = gsr_capture_nvfbc_create(&nvfbc_params);
             if(!capture)
                 _exit(1);
@@ -2207,6 +2201,7 @@ static gsr_capture* create_capture_impl(std::string &window_str, const char *scr
             kms_params.record_cursor = record_cursor;
             kms_params.hdr = video_codec_is_hdr(video_codec);
             kms_params.fps = fps;
+            kms_params.output_resolution = output_resolution;
             capture = gsr_capture_kms_create(&kms_params);
             if(!capture)
                 _exit(1);
@@ -2230,10 +2225,10 @@ static gsr_capture* create_capture_impl(std::string &window_str, const char *scr
         xcomposite_params.egl = egl;
         xcomposite_params.window = src_window_id;
         xcomposite_params.follow_focused = follow_focused;
-        xcomposite_params.region_size = region_size;
         xcomposite_params.color_range = color_range;
         xcomposite_params.record_cursor = record_cursor;
         xcomposite_params.color_depth = color_depth;
+        xcomposite_params.output_resolution = output_resolution;
         capture = gsr_capture_xcomposite_create(&xcomposite_params);
         if(!capture)
             _exit(1);
@@ -2607,6 +2602,8 @@ static const AVCodec* select_video_codec_with_fallback(VideoCodec *video_codec, 
 }
 
 int main(int argc, char **argv) {
+    setlocale(LC_ALL, "C"); // Sigh... stupid C
+
     signal(SIGINT, stop_handler);
     signal(SIGUSR1, save_replay_handler);
     signal(SIGUSR2, toggle_pause_handler);
@@ -3144,11 +3141,23 @@ int main(int argc, char **argv) {
         usage();
     }
 
-    const char *screen_region = args["-s"].value();
-
-    if(screen_region && strcmp(window_str.c_str(), "focused") != 0) {
-        fprintf(stderr, "Error: option -s is only available when using -w focused\n");
+    const char *output_resolution_str = args["-s"].value();
+    if(!output_resolution_str && strcmp(window_str.c_str(), "focused") == 0) {
+        fprintf(stderr, "Error: option -s is required when using -w focused option\n");
         usage();
+    }
+
+    vec2i output_resolution = {0, 0};
+    if(output_resolution_str) {
+        if(sscanf(output_resolution_str, "%dx%d", &output_resolution.x, &output_resolution.y) != 2) {
+            fprintf(stderr, "Error: invalid value for option -s '%s', expected a value in format WxH\n", output_resolution_str);
+            usage();
+        }
+
+        if(output_resolution.x < 0 || output_resolution.y < 0) {
+            fprintf(stderr, "Error: invalud value for option -s '%s', expected width and height to be greater or equal to 0\n", output_resolution_str);
+            usage();
+        }
     }
 
     bool is_livestream = false;
@@ -3235,7 +3244,7 @@ int main(int argc, char **argv) {
     const AVCodec *video_codec_f = select_video_codec_with_fallback(&video_codec, video_codec_to_use, file_extension.c_str(), use_software_video_encoder, &egl, &low_power);
 
     const gsr_color_depth color_depth = video_codec_to_bit_depth(video_codec);
-    gsr_capture *capture = create_capture_impl(window_str, screen_region, wayland, &egl, fps, video_codec, color_range, record_cursor, use_software_video_encoder, restore_portal_session, portal_session_token_filepath, color_depth);
+    gsr_capture *capture = create_capture_impl(window_str, output_resolution, wayland, &egl, fps, video_codec, color_range, record_cursor, use_software_video_encoder, restore_portal_session, portal_session_token_filepath, color_depth);
 
     // (Some?) livestreaming services require at least one audio track to work.
     // If not audio is provided then create one silent audio track.

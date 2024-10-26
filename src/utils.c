@@ -738,6 +738,8 @@ bool vaapi_copy_drm_planes_to_video_surface(AVCodecContext *video_codec_context,
         .height = dest_size.y
     };
 
+    const bool scaled = dest_size.x != source_size.x || dest_size.y != source_size.y;
+
     // Copying a surface to another surface will automatically perform the color conversion. Thanks vaapi!
     VAProcPipelineParameterBuffer params = {0};
     params.surface = input_surface_id;
@@ -745,7 +747,7 @@ bool vaapi_copy_drm_planes_to_video_surface(AVCodecContext *video_codec_context,
     params.surface_region = &source_region;
     params.output_region = &output_region;
     params.output_background_color = 0;
-    params.filter_flags = VA_FRAME_PICTURE;
+    params.filter_flags = scaled ? (VA_FILTER_SCALING_HQ | VA_FILTER_INTERPOLATION_BILINEAR) : 0;
     params.pipeline_flags = VA_PROC_PIPELINE_FAST;
 
     params.input_color_properties.colour_primaries = 1;
@@ -876,4 +878,21 @@ bool vaapi_copy_egl_image_to_video_surface(gsr_egl *egl, EGLImage image, vec2i s
     }
 
     return success;
+}
+
+vec2i scale_keep_aspect_ratio(vec2i from, vec2i to) {
+    if(from.x == 0 || from.y == 0)
+        return (vec2i){0, 0};
+
+    const double height_to_width_ratio = (double)from.y / (double)from.x;
+    from.x = to.x;
+    from.y = from.x * height_to_width_ratio;
+    
+    if(from.y > to.y) {
+        const double width_height_ratio = (double)from.x / (double)from.y;
+        from.y = to.y;
+        from.x = from.y * width_height_ratio;
+    }
+
+    return from;
 }

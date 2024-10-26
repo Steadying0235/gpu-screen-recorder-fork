@@ -15,6 +15,7 @@ typedef struct {
     gsr_color_range color_range;
     bool record_cursor;
     bool use_software_video_encoder;
+    vec2i output_resolution;
 } gsr_capture_nvfbc_params;
 
 gsr_capture* gsr_capture_nvfbc_create(const gsr_capture_nvfbc_params *params);

@@ -524,8 +524,8 @@ static void render_x11_cursor(gsr_capture_kms *self, gsr_color_conversion *color
     gsr_cursor_tick(&self->x11_cursor, DefaultRootWindow(self->params.egl->x11.dpy));
 
     const vec2i cursor_pos = {
-        target_pos.x + (self->x11_cursor.position.x - self->x11_cursor.hotspot.x) * scale.x - capture_pos.x,
-        target_pos.y + (self->x11_cursor.position.y - self->x11_cursor.hotspot.y) * scale.y - capture_pos.y
+        target_pos.x + (self->x11_cursor.position.x - self->x11_cursor.hotspot.x - capture_pos.x) * scale.x,
+        target_pos.y + (self->x11_cursor.position.y - self->x11_cursor.hotspot.y - capture_pos.y) * scale.y
     };
 
     self->params.egl->glEnable(GL_SCISSOR_TEST);

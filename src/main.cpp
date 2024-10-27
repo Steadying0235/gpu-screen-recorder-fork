@@ -1082,7 +1082,7 @@ static void usage_full() {
     fprintf(stderr, "        If an output file is specified and -c is not used then the container format is determined from the output filename extension.\n");
     fprintf(stderr, "        Only containers that support h264, hevc, av1, vp8 or vp9 are supported, which means that only mp4, mkv, flv, webm (and some others) are supported.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -s    The output resolution of the video in the format WxH, for example 1920x1080. If this is 0x0 then the original resolution is used. Optional, except when -w is \"focused\".\n");
+    fprintf(stderr, "  -s    The output resolution limit of the video in the format WxH, for example 1920x1080. If this is 0x0 then the original resolution is used. Optional, except when -w is \"focused\".\n");
     fprintf(stderr, "        Note: the captured content is scaled to this size. The output resolution might not be exactly as specified by this option. The original aspect ratio is respected so the resolution will match that.\n");
     fprintf(stderr, "        The video encoder might also need to add padding, which will result in black bars on the sides of the video. This is especially an issue on AMD.\n");
     fprintf(stderr, "\n");

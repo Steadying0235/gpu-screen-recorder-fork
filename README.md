@@ -7,6 +7,8 @@ similar to shadowplay on windows. This is the fastest screen recording tool for 
 This screen recorder can be used for recording your desktop offline, for live streaming and for nvidia shadowplay-like instant replay,
 where only the last few minutes are saved.
 
+This is a cli-only tool, if you want an UI for this check out [GPU Screen Recorder GTK](https://git.dec05eba.com/gpu-screen-recorder-gtk/) or if you prefer a ShadowPlay-like UI then check out [GPU Screen Recorder UI](https://git.dec05eba.com/gpu-screen-recorder-ui/).
+
 Supported video codecs:
 * H264 (default)
 * HEVC (Optionally with HDR)
@@ -102,7 +104,8 @@ When compiling GPU Screen Recorder with portal support (`-Dportal=true`, which i
 
 # How to use
 Run `gpu-screen-recorder --help` to see all options and also examples.\
-There is also a gui for the gpu screen recorder called [gpu-screen-recorder-gtk](https://git.dec05eba.com/gpu-screen-recorder-gtk/).
+There is also a gui for the gpu screen recorder called [GPU Screen Recorder GTK](https://git.dec05eba.com/gpu-screen-recorder-gtk/).\
+There is also a new alternative UI for GPU Screen Recorder in the style of ShadowPlay called [GPU Screen Recorder UI](https://git.dec05eba.com/gpu-screen-recorder-ui/).
 ## Recording
 Here is an example of how to record your monitor and the default audio output: `gpu-screen-recorder -w screen -f 60 -a default_output -o ~/Videos/test_video.mp4`.
 Yyou can stop and save the recording with `Ctrl+C` or by running `killall -SIGINT gpu-screen-recorder`.

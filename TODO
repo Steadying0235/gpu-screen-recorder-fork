@@ -177,3 +177,7 @@ Support ROI (AV_FRAME_DATA_REGIONS_OF_INTEREST).
 Default to hevc if capture size is larger than 4096 in width or height.
 
 Set low latency mode on vulkan encoding.
+
+Support pipewire audio capture which also allows capturing audio from a single application.
+
+Support recording/replay/livestreaming at the same time by allowing commands to be run on an existing gpu screen recorder instance.

@@ -149,7 +149,7 @@ You have to reboot your computer after installing GPU Screen Recorder for the fi
 Look at the [scripts](https://git.dec05eba.com/gpu-screen-recorder/tree/scripts) directory for script examples. For example if you want to automatically save a recording/replay into a folder with the same name as the game you are recording.
 
 # Reporting bugs
-Issues are reported on this Github page: [https://github.com/dec05eba/gpu-screen-recorder-issues/issues](https://github.com/dec05eba/gpu-screen-recorder-issues/issues).
+Issues are reported on this Github page: [https://github.com/dec05eba/gpu-screen-recorder-issues](https://github.com/dec05eba/gpu-screen-recorder-issues).
 # Contributing patches
 See [https://git.dec05eba.com/?p=about](https://git.dec05eba.com/?p=about) for contribution steps.
 # Donations

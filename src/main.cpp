@@ -1205,7 +1205,7 @@ static void usage_full() {
     fprintf(stderr, "  %s -w screen -f 60 -a default_output -c mkv -r 60 -o \"$HOME/Videos\"\n", program_name);
     fprintf(stderr, "  %s -w screen -f 60 -a default_output -c mkv -sc script.sh -r 60 -o \"$HOME/Videos\"\n", program_name);
     fprintf(stderr, "  %s -w portal -f 60 -a default_output -restore-portal-session yes -o \"$HOME/Videos/video.mp4\"\n", program_name);
-    fprintf(stderr, "  %s -w screen -f 60 -a default_output -bm cbr -q 5000 -o \"$HOME/Videos/video.mp4\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -a default_output -bm cbr -q 15000 -o \"$HOME/Videos/video.mp4\"\n", program_name);
     //fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -q ultra -pixfmt yuv444 -o video.mp4\n");
     _exit(1);
 }

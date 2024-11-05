@@ -3108,7 +3108,7 @@ int main(int argc, char **argv) {
             usage();
         }
 
-        video_bitrate *= 1000LL * 8LL;
+        video_bitrate *= 1000LL;
     } else {
         if(!quality_str)
             quality_str = "very_high";

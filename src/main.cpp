@@ -537,7 +537,7 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
         codec_context->bit_rate = bitrate;
         codec_context->rc_max_rate = codec_context->bit_rate;
         //codec_context->rc_min_rate = codec_context->bit_rate;
-        //codec_context->rc_buffer_size = codec_context->bit_rate;//codec_context->bit_rate / 10;
+        codec_context->rc_buffer_size = codec_context->bit_rate;//codec_context->bit_rate / 10;
         codec_context->rc_initial_buffer_occupancy = 0;//codec_context->bit_rate;//codec_context->bit_rate * 1000;
     } else if(bitrate_mode == BitrateMode::VBR) {
         const int quality = vbr_get_quality_parameter(codec_context, video_quality, hdr);
@@ -566,8 +566,10 @@ static AVCodecContext *create_video_codec_context(AVPixelFormat pix_fmt,
 
         codec_context->rc_max_rate = codec_context->bit_rate;
         //codec_context->rc_min_rate = codec_context->bit_rate;
-        //codec_context->rc_buffer_size = codec_context->bit_rate;//codec_context->bit_rate / 10;
+        codec_context->rc_buffer_size = codec_context->bit_rate;//codec_context->bit_rate / 10;
         codec_context->rc_initial_buffer_occupancy = codec_context->bit_rate;//codec_context->bit_rate * 1000;
+    } else {
+        //codec_context->rc_buffer_size = 50000 * 1000;
     }
     //codec_context->profile = FF_PROFILE_H264_MAIN;
     if (codec_context->codec_id == AV_CODEC_ID_MPEG1VIDEO)

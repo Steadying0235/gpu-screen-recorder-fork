@@ -340,15 +340,17 @@ static void pa_server_info_cb(pa_context*, const pa_server_info *server_info, vo
 }
 
 static void get_pulseaudio_default_inputs(AudioDevices &audio_devices) {
-    pa_mainloop *main_loop = pa_mainloop_new();
-
-    pa_context *ctx = pa_context_new(pa_mainloop_get_api(main_loop), "gpu-screen-recorder-gtk");
-    pa_context_connect(ctx, NULL, PA_CONTEXT_NOFLAGS, NULL);
     int state = 0;
     int pa_ready = 0;
-    pa_context_set_state_callback(ctx, pa_state_cb, &pa_ready);
-
     pa_operation *pa_op = NULL;
+
+    pa_mainloop *main_loop = pa_mainloop_new();
+
+    pa_context *ctx = pa_context_new(pa_mainloop_get_api(main_loop), "gpu-screen-recorder");
+    if(pa_context_connect(ctx, NULL, PA_CONTEXT_NOFLAGS, NULL) < 0)
+        goto done;
+
+    pa_context_set_state_callback(ctx, pa_state_cb, &pa_ready);
 
     for(;;) {
         // Not ready
@@ -366,23 +368,25 @@ static void get_pulseaudio_default_inputs(AudioDevices &audio_devices) {
         }
 
         // Couldn't get connection to the server
-        if(pa_ready == 2 || (state == 1 && pa_op && pa_operation_get_state(pa_op) == PA_OPERATION_DONE)) {
-            if(pa_op)
-                pa_operation_unref(pa_op);
-            pa_context_disconnect(ctx);
-            pa_context_unref(ctx);
-            pa_mainloop_free(main_loop);
-            return;
-        }
+        if(pa_ready == 2 || (state == 1 && pa_op && pa_operation_get_state(pa_op) == PA_OPERATION_DONE))
+            break;
 
         pa_mainloop_iterate(main_loop, 1, NULL);
     }
 
+    done:
+    if(pa_op)
+        pa_operation_unref(pa_op);
+    pa_context_disconnect(ctx);
+    pa_context_unref(ctx);
     pa_mainloop_free(main_loop);
 }
 
 AudioDevices get_pulseaudio_inputs() {
     AudioDevices audio_devices;
+    int state = 0;
+    int pa_ready = 0;
+    pa_operation *pa_op = NULL;
 
     // TODO: Do this in the same connection below instead of two separate connections
     get_pulseaudio_default_inputs(audio_devices);
@@ -390,12 +394,10 @@ AudioDevices get_pulseaudio_inputs() {
     pa_mainloop *main_loop = pa_mainloop_new();
 
     pa_context *ctx = pa_context_new(pa_mainloop_get_api(main_loop), "gpu-screen-recorder");
-    pa_context_connect(ctx, NULL, PA_CONTEXT_NOFLAGS, NULL);
-    int state = 0;
-    int pa_ready = 0;
-    pa_context_set_state_callback(ctx, pa_state_cb, &pa_ready);
+    if(pa_context_connect(ctx, NULL, PA_CONTEXT_NOFLAGS, NULL) < 0)
+        goto done;
 
-    pa_operation *pa_op = NULL;
+    pa_context_set_state_callback(ctx, pa_state_cb, &pa_ready);
 
     for(;;) {
         // Not ready
@@ -413,17 +415,17 @@ AudioDevices get_pulseaudio_inputs() {
         }
 
         // Couldn't get connection to the server
-        if(pa_ready == 2 || (state == 1 && pa_op && pa_operation_get_state(pa_op) == PA_OPERATION_DONE)) {
-            if(pa_op)
-                pa_operation_unref(pa_op);
-            pa_context_disconnect(ctx);
-            pa_context_unref(ctx);
+        if(pa_ready == 2 || (state == 1 && pa_op && pa_operation_get_state(pa_op) == PA_OPERATION_DONE))
             break;
-        }
 
         pa_mainloop_iterate(main_loop, 1, NULL);
     }
 
+    done:
+    if(pa_op)
+        pa_operation_unref(pa_op);
+    pa_context_disconnect(ctx);
+    pa_context_unref(ctx);
     pa_mainloop_free(main_loop);
     return audio_devices;
 }

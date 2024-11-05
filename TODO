@@ -178,6 +178,10 @@ Default to hevc if capture size is larger than 4096 in width or height.
 
 Set low latency mode on vulkan encoding.
 
-Support pipewire audio capture which also allows capturing audio from a single application.
+Support pipewire audio capture which also allows capturing audio from a single application. This can also be done with pulseaudio by creating a virtual sink:
+    pactl load-module module-combine-sink sink_name=gsr2 slaves=$(pactl get-default-sink) sink_properties=device.description="gsr"
+    pactl move-sink-input 2944 gsr2 # 2944 comes from 'pactl list sink-inputs'
+    and then record gsr2.monitor.
+    Or use pa_stream_set_monitor_stream, which also takes the sink-input as input. However need to track when the sink disconnects to mute and then reconnect again.
 
 Support recording/replay/livestreaming at the same time by allowing commands to be run on an existing gpu screen recorder instance.

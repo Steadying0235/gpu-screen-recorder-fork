@@ -223,7 +223,7 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
     if(wayland) {
         self->wayland.dpy = wl_display_connect(NULL);
         if(!self->wayland.dpy) {
-            fprintf(stderr, "gsr error: gsr_egl_create_window failed: wl_display_connect failed\n");
+            fprintf(stderr, "gsr error: gsr_egl_create_window failed: failed to connect to the Wayland server\n");
             goto fail;
         }
 

@@ -812,9 +812,9 @@ static void open_video_software(AVCodecContext *codec_context, VideoQuality vide
     if(bitrate_mode == BitrateMode::QP)
         video_software_set_qp(codec_context, video_quality, hdr, &options);
 
-    av_dict_set(&options, "preset", "fast", 0);
+    av_dict_set(&options, "preset", "veryfast", 0);
+    av_dict_set(&options, "tune", "film", 0);
     dict_set_profile(codec_context, GSR_GPU_VENDOR_INTEL, color_depth, &options);
-    av_dict_set(&options, "tune", "zerolatency", 0);
 
     if(codec_context->codec_id == AV_CODEC_ID_H264) {
         av_dict_set(&options, "coder", "cabac", 0); // TODO: cavlc is faster than cabac but worse compression. Which to use?

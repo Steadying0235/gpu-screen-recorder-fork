@@ -71,17 +71,6 @@ static uint32_t x11_output_get_connector_id(Display *dpy, RROutput output, Atom 
     return result;
 }
 
-static const XRRModeInfo* get_current_mode_info(const XRRScreenResources *screen_res, const XRROutputInfo *out_info, const RRMode current_mode) {
-    for(int i = 0; i < out_info->nmode; ++i) {
-        if(out_info->modes[i] == current_mode) {
-            const XRRModeInfo *mode_info = get_mode_info(screen_res, out_info->modes[i]);
-            if(mode_info)
-                return mode_info;
-        }
-    }
-    return NULL;
-}
-
 static vec2i get_monitor_size_rotated(int width, int height, gsr_monitor_rotation rotation) {
     vec2i size = { .x = width, .y = height };
     if(rotation == GSR_MONITOR_ROT_90 || rotation == GSR_MONITOR_ROT_270) {
@@ -109,14 +98,11 @@ void for_each_active_monitor_output_x11_not_cached(Display *display, active_moni
                 // (xrandr --output DP-1 --scale 1.5). Normally this is not an issue for x11 applications, but gpu screen recorder captures the drm framebuffer
                 // instead of x11 api. This drm framebuffer which doesn't increase in size when using xrandr scaling.
                 // Maybe a better option would be to get the drm crtc size instead.
-                const XRRModeInfo *current_mode_info = get_current_mode_info(screen_res, out_info, crt_info->mode);
-                if(!current_mode_info)
-                    current_mode_info = get_mode_info(screen_res, crt_info->mode);
-
-                if(current_mode_info && out_info->nameLen < (int)sizeof(display_name)) {
+                const XRRModeInfo *mode_info = get_mode_info(screen_res, crt_info->mode);
+                if(mode_info && out_info->nameLen < (int)sizeof(display_name)) {
                     snprintf(display_name, sizeof(display_name), "%.*s", (int)out_info->nameLen, out_info->name);
                     const gsr_monitor_rotation rotation = x11_rotation_to_gsr_rotation(crt_info->rotation);
-                    const vec2i monitor_size = get_monitor_size_rotated(current_mode_info->width, current_mode_info->height, rotation);
+                    const vec2i monitor_size = get_monitor_size_rotated(mode_info->width, mode_info->height, rotation);
 
                     const gsr_monitor monitor = {
                         .name = display_name,

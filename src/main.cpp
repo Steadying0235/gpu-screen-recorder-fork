@@ -990,6 +990,8 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
 
     // TODO: Enable multipass
 
+    // TODO: Set "usage" option to "record"/"stream" and "content" option to "rendered" for vulkan encoding
+
     if(vendor == GSR_GPU_VENDOR_NVIDIA) {
         // TODO: These dont seem to be necessary
         // av_dict_set_int(&options, "zerolatency", 1, 0);
@@ -1062,7 +1064,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr|cbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [--version] [-h|--help]\n", program_name);
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-aa <application_name>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr|cbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [--version] [-h|--help]\n", program_name);
 }
 
 // TODO: Update with portal info
@@ -1100,6 +1102,15 @@ static void usage_full() {
     fprintf(stderr, "        If the audio device is an empty string then the audio device is ignored.\n");
     fprintf(stderr, "        Optional, no audio track is added by default.\n");
     fprintf(stderr, "\n");
+#ifdef GSR_APP_AUDIO
+    fprintf(stderr, "  -aa   Audio device to record from (pulse audio device). Can be specified multiple times. Each time this is specified a new audio track is added for the specified audio device.\n");
+    fprintf(stderr, "        A name can be given to the audio input device by prefixing the audio input with <name>/, for example \"dummy/alsa_output.pci-0000_00_1b.0.analog-stereo.monitor\".\n");
+    fprintf(stderr, "        Multiple audio devices can be merged into one audio track by using \"|\" as a separator into one -a argument, for example: -a \"alsa_output1|alsa_output2\".\n");
+    fprintf(stderr, "        The audio device can also be \"default_output\" in which case the default output device is used, or \"default_input\" in which case the default input device is used.\n");
+    fprintf(stderr, "        If the audio device is an empty string then the audio device is ignored.\n");
+    fprintf(stderr, "        Optional, no audio track is added by default.\n");
+    fprintf(stderr, "\n");
+#endif
     fprintf(stderr, "  -q    Video quality. Should be either 'medium', 'high', 'very_high' or 'ultra' when using '-bm qp' or '-bm vbr' options, and '-bm qp' is the default option used.\n");
     fprintf(stderr, "        'high' is the recommended option when live streaming or when you have a slower harddrive.\n");
     fprintf(stderr, "        When using '-bm cbr' option then this is option is instead used to specify the video bitrate in kbps.\n");
@@ -2120,7 +2131,7 @@ static gsr_capture* create_capture_impl(std::string &window_str, vec2i output_re
         if(!capture)
             _exit(1);
 #else
-        fprintf(stderr, "Error: option '-w portal' used but GPU Screen Recorder was compiled without desktop portal support\n");
+        fprintf(stderr, "Error: option '-w portal' used but GPU Screen Recorder was compiled without desktop portal support. Please recompile GPU Screen recorder with the -Dportal=true option\n");
         _exit(2);
 #endif
     } else if(contains_non_hex_number(window_str.c_str())) {
@@ -2307,8 +2318,8 @@ static std::vector<MergedAudioInputs> parse_audio_inputs(const AudioDevices &aud
                     fprintf(stderr, "    default_output (Default output)\n");
                 if(!audio_devices.default_input.empty())
                     fprintf(stderr, "    default_input (Default input)\n");
-                for(const auto &audio_input : audio_devices.audio_inputs) {
-                    fprintf(stderr, "    %s (%s)\n", audio_input.name.c_str(), audio_input.description.c_str());
+                for(const auto &audio_device_input : audio_devices.audio_inputs) {
+                    fprintf(stderr, "    %s (%s)\n", audio_device_input.name.c_str(), audio_device_input.description.c_str());
                 }
                 _exit(2);
             }

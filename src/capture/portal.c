@@ -3,7 +3,7 @@
 #include "../../include/egl.h"
 #include "../../include/utils.h"
 #include "../../include/dbus.h"
-#include "../../include/pipewire.h"
+#include "../../include/pipewire_video.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -20,9 +20,9 @@ typedef struct {
     gsr_dbus dbus;
     char *session_handle;
 
-    gsr_pipewire pipewire;
+    gsr_pipewire_video pipewire;
     vec2i capture_size;
-    gsr_pipewire_dmabuf_data dmabuf_data[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
+    gsr_pipewire_video_dmabuf_data dmabuf_data[GSR_PIPEWIRE_VIDEO_DMABUF_MAX_PLANES];
     int num_dmabuf_data;
 
     AVCodecContext *video_codec_context;
@@ -57,7 +57,7 @@ static void gsr_capture_portal_stop(gsr_capture_portal *self) {
 
     gsr_capture_portal_cleanup_plane_fds(self);
 
-    gsr_pipewire_deinit(&self->pipewire);
+    gsr_pipewire_video_deinit(&self->pipewire);
 
     if(self->session_handle) {
         free(self->session_handle);
@@ -233,8 +233,8 @@ static int gsr_capture_portal_setup_dbus(gsr_capture_portal *self, int *pipewire
 }
 
 static bool gsr_capture_portal_get_frame_dimensions(gsr_capture_portal *self) {
-    gsr_pipewire_region region = {0, 0, 0, 0};
-    gsr_pipewire_region cursor_region = {0, 0, 0, 0};
+    gsr_pipewire_video_region region = {0, 0, 0, 0};
+    gsr_pipewire_video_region cursor_region = {0, 0, 0, 0};
     fprintf(stderr, "gsr info: gsr_capture_portal_start: waiting for pipewire negotiation\n");
 
     const double start_time = clock_get_monotonic_seconds();
@@ -242,7 +242,7 @@ static bool gsr_capture_portal_get_frame_dimensions(gsr_capture_portal *self) {
         bool uses_external_image = false;
         uint32_t fourcc = 0;
         uint64_t modifiers = 0;
-        if(gsr_pipewire_map_texture(&self->pipewire, self->texture_map, &region, &cursor_region, self->dmabuf_data, &self->num_dmabuf_data, &fourcc, &modifiers, &uses_external_image)) {
+        if(gsr_pipewire_video_map_texture(&self->pipewire, self->texture_map, &region, &cursor_region, self->dmabuf_data, &self->num_dmabuf_data, &fourcc, &modifiers, &uses_external_image)) {
             gsr_capture_portal_cleanup_plane_fds(self);
             self->capture_size.x = region.width;
             self->capture_size.y = region.height;
@@ -285,7 +285,7 @@ static int gsr_capture_portal_start(gsr_capture *cap, AVCodecContext *video_code
     fprintf(stderr, "gsr info: gsr_capture_portal_start: setting up pipewire\n");
     /* TODO: support hdr when pipewire supports it */
     /* gsr_pipewire closes the pipewire fd, even on failure */
-    if(!gsr_pipewire_init(&self->pipewire, pipewire_fd, pipewire_node, video_codec_context->framerate.num, self->params.record_cursor, self->params.egl)) {
+    if(!gsr_pipewire_video_init(&self->pipewire, pipewire_fd, pipewire_node, video_codec_context->framerate.num, self->params.record_cursor, self->params.egl)) {
         fprintf(stderr, "gsr error: gsr_capture_portal_start: failed to setup pipewire with fd: %d, node: %" PRIu32 "\n", pipewire_fd, pipewire_node);
         gsr_capture_portal_stop(self);
         return -1;
@@ -327,12 +327,12 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
     gsr_capture_portal *self = cap->priv;
 
     /* TODO: Handle formats other than RGB(a) */
-    gsr_pipewire_region region = {0, 0, 0, 0};
-    gsr_pipewire_region cursor_region = {0, 0, 0, 0};
+    gsr_pipewire_video_region region = {0, 0, 0, 0};
+    gsr_pipewire_video_region cursor_region = {0, 0, 0, 0};
     uint32_t pipewire_fourcc = 0;
     uint64_t pipewire_modifiers = 0;
     bool using_external_image = false;
-    if(gsr_pipewire_map_texture(&self->pipewire, self->texture_map, &region, &cursor_region, self->dmabuf_data, &self->num_dmabuf_data, &pipewire_fourcc, &pipewire_modifiers, &using_external_image)) {
+    if(gsr_pipewire_video_map_texture(&self->pipewire, self->texture_map, &region, &cursor_region, self->dmabuf_data, &self->num_dmabuf_data, &pipewire_fourcc, &pipewire_modifiers, &using_external_image)) {
         if(region.width != self->capture_size.x || region.height != self->capture_size.y) {
             self->capture_size.x = region.width;
             self->capture_size.y = region.height;
@@ -420,12 +420,12 @@ static bool gsr_capture_portal_uses_external_image(gsr_capture *cap) {
 
 static bool gsr_capture_portal_is_damaged(gsr_capture *cap) {
     gsr_capture_portal *self = cap->priv;
-    return gsr_pipewire_is_damaged(&self->pipewire);
+    return gsr_pipewire_video_is_damaged(&self->pipewire);
 }
 
 static void gsr_capture_portal_clear_damage(gsr_capture *cap) {
     gsr_capture_portal *self = cap->priv;
-    gsr_pipewire_clear_damage(&self->pipewire);
+    gsr_pipewire_video_clear_damage(&self->pipewire);
 }
 
 static void gsr_capture_portal_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {

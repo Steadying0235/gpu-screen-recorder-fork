@@ -57,20 +57,32 @@ dep = [
     dependency('wayland-client'),
 ]
 
+uses_pipewire = false
+
 if get_option('portal') == true
     src += [
         'src/capture/portal.c',
         'src/dbus.c',
-        'src/pipewire.c',
+        'src/pipewire_video.c',
     ]
+    dep += dependency('dbus-1')
+    add_project_arguments('-DGSR_PORTAL', language : ['c', 'cpp'])
+    uses_pipewire = true
+endif
 
+if get_option('app_audio') == true
+    src += [
+        'src/pipewire_audio.c',
+    ]
+    add_project_arguments('-DGSR_APP_AUDIO', language : ['c', 'cpp'])
+    uses_pipewire = true
+endif
+
+if uses_pipewire == true
     dep += [
-        dependency('dbus-1'),
         dependency('libpipewire-0.3'),
         dependency('libspa-0.2'),
     ]
-
-    add_project_arguments('-DGSR_PORTAL', language : ['c', 'cpp'])
 endif
 
 add_project_arguments('-DGSR_VERSION="' + meson.project_version() + '"', language: ['c', 'cpp'])

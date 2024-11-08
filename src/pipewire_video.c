@@ -1,4 +1,4 @@
-#include "../include/pipewire.h"
+#include "../include/pipewire_video.h"
 #include "../include/egl.h"
 #include "../include/utils.h"
 
@@ -13,7 +13,7 @@
 
 /* This code is partially based on xr-video-player pipewire implementation which is based on obs-studio's pipewire implementation */
 
-/* TODO: Make gsr_pipewire_init asynchronous */
+/* TODO: Make gsr_pipewire_video_init asynchronous */
 /* TODO: Support 10-bit capture (hdr) when pipewire supports it */
 /* TODO: Test all of the image formats */
 
@@ -25,12 +25,12 @@
     (sizeof(struct spa_meta_cursor) + sizeof(struct spa_meta_bitmap) + \
      width * height * 4)
 
-static bool parse_pw_version(gsr_pipewire_data_version *dst, const char *version) {
+static bool parse_pw_version(gsr_pipewire_video_data_version *dst, const char *version) {
     const int n_matches = sscanf(version, "%d.%d.%d", &dst->major, &dst->minor, &dst->micro);
     return n_matches == 3;
 }
 
-static bool check_pw_version(const gsr_pipewire_data_version *pw_version, int major, int minor, int micro) {
+static bool check_pw_version(const gsr_pipewire_video_data_version *pw_version, int major, int minor, int micro) {
     if (pw_version->major != major)
         return pw_version->major > major;
     if (pw_version->minor != minor)
@@ -38,7 +38,7 @@ static bool check_pw_version(const gsr_pipewire_data_version *pw_version, int ma
     return pw_version->micro >= micro;
 }
 
-static void update_pw_versions(gsr_pipewire *self, const char *version) {
+static void update_pw_versions(gsr_pipewire_video *self, const char *version) {
     fprintf(stderr, "gsr info: pipewire: server version: %s\n", version);
     fprintf(stderr, "gsr info: pipewire: library version: %s\n", pw_get_library_version());
     fprintf(stderr, "gsr info: pipewire: header version: %s\n", pw_get_headers_version());
@@ -47,18 +47,18 @@ static void update_pw_versions(gsr_pipewire *self, const char *version) {
 }
 
 static void on_core_info_cb(void *user_data, const struct pw_core_info *info) {
-    gsr_pipewire *self = user_data;
+    gsr_pipewire_video *self = user_data;
     update_pw_versions(self, info->version);
 }
 
 static void on_core_error_cb(void *user_data, uint32_t id, int seq, int res, const char *message) {
-    gsr_pipewire *self = user_data;
+    gsr_pipewire_video *self = user_data;
     fprintf(stderr, "gsr error: pipewire: error id:%u seq:%d res:%d: %s\n", id, seq, res, message);
     pw_thread_loop_signal(self->thread_loop, false);
 }
 
 static void on_core_done_cb(void *user_data, uint32_t id, int seq) {
-    gsr_pipewire *self = user_data;
+    gsr_pipewire_video *self = user_data;
     if (id == PW_ID_CORE && self->server_version_sync == seq)
         pw_thread_loop_signal(self->thread_loop, false);
 }
@@ -86,7 +86,7 @@ static const struct pw_core_events core_events = {
 };
 
 static void on_process_cb(void *user_data) {
-    gsr_pipewire *self = user_data;
+    gsr_pipewire_video *self = user_data;
     struct spa_meta_cursor *cursor = NULL;
     //struct spa_meta *video_damage = NULL;
 
@@ -122,8 +122,8 @@ static void on_process_cb(void *user_data) {
         }
 
         self->dmabuf_num_planes = buffer->n_datas;
-        if(self->dmabuf_num_planes > GSR_PIPEWIRE_DMABUF_MAX_PLANES)
-            self->dmabuf_num_planes = GSR_PIPEWIRE_DMABUF_MAX_PLANES;
+        if(self->dmabuf_num_planes > GSR_PIPEWIRE_VIDEO_DMABUF_MAX_PLANES)
+            self->dmabuf_num_planes = GSR_PIPEWIRE_VIDEO_DMABUF_MAX_PLANES;
 
         for(size_t i = 0; i < self->dmabuf_num_planes; ++i) {
             self->dmabuf_data[i].fd = dup(buffer->datas[i].fd);
@@ -206,7 +206,7 @@ read_metadata:
 }
 
 static void on_param_changed_cb(void *user_data, uint32_t id, const struct spa_pod *param) {
-    gsr_pipewire *self = user_data;
+    gsr_pipewire_video *self = user_data;
 
     if (!param || id != SPA_PARAM_Format)
         return;
@@ -276,7 +276,7 @@ static void on_param_changed_cb(void *user_data, uint32_t id, const struct spa_p
 
 static void on_state_changed_cb(void *user_data, enum pw_stream_state old, enum pw_stream_state state, const char *error) {
     (void)old;
-    gsr_pipewire *self = user_data;
+    gsr_pipewire_video *self = user_data;
 
     fprintf(stderr, "gsr info: pipewire: stream %p state: \"%s\" (error: %s)\n",
          (void*)self->stream, pw_stream_state_as_string(state),
@@ -291,7 +291,7 @@ static const struct pw_stream_events stream_events = {
 };
 
 static inline struct spa_pod *build_format(struct spa_pod_builder *b,
-                       const gsr_pipewire_video_info *ovi,
+                       const gsr_pipewire_video_video_info *ovi,
                        uint32_t format, const uint64_t *modifiers,
                        size_t modifier_count)
 {
@@ -358,13 +358,13 @@ static const enum spa_video_format video_formats[] = {
     SPA_VIDEO_FORMAT_RGB,
 };
 
-static bool gsr_pipewire_build_format_params(gsr_pipewire *self, struct spa_pod_builder *pod_builder, struct spa_pod **params, uint32_t *num_params) {
+static bool gsr_pipewire_video_build_format_params(gsr_pipewire_video *self, struct spa_pod_builder *pod_builder, struct spa_pod **params, uint32_t *num_params) {
     *num_params = 0;
 
     if(!check_pw_version(&self->server_version, 0, 3, 33))
         return false;
 
-    for(size_t i = 0; i < GSR_PIPEWIRE_NUM_VIDEO_FORMATS; i++) {
+    for(size_t i = 0; i < GSR_PIPEWIRE_VIDEO_NUM_VIDEO_FORMATS; i++) {
         if(self->supported_video_formats[i].modifiers_size == 0)
             continue;
         params[i] = build_format(pod_builder, &self->video_info, self->supported_video_formats[i].format, self->modifiers + self->supported_video_formats[i].modifiers_index, self->supported_video_formats[i].modifiers_size);
@@ -376,15 +376,15 @@ static bool gsr_pipewire_build_format_params(gsr_pipewire *self, struct spa_pod_
 
 static void renegotiate_format(void *data, uint64_t expirations) {
     (void)expirations;
-    gsr_pipewire *self = (gsr_pipewire*)data;
+    gsr_pipewire_video *self = (gsr_pipewire_video*)data;
 
     pw_thread_loop_lock(self->thread_loop);
 
-    struct spa_pod *params[GSR_PIPEWIRE_NUM_VIDEO_FORMATS];
+    struct spa_pod *params[GSR_PIPEWIRE_VIDEO_NUM_VIDEO_FORMATS];
     uint32_t num_video_formats = 0;
     uint8_t params_buffer[2048];
     struct spa_pod_builder pod_builder = SPA_POD_BUILDER_INIT(params_buffer, sizeof(params_buffer));
-    if (!gsr_pipewire_build_format_params(self, &pod_builder, params, &num_video_formats)) {
+    if (!gsr_pipewire_video_build_format_params(self, &pod_builder, params, &num_video_formats)) {
         pw_thread_loop_unlock(self->thread_loop);
         return;
     }
@@ -393,7 +393,7 @@ static void renegotiate_format(void *data, uint64_t expirations) {
     pw_thread_loop_unlock(self->thread_loop);
 }
 
-static bool spa_video_format_get_modifiers(gsr_pipewire *self, const enum spa_video_format format, uint64_t *modifiers, int32_t max_modifiers, int32_t *num_modifiers) {
+static bool spa_video_format_get_modifiers(gsr_pipewire_video *self, const enum spa_video_format format, uint64_t *modifiers, int32_t max_modifiers, int32_t *num_modifiers) {
     *num_modifiers = 0;
 
     if(max_modifiers == 0) {
@@ -430,36 +430,36 @@ static bool spa_video_format_get_modifiers(gsr_pipewire *self, const enum spa_vi
     return true;
 }
 
-static void gsr_pipewire_init_modifiers(gsr_pipewire *self) {
-    for(size_t i = 0; i < GSR_PIPEWIRE_NUM_VIDEO_FORMATS; i++) {
+static void gsr_pipewire_video_init_modifiers(gsr_pipewire_video *self) {
+    for(size_t i = 0; i < GSR_PIPEWIRE_VIDEO_NUM_VIDEO_FORMATS; i++) {
         self->supported_video_formats[i].format = video_formats[i];
         int32_t num_modifiers = 0;
-        spa_video_format_get_modifiers(self, self->supported_video_formats[i].format, self->modifiers + self->num_modifiers, GSR_PIPEWIRE_MAX_MODIFIERS - self->num_modifiers, &num_modifiers);
+        spa_video_format_get_modifiers(self, self->supported_video_formats[i].format, self->modifiers + self->num_modifiers, GSR_PIPEWIRE_VIDEO_MAX_MODIFIERS - self->num_modifiers, &num_modifiers);
         self->supported_video_formats[i].modifiers_index = self->num_modifiers;
         self->supported_video_formats[i].modifiers_size = num_modifiers;
     }
 }
 
-static bool gsr_pipewire_setup_stream(gsr_pipewire *self) {
-    struct spa_pod *params[GSR_PIPEWIRE_NUM_VIDEO_FORMATS];
+static bool gsr_pipewire_video_setup_stream(gsr_pipewire_video *self) {
+    struct spa_pod *params[GSR_PIPEWIRE_VIDEO_NUM_VIDEO_FORMATS];
     uint32_t num_video_formats = 0;
     uint8_t params_buffer[2048];
     struct spa_pod_builder pod_builder = SPA_POD_BUILDER_INIT(params_buffer, sizeof(params_buffer));
 
     self->thread_loop = pw_thread_loop_new("PipeWire thread loop", NULL);
     if(!self->thread_loop) {
-        fprintf(stderr, "gsr error: gsr_pipewire_setup_stream: failed to create pipewire thread\n");
+        fprintf(stderr, "gsr error: gsr_pipewire_video_setup_stream: failed to create pipewire thread\n");
         goto error;
     }
 
     self->context = pw_context_new(pw_thread_loop_get_loop(self->thread_loop), NULL, 0);
     if(!self->context) {
-        fprintf(stderr, "gsr error: gsr_pipewire_setup_stream: failed to create pipewire context\n");
+        fprintf(stderr, "gsr error: gsr_pipewire_video_setup_stream: failed to create pipewire context\n");
         goto error;
     }
 
     if(pw_thread_loop_start(self->thread_loop) < 0) {
-        fprintf(stderr, "gsr error: gsr_pipewire_setup_stream: failed to start thread\n");
+        fprintf(stderr, "gsr error: gsr_pipewire_video_setup_stream: failed to start thread\n");
         goto error;
     }
 
@@ -469,20 +469,20 @@ static bool gsr_pipewire_setup_stream(gsr_pipewire *self) {
     self->core = pw_context_connect_fd(self->context, fcntl(self->fd, F_DUPFD_CLOEXEC, 5), NULL, 0);
     if(!self->core) {
         pw_thread_loop_unlock(self->thread_loop);
-        fprintf(stderr, "gsr error: gsr_pipewire_setup_stream: failed to connect to fd %d\n", self->fd);
+        fprintf(stderr, "gsr error: gsr_pipewire_video_setup_stream: failed to connect to fd %d\n", self->fd);
         goto error;
     }
 
     // TODO: Error check
     pw_core_add_listener(self->core, &self->core_listener, &core_events, self);
 
-    gsr_pipewire_init_modifiers(self);
+    gsr_pipewire_video_init_modifiers(self);
 
     // TODO: Cleanup?
     self->reneg = pw_loop_add_event(pw_thread_loop_get_loop(self->thread_loop), renegotiate_format, self);
     if(!self->reneg) {
         pw_thread_loop_unlock(self->thread_loop);
-        fprintf(stderr, "gsr error: gsr_pipewire_setup_stream: pw_loop_add_event failed\n");
+        fprintf(stderr, "gsr error: gsr_pipewire_video_setup_stream: pw_loop_add_event failed\n");
         goto error;
     }
 
@@ -495,14 +495,14 @@ static bool gsr_pipewire_setup_stream(gsr_pipewire *self) {
                           PW_KEY_MEDIA_ROLE, "Screen", NULL));
     if(!self->stream) {
         pw_thread_loop_unlock(self->thread_loop);
-        fprintf(stderr, "gsr error: gsr_pipewire_setup_stream: failed to create stream\n");
+        fprintf(stderr, "gsr error: gsr_pipewire_video_setup_stream: failed to create stream\n");
         goto error;
     }
     pw_stream_add_listener(self->stream, &self->stream_listener, &stream_events, self);
 
-    if(!gsr_pipewire_build_format_params(self, &pod_builder, params, &num_video_formats)) {
+    if(!gsr_pipewire_video_build_format_params(self, &pod_builder, params, &num_video_formats)) {
         pw_thread_loop_unlock(self->thread_loop);
-        fprintf(stderr, "gsr error: gsr_pipewire_setup_stream: failed to build format params\n");
+        fprintf(stderr, "gsr error: gsr_pipewire_video_setup_stream: failed to build format params\n");
         goto error;
     }
 
@@ -512,7 +512,7 @@ static bool gsr_pipewire_setup_stream(gsr_pipewire *self) {
         num_video_formats) < 0)
     {
         pw_thread_loop_unlock(self->thread_loop);
-        fprintf(stderr, "gsr error: gsr_pipewire_setup_stream: failed to connect stream\n");
+        fprintf(stderr, "gsr error: gsr_pipewire_video_setup_stream: failed to connect stream\n");
         goto error;
     }
 
@@ -549,7 +549,7 @@ static bool gsr_pipewire_setup_stream(gsr_pipewire *self) {
 }
 
 static int pw_init_counter = 0;
-bool gsr_pipewire_init(gsr_pipewire *self, int pipewire_fd, uint32_t pipewire_node, int fps, bool capture_cursor, gsr_egl *egl) {
+bool gsr_pipewire_video_init(gsr_pipewire_video *self, int pipewire_fd, uint32_t pipewire_node, int fps, bool capture_cursor, gsr_egl *egl) {
     if(pw_init_counter == 0)
         pw_init(NULL, NULL);
     ++pw_init_counter;
@@ -559,8 +559,8 @@ bool gsr_pipewire_init(gsr_pipewire *self, int pipewire_fd, uint32_t pipewire_no
     self->fd = pipewire_fd;
     self->node = pipewire_node;
     if(pthread_mutex_init(&self->mutex, NULL) != 0) {
-        fprintf(stderr, "gsr error: gsr_pipewire_init: failed to initialize mutex\n");
-        gsr_pipewire_deinit(self);
+        fprintf(stderr, "gsr error: gsr_pipewire_video_init: failed to initialize mutex\n");
+        gsr_pipewire_video_deinit(self);
         return false;
     }
     self->mutex_initialized = true;
@@ -568,15 +568,15 @@ bool gsr_pipewire_init(gsr_pipewire *self, int pipewire_fd, uint32_t pipewire_no
     self->video_info.fps_den = 1;
     self->cursor.visible = capture_cursor;
     
-    if(!gsr_pipewire_setup_stream(self)) {
-        gsr_pipewire_deinit(self);
+    if(!gsr_pipewire_video_setup_stream(self)) {
+        gsr_pipewire_video_deinit(self);
         return false;
     }
 
     return true;
 }
 
-void gsr_pipewire_deinit(gsr_pipewire *self) {
+void gsr_pipewire_video_deinit(gsr_pipewire_video *self) {
     if(self->thread_loop) {
         //pw_thread_loop_wait(self->thread_loop);
         pw_thread_loop_stop(self->thread_loop);
@@ -636,7 +636,7 @@ void gsr_pipewire_deinit(gsr_pipewire *self) {
     }
 }
 
-static EGLImage gsr_pipewire_create_egl_image(gsr_pipewire *self, const int *fds, const uint32_t *offsets, const uint32_t *pitches, const uint64_t *modifiers, bool use_modifiers) {
+static EGLImage gsr_pipewire_video_create_egl_image(gsr_pipewire_video *self, const int *fds, const uint32_t *offsets, const uint32_t *pitches, const uint64_t *modifiers, bool use_modifiers) {
     intptr_t img_attr[44];
     setup_dma_buf_attrs(img_attr, spa_video_format_to_drm_format(self->format.info.raw.format), self->format.info.raw.size.width, self->format.info.raw.size.height,
         fds, offsets, pitches, modifiers, self->dmabuf_num_planes, use_modifiers);
@@ -650,11 +650,11 @@ static EGLImage gsr_pipewire_create_egl_image(gsr_pipewire *self, const int *fds
     return image;
 }
 
-static EGLImage gsr_pipewire_create_egl_image_with_fallback(gsr_pipewire *self) {
-    int fds[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
-    uint32_t offsets[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
-    uint32_t pitches[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
-    uint64_t modifiers[GSR_PIPEWIRE_DMABUF_MAX_PLANES];
+static EGLImage gsr_pipewire_video_create_egl_image_with_fallback(gsr_pipewire_video *self) {
+    int fds[GSR_PIPEWIRE_VIDEO_DMABUF_MAX_PLANES];
+    uint32_t offsets[GSR_PIPEWIRE_VIDEO_DMABUF_MAX_PLANES];
+    uint32_t pitches[GSR_PIPEWIRE_VIDEO_DMABUF_MAX_PLANES];
+    uint64_t modifiers[GSR_PIPEWIRE_VIDEO_DMABUF_MAX_PLANES];
     for(size_t i = 0; i < self->dmabuf_num_planes; ++i) {
         fds[i] = self->dmabuf_data[i].fd;
         offsets[i] = self->dmabuf_data[i].offset;
@@ -664,19 +664,19 @@ static EGLImage gsr_pipewire_create_egl_image_with_fallback(gsr_pipewire *self) 
 
     EGLImage image = NULL;
     if(self->no_modifiers_fallback) {
-        image = gsr_pipewire_create_egl_image(self, fds, offsets, pitches, modifiers, false);
+        image = gsr_pipewire_video_create_egl_image(self, fds, offsets, pitches, modifiers, false);
     } else {
-        image = gsr_pipewire_create_egl_image(self, fds, offsets, pitches, modifiers, true);
+        image = gsr_pipewire_video_create_egl_image(self, fds, offsets, pitches, modifiers, true);
         if(!image) {
-            fprintf(stderr, "gsr error: gsr_pipewire_create_egl_image_with_fallback: failed to create egl image with modifiers, trying without modifiers\n");
+            fprintf(stderr, "gsr error: gsr_pipewire_video_create_egl_image_with_fallback: failed to create egl image with modifiers, trying without modifiers\n");
             self->no_modifiers_fallback = true;
-            image = gsr_pipewire_create_egl_image(self, fds, offsets, pitches, modifiers, false);
+            image = gsr_pipewire_video_create_egl_image(self, fds, offsets, pitches, modifiers, false);
         }
     }
     return image;
 }
 
-static bool gsr_pipewire_bind_image_to_texture(gsr_pipewire *self, EGLImage image, unsigned int texture_id, bool external_texture) {
+static bool gsr_pipewire_video_bind_image_to_texture(gsr_pipewire_video *self, EGLImage image, unsigned int texture_id, bool external_texture) {
     const int texture_target = external_texture ? GL_TEXTURE_EXTERNAL_OES : GL_TEXTURE_2D;
     while(self->egl->glGetError() != 0){}
     self->egl->glBindTexture(texture_target, texture_id);
@@ -686,19 +686,19 @@ static bool gsr_pipewire_bind_image_to_texture(gsr_pipewire *self, EGLImage imag
     return success;
 }
 
-static void gsr_pipewire_bind_image_to_texture_with_fallback(gsr_pipewire *self, gsr_texture_map texture_map, EGLImage image) {
+static void gsr_pipewire_video_bind_image_to_texture_with_fallback(gsr_pipewire_video *self, gsr_texture_map texture_map, EGLImage image) {
     if(self->external_texture_fallback) {
-        gsr_pipewire_bind_image_to_texture(self, image, texture_map.external_texture_id, true);
+        gsr_pipewire_video_bind_image_to_texture(self, image, texture_map.external_texture_id, true);
     } else {
-        if(!gsr_pipewire_bind_image_to_texture(self, image, texture_map.texture_id, false)) {
-            fprintf(stderr, "gsr error: gsr_pipewire_map_texture: failed to bind image to texture, trying with external texture\n");
+        if(!gsr_pipewire_video_bind_image_to_texture(self, image, texture_map.texture_id, false)) {
+            fprintf(stderr, "gsr error: gsr_pipewire_video_map_texture: failed to bind image to texture, trying with external texture\n");
             self->external_texture_fallback = true;
-            gsr_pipewire_bind_image_to_texture(self, image, texture_map.external_texture_id, true);
+            gsr_pipewire_video_bind_image_to_texture(self, image, texture_map.external_texture_id, true);
         }
     }
 }
 
-static void gsr_pipewire_update_cursor_texture(gsr_pipewire *self, gsr_texture_map texture_map) {
+static void gsr_pipewire_video_update_cursor_texture(gsr_pipewire_video *self, gsr_texture_map texture_map) {
     if(!self->cursor.data)
         return;
 
@@ -715,9 +715,9 @@ static void gsr_pipewire_update_cursor_texture(gsr_pipewire *self, gsr_texture_m
     self->cursor.data = NULL;
 }
 
-bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, gsr_pipewire_region *region, gsr_pipewire_region *cursor_region, gsr_pipewire_dmabuf_data *dmabuf_data, int *num_dmabuf_data, uint32_t *fourcc, uint64_t *modifiers, bool *using_external_image) {
-    for(int i = 0; i < GSR_PIPEWIRE_DMABUF_MAX_PLANES; ++i) {
-        memset(&dmabuf_data[i], 0, sizeof(gsr_pipewire_dmabuf_data));
+bool gsr_pipewire_video_map_texture(gsr_pipewire_video *self, gsr_texture_map texture_map, gsr_pipewire_video_region *region, gsr_pipewire_video_region *cursor_region, gsr_pipewire_video_dmabuf_data *dmabuf_data, int *num_dmabuf_data, uint32_t *fourcc, uint64_t *modifiers, bool *using_external_image) {
+    for(int i = 0; i < GSR_PIPEWIRE_VIDEO_DMABUF_MAX_PLANES; ++i) {
+        memset(&dmabuf_data[i], 0, sizeof(gsr_pipewire_video_dmabuf_data));
     }
     *num_dmabuf_data = 0;
     *using_external_image = self->external_texture_fallback;
@@ -730,14 +730,14 @@ bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, g
         return false;
     }
 
-    EGLImage image = gsr_pipewire_create_egl_image_with_fallback(self);
+    EGLImage image = gsr_pipewire_video_create_egl_image_with_fallback(self);
     if(image) {
-        gsr_pipewire_bind_image_to_texture_with_fallback(self, texture_map, image);
+        gsr_pipewire_video_bind_image_to_texture_with_fallback(self, texture_map, image);
         *using_external_image = self->external_texture_fallback;
         self->egl->eglDestroyImage(self->egl->egl_display, image);
     }
 
-    gsr_pipewire_update_cursor_texture(self, texture_map);
+    gsr_pipewire_video_update_cursor_texture(self, texture_map);
 
     region->x = 0;
     region->y = 0;
@@ -773,7 +773,7 @@ bool gsr_pipewire_map_texture(gsr_pipewire *self, gsr_texture_map texture_map, g
     return true;
 }
 
-bool gsr_pipewire_is_damaged(gsr_pipewire *self) {
+bool gsr_pipewire_video_is_damaged(gsr_pipewire_video *self) {
     bool damaged = false;
     pthread_mutex_lock(&self->mutex);
     damaged = self->damaged;
@@ -781,7 +781,7 @@ bool gsr_pipewire_is_damaged(gsr_pipewire *self) {
     return damaged;
 }
 
-void gsr_pipewire_clear_damage(gsr_pipewire *self) {
+void gsr_pipewire_video_clear_damage(gsr_pipewire_video *self) {
     pthread_mutex_lock(&self->mutex);
     self->damaged = false;
     pthread_mutex_unlock(&self->mutex);

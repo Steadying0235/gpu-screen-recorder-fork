@@ -1,0 +1,4 @@
+#ifndef GSR_PIPEWIRE_AUDIO_H
+#define GSR_PIPEWIRE_AUDIO_H
+
+#endif /* GSR_PIPEWIRE_AUDIO_H */

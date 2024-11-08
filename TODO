@@ -105,8 +105,6 @@ Use lanczos resampling for better scaling quality. Lanczos resampling can also b
 
 Flac is disabled because the frame sizes are too large which causes big audio/video desync.
 
-Add 10-bit capture option. This is good because it reduces banding and quality in very dark areas while reducing the file size compared to doing the same thing with 8-bits.
-
 Enable b-frames.
 
 Support vfr matching games exact fps all the time. On x11 use damage tracking, on wayland? maybe there is drm plane damage tracking. But that may not be accurate as the compositor may update it every monitor hz anyways. On wayland maybe only support it for desktop portal + pipewire capture.

@@ -638,11 +638,11 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         // the cursor plane is not available when the cursor is on the monitor controlled by the nvidia device.
         // TODO: This doesn't work properly with software cursor on x11 since it will draw the x11 cursor on top of the cursor already in the framebuffer.
         // Detect if software cursor is used on x11 somehow.
-        if(cursor_drm_fd) {
-            render_drm_cursor(self, color_conversion, cursor_drm_fd, target_pos, texture_rotation, output_size);
-        } else if(self->is_x11) {
+        if(self->is_x11) {
             const vec2i cursor_monitor_offset = self->capture_pos;
             render_x11_cursor(self, color_conversion, cursor_monitor_offset, target_pos, output_size);
+        } else if(cursor_drm_fd) {
+            render_drm_cursor(self, color_conversion, cursor_drm_fd, target_pos, texture_rotation, output_size);
         }
     }
 

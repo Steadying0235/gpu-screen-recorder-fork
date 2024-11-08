@@ -582,13 +582,14 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
             " If you are experience performance problems in the video then record a single window on X11 or use portal capture option instead\n");
     }
 
+    self->capture_size = rotate_capture_size_if_rotated(self, (vec2i){ drm_fd->src_w, drm_fd->src_h });
+
     const bool is_scaled = self->params.output_resolution.x > 0 && self->params.output_resolution.y > 0;
     vec2i output_size = is_scaled ? self->params.output_resolution : self->capture_size;
     output_size = scale_keep_aspect_ratio(self->capture_size, output_size);
 
     const float texture_rotation = monitor_rotation_to_radians(self->monitor_rotation);
     const vec2i target_pos = { max_int(0, frame->width / 2 - output_size.x / 2), max_int(0, frame->height / 2 - output_size.y / 2) };
-    self->capture_size = rotate_capture_size_if_rotated(self, (vec2i){ drm_fd->src_w, drm_fd->src_h });
     gsr_capture_kms_update_capture_size_change(self, color_conversion, target_pos, drm_fd);
 
     vec2i capture_pos = self->capture_pos;

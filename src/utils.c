@@ -71,6 +71,27 @@ static uint32_t x11_output_get_connector_id(Display *dpy, RROutput output, Atom 
     return result;
 }
 
+static const XRRModeInfo* get_current_mode_info(const XRRScreenResources *screen_res, const XRROutputInfo *out_info, const RRMode current_mode) {
+    for(int i = 0; i < out_info->nmode; ++i) {
+        if(out_info->modes[i] == current_mode) {
+            const XRRModeInfo *mode_info = get_mode_info(screen_res, out_info->modes[i]);
+            if(mode_info)
+                return mode_info;
+        }
+    }
+    return NULL;
+}
+
+static vec2i get_monitor_size_rotated(int width, int height, gsr_monitor_rotation rotation) {
+    vec2i size = { .x = width, .y = height };
+    if(rotation == GSR_MONITOR_ROT_90 || rotation == GSR_MONITOR_ROT_270) {
+        int tmp_x = size.x;
+        size.x = size.y;
+        size.y = tmp_x;
+    }
+    return size;
+}
+
 void for_each_active_monitor_output_x11_not_cached(Display *display, active_monitor_callback callback, void *userdata) {
     XRRScreenResources *screen_res = XRRGetScreenResources(display, DefaultRootWindow(display));
     if(!screen_res)
@@ -84,16 +105,26 @@ void for_each_active_monitor_output_x11_not_cached(Display *display, active_moni
         if(out_info && out_info->crtc && out_info->connection == RR_Connected) {
             XRRCrtcInfo *crt_info = XRRGetCrtcInfo(display, screen_res, out_info->crtc);
             if(crt_info && crt_info->mode) {
-                const XRRModeInfo *mode_info = get_mode_info(screen_res, crt_info->mode);
-                if(mode_info && out_info->nameLen < (int)sizeof(display_name)) {
+                // We want to use the current mode info width/height instead of crtc info width/height becuase crtc info is scaled if the monitor is scaled
+                // (xrandr --output DP-1 --scale 1.5). Normally this is not an issue for x11 applications, but gpu screen recorder captures the drm framebuffer
+                // instead of x11 api. This drm framebuffer which doesn't increase in size when using xrandr scaling.
+                // Maybe a better option would be to get the drm crtc size instead.
+                const XRRModeInfo *current_mode_info = get_current_mode_info(screen_res, out_info, crt_info->mode);
+                if(!current_mode_info)
+                    current_mode_info = get_mode_info(screen_res, crt_info->mode);
+
+                if(current_mode_info && out_info->nameLen < (int)sizeof(display_name)) {
                     snprintf(display_name, sizeof(display_name), "%.*s", (int)out_info->nameLen, out_info->name);
+                    const gsr_monitor_rotation rotation = x11_rotation_to_gsr_rotation(crt_info->rotation);
+                    const vec2i monitor_size = get_monitor_size_rotated(current_mode_info->width, current_mode_info->height, rotation);
+
                     const gsr_monitor monitor = {
                         .name = display_name,
                         .name_len = out_info->nameLen,
                         .pos = { .x = crt_info->x, .y = crt_info->y },
-                        .size = { .x = (int)crt_info->width, .y = (int)crt_info->height },
+                        .size = monitor_size,
                         .connector_id = x11_output_get_connector_id(display, screen_res->outputs[i], randr_connector_id_atom),
-                        .rotation = x11_rotation_to_gsr_rotation(crt_info->rotation),
+                        .rotation = rotation,
                         .monitor_identifier = out_info->crtc
                     };
                     callback(&monitor, userdata);

@@ -188,6 +188,7 @@ static void gsr_damage_on_output_change(gsr_damage *self, XEvent *xev) {
     if(!screen_res)
         return;
 
+    // TODO: What about scaled output? look at for_each_active_monitor_output_x11_not_cached
     XRROutputInfo *out_info = XRRGetOutputInfo(self->egl->x11.dpy, screen_res, rr_output_change_event->output);
     if(out_info && out_info->crtc && out_info->crtc == self->monitor.monitor_identifier) {
         XRRCrtcInfo *crtc_info = XRRGetCrtcInfo(self->egl->x11.dpy, screen_res, out_info->crtc);

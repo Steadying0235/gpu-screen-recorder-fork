@@ -185,3 +185,5 @@ Support pipewire audio capture which also allows capturing audio from a single a
 Support recording/replay/livestreaming at the same time by allowing commands to be run on an existing gpu screen recorder instance.
 
 Test if `xrandr --output DP-1 --scale 1.5` captures correct size on nvidia.
+
+Fix cursor position and scale when scaling x11 display.

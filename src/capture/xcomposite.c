@@ -281,7 +281,7 @@ static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_
         gsr_color_conversion_draw(color_conversion, window_texture_get_opengl_texture_id(&self->window_texture),
             target_pos, output_size,
             (vec2i){0, 0}, self->texture_size,
-            0.0f, false);
+            0.0f, false, GSR_SOURCE_COLOR_RGB);
     }
 
     if(self->params.record_cursor && self->cursor.visible) {
@@ -303,7 +303,7 @@ static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_
         gsr_color_conversion_draw(color_conversion, self->cursor.texture_id,
             cursor_pos, (vec2i){self->cursor.size.x * scale.x, self->cursor.size.y * scale.y},
             (vec2i){0, 0}, self->cursor.size,
-            0.0f, false);
+            0.0f, false, GSR_SOURCE_COLOR_RGB);
 
         self->params.egl->glDisable(GL_SCISSOR_TEST);
     }
@@ -312,11 +312,6 @@ static int gsr_capture_xcomposite_capture(gsr_capture *cap, AVFrame *frame, gsr_
     self->params.egl->glFinish();
 
     return 0;
-}
-
-static gsr_source_color gsr_capture_xcomposite_get_source_color(gsr_capture *cap) {
-    (void)cap;
-    return GSR_SOURCE_COLOR_RGB;
 }
 
 static uint64_t gsr_capture_xcomposite_get_window_id(gsr_capture *cap) {
@@ -358,7 +353,6 @@ gsr_capture* gsr_capture_xcomposite_create(const gsr_capture_xcomposite_params *
         .tick = gsr_capture_xcomposite_tick,
         .should_stop = gsr_capture_xcomposite_should_stop,
         .capture = gsr_capture_xcomposite_capture,
-        .get_source_color = gsr_capture_xcomposite_get_source_color,
         .uses_external_image = NULL,
         .get_window_id = gsr_capture_xcomposite_get_window_id,
         .destroy = gsr_capture_xcomposite_destroy,

@@ -377,7 +377,7 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
         gsr_color_conversion_draw(color_conversion, using_external_image ? self->texture_map.external_texture_id : self->texture_map.texture_id,
             target_pos, output_size,
             (vec2i){region.x, region.y}, self->capture_size,
-            0.0f, using_external_image);
+            0.0f, using_external_image, GSR_SOURCE_COLOR_RGB);
     }
 
     if(self->params.record_cursor && self->texture_map.cursor_texture_id > 0 && cursor_region.width > 0) {
@@ -396,7 +396,7 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
         gsr_color_conversion_draw(color_conversion, self->texture_map.cursor_texture_id,
             (vec2i){cursor_pos.x, cursor_pos.y}, (vec2i){cursor_region.width * scale.x, cursor_region.height * scale.y},
             (vec2i){0, 0}, (vec2i){cursor_region.width, cursor_region.height},
-            0.0f, false);
+            0.0f, false, GSR_SOURCE_COLOR_RGB);
         self->params.egl->glDisable(GL_SCISSOR_TEST);
     }
 
@@ -406,11 +406,6 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
     gsr_capture_portal_cleanup_plane_fds(self);
 
     return 0;
-}
-
-static gsr_source_color gsr_capture_portal_get_source_color(gsr_capture *cap) {
-    (void)cap;
-    return GSR_SOURCE_COLOR_RGB;
 }
 
 static bool gsr_capture_portal_uses_external_image(gsr_capture *cap) {
@@ -462,7 +457,6 @@ gsr_capture* gsr_capture_portal_create(const gsr_capture_portal_params *params) 
         .tick = NULL,
         .should_stop = NULL,
         .capture = gsr_capture_portal_capture,
-        .get_source_color = gsr_capture_portal_get_source_color,
         .uses_external_image = gsr_capture_portal_uses_external_image,
         .is_damaged = gsr_capture_portal_is_damaged,
         .clear_damage = gsr_capture_portal_clear_damage,

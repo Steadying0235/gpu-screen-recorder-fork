@@ -3318,7 +3318,6 @@ int main(int argc, char **argv) {
     memset(&color_conversion_params, 0, sizeof(color_conversion_params));
     color_conversion_params.color_range = color_range;
     color_conversion_params.egl = &egl;
-    color_conversion_params.source_color = gsr_capture_get_source_color(capture);
     color_conversion_params.load_external_image_shader = gsr_capture_uses_external_image(capture);
     gsr_video_encoder_get_textures(video_encoder, color_conversion_params.destination_textures, &color_conversion_params.num_destination_textures, &color_conversion_params.destination_color);
 

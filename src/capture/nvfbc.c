@@ -434,17 +434,12 @@ static int gsr_capture_nvfbc_capture(gsr_capture *cap, AVFrame *frame, gsr_color
     gsr_color_conversion_draw(color_conversion, self->setup_params.dwTextures[grab_params.dwTextureIndex],
         target_pos, (vec2i){output_size.x, output_size.y},
         (vec2i){0, 0}, frame_size,
-        0.0f, false);
+        0.0f, false, GSR_SOURCE_COLOR_BGR);
 
     self->params.egl->glFlush();
     self->params.egl->glFinish();
 
     return 0;
-}
-
-static gsr_source_color gsr_capture_nvfbc_get_source_color(gsr_capture *cap) {
-    (void)cap;
-    return GSR_SOURCE_COLOR_BGR;
 }
 
 static void gsr_capture_nvfbc_destroy(gsr_capture *cap, AVCodecContext *video_codec_context) {
@@ -492,7 +487,6 @@ gsr_capture* gsr_capture_nvfbc_create(const gsr_capture_nvfbc_params *params) {
         .tick = NULL,
         .should_stop = NULL,
         .capture = gsr_capture_nvfbc_capture,
-        .get_source_color = gsr_capture_nvfbc_get_source_color,
         .uses_external_image = NULL,
         .destroy = gsr_capture_nvfbc_destroy,
         .priv = cap_nvfbc

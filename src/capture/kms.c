@@ -507,7 +507,7 @@ static void render_drm_cursor(gsr_capture_kms *self, gsr_color_conversion *color
     gsr_color_conversion_draw(color_conversion, self->cursor_texture_id,
         cursor_pos, (vec2i){cursor_size.x * scale.x, cursor_size.y * scale.y},
         (vec2i){0, 0}, cursor_size,
-        texture_rotation, cursor_texture_id_is_external);
+        texture_rotation, cursor_texture_id_is_external, GSR_SOURCE_COLOR_RGB);
 
     self->params.egl->glDisable(GL_SCISSOR_TEST);
 }
@@ -534,7 +534,7 @@ static void render_x11_cursor(gsr_capture_kms *self, gsr_color_conversion *color
     gsr_color_conversion_draw(color_conversion, self->x11_cursor.texture_id,
         cursor_pos, (vec2i){self->x11_cursor.size.x * scale.x, self->x11_cursor.size.y * scale.y},
         (vec2i){0, 0}, self->x11_cursor.size,
-        0.0f, false);
+        0.0f, false, GSR_SOURCE_COLOR_RGB);
 
     self->params.egl->glDisable(GL_SCISSOR_TEST);
 }
@@ -629,7 +629,7 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         gsr_color_conversion_draw(color_conversion, self->external_texture_fallback ? self->external_input_texture_id : self->input_texture_id,
             target_pos, output_size,
             capture_pos, self->capture_size,
-            texture_rotation, self->external_texture_fallback);
+            texture_rotation, self->external_texture_fallback, GSR_SOURCE_COLOR_RGB);
     }
 
     if(self->params.record_cursor) {
@@ -659,11 +659,6 @@ static bool gsr_capture_kms_should_stop(gsr_capture *cap, bool *err) {
     if(err)
         *err = false;
     return false;
-}
-
-static gsr_source_color gsr_capture_kms_get_source_color(gsr_capture *cap) {
-    (void)cap;
-    return GSR_SOURCE_COLOR_RGB;
 }
 
 static bool gsr_capture_kms_uses_external_image(gsr_capture *cap) {
@@ -752,7 +747,6 @@ gsr_capture* gsr_capture_kms_create(const gsr_capture_kms_params *params) {
         //.tick = gsr_capture_kms_tick,
         .should_stop = gsr_capture_kms_should_stop,
         .capture = gsr_capture_kms_capture,
-        .get_source_color = gsr_capture_kms_get_source_color,
         .uses_external_image = gsr_capture_kms_uses_external_image,
         .set_hdr_metadata = gsr_capture_kms_set_hdr_metadata,
         //.is_damaged = gsr_capture_kms_is_damaged,

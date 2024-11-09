@@ -43,10 +43,12 @@ static bool gsr_cursor_set_from_x11_cursor_image(gsr_cursor *self, XFixesCursorI
                 *visible = true;
             }
 
-            *out++ = (unsigned)*in++ * 255/alpha;
-            *out++ = (unsigned)*in++ * 255/alpha;
-            *out++ = (unsigned)*in++ * 255/alpha;
-            *out++ = *in++;
+            out[0] = (float)in[2] * 255.0/(float)alpha;
+            out[1] = (float)in[1] * 255.0/(float)alpha;
+            out[2] = (float)in[0] * 255.0/(float)alpha;
+            out[3] = in[3];
+            out += 4;
+            in += 4;
         }
     }
 

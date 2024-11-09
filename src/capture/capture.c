@@ -34,10 +34,6 @@ int gsr_capture_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *
     return cap->capture(cap, frame, color_conversion);
 }
 
-gsr_source_color gsr_capture_get_source_color(gsr_capture *cap) {
-    return cap->get_source_color(cap);
-}
-
 bool gsr_capture_uses_external_image(gsr_capture *cap) {
     if(cap->uses_external_image)
         return cap->uses_external_image(cap);

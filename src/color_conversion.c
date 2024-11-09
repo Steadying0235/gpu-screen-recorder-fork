@@ -325,22 +325,22 @@ void gsr_color_conversion_deinit(gsr_color_conversion *self) {
     self->params.egl = NULL;
 }
 
-static void gsr_color_conversion_swizzle_texture_source(gsr_color_conversion *self) {
-    if(self->params.source_color == GSR_SOURCE_COLOR_BGR) {
-        const int swizzle_mask[] = { GL_BLUE, GL_GREEN, GL_RED, 1 };
+static void gsr_color_conversion_swizzle_texture_source(gsr_color_conversion *self, gsr_source_color source_color) {
+    if(source_color == GSR_SOURCE_COLOR_BGR) {
+        const int swizzle_mask[] = { GL_BLUE, GL_GREEN, GL_RED, GL_ALPHA };
         self->params.egl->glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask);
     }
 }
 
-static void gsr_color_conversion_swizzle_reset(gsr_color_conversion *self) {
-    if(self->params.source_color == GSR_SOURCE_COLOR_BGR) {
+static void gsr_color_conversion_swizzle_reset(gsr_color_conversion *self, gsr_source_color source_color) {
+    if(source_color == GSR_SOURCE_COLOR_BGR) {
         const int swizzle_mask[] = { GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
         self->params.egl->glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask);
     }
 }
 
 /* |source_pos| is in pixel coordinates and |source_size|  */
-void gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_id, vec2i source_pos, vec2i source_size, vec2i texture_pos, vec2i texture_size, float rotation, bool external_texture) {
+void gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_id, vec2i source_pos, vec2i source_size, vec2i texture_pos, vec2i texture_size, float rotation, bool external_texture, gsr_source_color source_color) {
     // TODO: Remove this crap
     rotation = M_PI*2.0f - rotation;
 
@@ -402,7 +402,7 @@ void gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_
         -1.0f + 0.0f + size_norm.x, -1.0f + 0.0f + size_norm.y, texture_pos_norm.x + texture_size_norm.x, texture_pos_norm.y + texture_size_norm.y
     };
 
-    gsr_color_conversion_swizzle_texture_source(self);
+    gsr_color_conversion_swizzle_texture_source(self, source_color);
 
     self->params.egl->glBindVertexArray(self->vertex_array_object_id);
     self->params.egl->glViewport(0, 0, dest_texture_size.x, dest_texture_size.y);
@@ -438,7 +438,7 @@ void gsr_color_conversion_draw(gsr_color_conversion *self, unsigned int texture_
     self->params.egl->glBindTexture(texture_target, 0);
     self->params.egl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    gsr_color_conversion_swizzle_reset(self);
+    gsr_color_conversion_swizzle_reset(self, source_color);
 }
 
 void gsr_color_conversion_clear(gsr_color_conversion *self) {

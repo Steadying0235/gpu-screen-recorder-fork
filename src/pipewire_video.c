@@ -446,7 +446,7 @@ static bool gsr_pipewire_video_setup_stream(gsr_pipewire_video *self) {
     uint8_t params_buffer[2048];
     struct spa_pod_builder pod_builder = SPA_POD_BUILDER_INIT(params_buffer, sizeof(params_buffer));
 
-    self->thread_loop = pw_thread_loop_new("PipeWire thread loop", NULL);
+    self->thread_loop = pw_thread_loop_new("gsr screen capture", NULL);
     if(!self->thread_loop) {
         fprintf(stderr, "gsr error: gsr_pipewire_video_setup_stream: failed to create pipewire thread\n");
         goto error;

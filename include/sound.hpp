@@ -26,6 +26,11 @@ typedef struct {
     unsigned int frames;
 } SoundDevice;
 
+enum class AudioInputType {
+    DEVICE,
+    APPLICATION
+};
+
 struct AudioInput {
     std::string name;
     std::string description;
@@ -37,8 +42,14 @@ struct AudioDevices {
     std::vector<AudioInput> audio_inputs;
 };
 
+struct ApplicationAudio {
+    std::string name;
+};
+
 struct MergedAudioInputs {
     std::vector<AudioInput> audio_inputs;
+    AudioInputType type = AudioInputType::DEVICE;
+    bool inverted = false;
 };
 
 typedef enum {
@@ -48,12 +59,15 @@ typedef enum {
 } AudioFormat;
 
 /*
-    Get a sound device by name, returning the device into the @device parameter.
-    The device should be closed with @sound_device_close after it has been used
-    to clean up internal resources.
+    Get a sound device by name, returning the device into the |device| parameter.
     Returns 0 on success, or a negative value on failure.
 */
 int sound_device_get_by_name(SoundDevice *device, const char *device_name, const char *description, unsigned int num_channels, unsigned int period_frame_size, AudioFormat audio_format);
+/*
+    Creates a module-combine-sink and connects to it for recording, returning the device into the |device| parameter.
+    Returns 0 on success, or a negative value on failure.
+*/
+int sound_device_create_combined_sink_connect(SoundDevice *device, const char *combined_sink_name, unsigned int num_channels, unsigned int period_frame_size, AudioFormat audio_format);
 
 void sound_device_close(SoundDevice *device);
 
@@ -64,5 +78,6 @@ void sound_device_close(SoundDevice *device);
 int sound_device_read_next_chunk(SoundDevice *device, void **buffer, double timeout_sec, double *latency_seconds);
 
 AudioDevices get_pulseaudio_inputs();
+std::vector<ApplicationAudio> get_pulseaudio_applications();
 
 #endif /* GPU_SCREEN_RECORDER_H */

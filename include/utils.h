@@ -28,6 +28,8 @@ typedef struct {
 } get_monitor_by_name_userdata;
 
 double clock_get_monotonic_seconds(void);
+bool generate_random_characters(char *buffer, int buffer_size, const char *alphabet, size_t alphabet_size);
+bool generate_random_characters_standard_alphabet(char *buffer, int buffer_size);
 
 typedef void (*active_monitor_callback)(const gsr_monitor *monitor, void *userdata);
 void for_each_active_monitor_output_x11_not_cached(Display *display, active_monitor_callback callback, void *userdata);

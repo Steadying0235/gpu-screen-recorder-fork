@@ -1,11 +1,11 @@
 #include "../include/dbus.h"
+#include "../include/utils.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <assert.h>
-#include <sys/random.h>
 
 /* TODO: Make non-blocking when GPU Screen Recorder is turned into a library */
 /* TODO: Make sure responses matches the requests */
@@ -37,27 +37,12 @@ static const char* dict_value_type_to_string(dict_value_type type) {
     return "(unknown)";
 }
 
-static bool generate_random_characters(char *buffer, int buffer_size, const char *alphabet, size_t alphabet_size) {
-    /* TODO: Use other functions on other platforms than linux */
-    if(getrandom(buffer, buffer_size, 0) < buffer_size) {
-        fprintf(stderr, "gsr error: generate_random_characters: failed to get random bytes, error: %s\n", strerror(errno));
-        return false;
-    }
-
-    for(int i = 0; i < buffer_size; ++i) {
-        unsigned char c = *(unsigned char*)&buffer[i];
-        buffer[i] = alphabet[c % alphabet_size];
-    }
-
-    return true;
-}
-
 bool gsr_dbus_init(gsr_dbus *self, const char *screencast_restore_token) {
     memset(self, 0, sizeof(*self));
     dbus_error_init(&self->err);
 
     self->random_str[DBUS_RANDOM_STR_SIZE] = '\0';
-    if(!generate_random_characters(self->random_str, DBUS_RANDOM_STR_SIZE, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 62)) {
+    if(!generate_random_characters_standard_alphabet(self->random_str, DBUS_RANDOM_STR_SIZE)) {
         fprintf(stderr, "gsr error: gsr_dbus_init: failed to generate random string\n");
         return false;
     }

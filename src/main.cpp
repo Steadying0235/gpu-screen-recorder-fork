@@ -6,6 +6,9 @@ extern "C" {
 #include "../include/capture/portal.h"
 #include "../include/dbus.h"
 #endif
+#ifdef GSR_APP_AUDIO
+#include "../include/pipewire_audio.h"
+#endif
 #include "../include/encoder/video/nvenc.h"
 #include "../include/encoder/video/vaapi.h"
 #include "../include/encoder/video/vulkan.h"
@@ -1075,7 +1078,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
     fprintf(stderr, "OPTIONS:\n");
     fprintf(stderr, "  -w    Window id to record, a display (monitor name), \"screen\", \"screen-direct-force\", \"focused\" or \"portal\".\n");
-    fprintf(stderr, "        If this is \"portal\" then xdg desktop screencast portal with pipewire will be used. Portal option is only available on Wayland.\n");
+    fprintf(stderr, "        If this is \"portal\" then xdg desktop screencast portal with PipeWire will be used. Portal option is only available on Wayland.\n");
     fprintf(stderr, "        If you select to save the session (token) in the desktop portal capture popup then the session will be saved for the next time you use \"portal\",\n");
     fprintf(stderr, "        but the session will be ignored unless you run GPU Screen Recorder with the '-restore-portal-session yes' option.\n");
     fprintf(stderr, "        If this is \"screen\" or \"screen-direct-force\" then all monitors are recorded on Nvidia X11. On AMD/Intel or wayland \"screen\" will record the first monitor found.\n");
@@ -1099,16 +1102,27 @@ static void usage_full() {
     fprintf(stderr, "        A name can be given to the audio input device by prefixing the audio input with <name>/, for example \"dummy/alsa_output.pci-0000_00_1b.0.analog-stereo.monitor\".\n");
     fprintf(stderr, "        Multiple audio devices can be merged into one audio track by using \"|\" as a separator into one -a argument, for example: -a \"alsa_output1|alsa_output2\".\n");
     fprintf(stderr, "        The audio device can also be \"default_output\" in which case the default output device is used, or \"default_input\" in which case the default input device is used.\n");
-    fprintf(stderr, "        If the audio device is an empty string then the audio device is ignored.\n");
+    fprintf(stderr, "        If the audio device is an empty string then the argument is ignored.\n");
     fprintf(stderr, "        Optional, no audio track is added by default.\n");
+    fprintf(stderr, "        Run GPU Screen Recorder with the --list-audio-devices option to list valid audio devices to use with this -a option.\n");
     fprintf(stderr, "\n");
 #ifdef GSR_APP_AUDIO
-    fprintf(stderr, "  -aa   Audio device to record from (pulse audio device). Can be specified multiple times. Each time this is specified a new audio track is added for the specified audio device.\n");
-    fprintf(stderr, "        A name can be given to the audio input device by prefixing the audio input with <name>/, for example \"dummy/alsa_output.pci-0000_00_1b.0.analog-stereo.monitor\".\n");
-    fprintf(stderr, "        Multiple audio devices can be merged into one audio track by using \"|\" as a separator into one -a argument, for example: -a \"alsa_output1|alsa_output2\".\n");
-    fprintf(stderr, "        The audio device can also be \"default_output\" in which case the default output device is used, or \"default_input\" in which case the default input device is used.\n");
-    fprintf(stderr, "        If the audio device is an empty string then the audio device is ignored.\n");
-    fprintf(stderr, "        Optional, no audio track is added by default.\n");
+    fprintf(stderr, "  -aa   Application to record audio from (case-insensitive). Can be specified multiple times. Each time this is specified a new audio track is added for the specified application audio.\n");
+    fprintf(stderr, "        Multiple application audio can be merged into one audio track by using \"|\" as a separator into one -a argument, for example: -a \"firefox|csgo\".\n");
+    fprintf(stderr, "        If the application name is an empty string then the argument is ignored.\n");
+    fprintf(stderr, "        Optional, no application audio is added by default.\n");
+    fprintf(stderr, "        Note: this option is only available when the sound server on the system is PipeWire.\n");
+    fprintf(stderr, "        Run GPU Screen Recorder with the --list-application-audio option to list valid application names to use with this -aa option.\n");
+    fprintf(stderr, "        It's possible to use an application name that is not listed in --list-application-audio, for example when trying to record audio from an application that hasn't started yet.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  -aai  Record audio from all applications except the ones specified with this option (case-insensitive). Can be specified multiple times.\n");
+    fprintf(stderr, "        Each time this is specified a new audio track is added that records all applications except the ones specified.\n");
+    fprintf(stderr, "        Multiple application audio can be merged into one audio track by using \"|\" as a separator into one -a argument, for example: -a \"firefox|csgo\".\n");
+    fprintf(stderr, "        If the application name is an empty string then the argument is ignored.\n");
+    fprintf(stderr, "        Optional, no application audio is added by default.\n");
+    fprintf(stderr, "        Note: this option is only available when the sound server on the system is PipeWire.\n");
+    fprintf(stderr, "        Run GPU Screen Recorder with the --list-application-audio option to list valid application names to use with this -aai option.\n");
+    fprintf(stderr, "        It's possible to use an application name that is not listed in --list-application-audio, for example when trying to record audio and the target application hasn't started yet.\n");
     fprintf(stderr, "\n");
 #endif
     fprintf(stderr, "  -q    Video quality. Should be either 'medium', 'high', 'very_high' or 'ultra' when using '-bm qp' or '-bm vbr' options, and '-bm qp' is the default option used.\n");
@@ -1181,18 +1195,27 @@ static void usage_full() {
     fprintf(stderr, "        Optional, set to 'gpu' by default.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  --info\n");
-    fprintf(stderr, "        List info about the system (for use by GPU Screen Recorder UI). Lists the following information (prints them to stdout and exits):\n");
+    fprintf(stderr, "        List info about the system. Lists the following information (prints them to stdout and exits):\n");
     fprintf(stderr, "        Supported video codecs (h264, h264_software, hevc, hevc_hdr, hevc_10bit, av1, av1_hdr, av1_10bit, vp8, vp9 (if supported)).\n");
     fprintf(stderr, "        Supported capture options (window, focused, screen, monitors and portal, if supported by the system).\n");
     fprintf(stderr, "        If opengl initialization fails then the program exits with 22, if no usable drm device is found then it exits with 23. On success it exits with 0.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  --list-audio-devices\n");
-    fprintf(stderr, "        List audio devices (for use by GPU Screen Recorder UI). Lists audio devices in the following format (prints them to stdout and exits):\n");
+    fprintf(stderr, "        List audio devices. Lists audio devices in the following format (prints them to stdout and exits):\n");
     fprintf(stderr, "          <audio_device_name>|<audio_device_name_in_human_readable_format>\n");
     fprintf(stderr, "        For example:\n");
     fprintf(stderr, "          bluez_input.88:C9:E8:66:A2:27|WH-1000XM4\n");
-    fprintf(stderr, "        The <audio_device_name> is the name to pass to GPU Screen Recorder in a -a option.\n");
+    fprintf(stderr, "          alsa_output.pci-0000_0c_00.4.iec958-stereo|Monitor of Starship/Matisse HD Audio Controller Digital Stereo (IEC958)\n");
+    fprintf(stderr, "        The <audio_device_name> is the name that can be passed to GPU Screen Recorder with the -a option.\n");
     fprintf(stderr, "\n");
+#ifdef GSR_APP_AUDIO
+    fprintf(stderr, "  --list-application-audio\n");
+    fprintf(stderr, "        List application audio sources. Lists application audio sources (prints them to stdout and exits), for example:\n");
+    fprintf(stderr, "          firefox\n");
+    fprintf(stderr, "          csgo\n");
+    fprintf(stderr, "        These names are the application audio names that can be passed to GPU Screen Recorder with the -aa option.\n");
+    fprintf(stderr, "\n");
+#endif
     fprintf(stderr, "  --version\n");
     fprintf(stderr, "        Print version (%s) and exit\n", GSR_VERSION);
     fprintf(stderr, "\n");
@@ -1219,6 +1242,10 @@ static void usage_full() {
     fprintf(stderr, "  %s -w screen -f 60 -a default_output -c mkv -sc script.sh -r 60 -o \"$HOME/Videos\"\n", program_name);
     fprintf(stderr, "  %s -w portal -f 60 -a default_output -restore-portal-session yes -o \"$HOME/Videos/video.mp4\"\n", program_name);
     fprintf(stderr, "  %s -w screen -f 60 -a default_output -bm cbr -q 15000 -o \"$HOME/Videos/video.mp4\"\n", program_name);
+#ifdef GSR_APP_AUDIO
+    fprintf(stderr, "  %s -w screen -f 60 -a \"firefox|csgo\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -a \"-firefox|-csgo\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
+#endif
     //fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -q ultra -pixfmt yuv444 -o video.mp4\n");
     _exit(1);
 }
@@ -1375,6 +1402,7 @@ struct AudioDevice {
     AVFilterContext *src_filter_ctx = nullptr;
     AVFrame *frame = nullptr;
     std::thread thread; // TODO: Instead of having a thread for each track, have one thread for all threads and read the data with non-blocking read
+    std::string combined_sink_name;
 };
 
 // TODO: Cleanup
@@ -1618,6 +1646,18 @@ static std::vector<AudioInput> parse_audio_input_arg(const char *str, const Audi
             audio_input.name.erase(audio_input.name.begin(), audio_input.name.begin() + index + 1);
         }
 
+        audio_inputs.push_back(std::move(audio_input));
+        return true;
+    });
+    return audio_inputs;
+}
+
+static std::vector<AudioInput> parse_app_audio_input_arg(const char *str) {
+    std::vector<AudioInput> audio_inputs;
+    split_string(str, '|', [&](const char *sub, size_t size) {
+        AudioInput audio_input;
+        audio_input.name.assign(sub, size);
+        audio_input.description = audio_input.name;
         audio_inputs.push_back(std::move(audio_input));
         return true;
     });
@@ -2091,6 +2131,22 @@ static void list_audio_devices_command() {
     _exit(0);
 }
 
+static bool app_audio_query_callback(const char *app_name, void*) {
+    puts(app_name);
+    return true;
+}
+
+static void list_application_audio_command() {
+    gsr_pipewire_audio audio;
+    if(gsr_pipewire_audio_init(&audio)) {
+        gsr_pipewire_audio_for_each_app(&audio, app_audio_query_callback, NULL);
+        gsr_pipewire_audio_deinit(&audio);
+    }
+
+    fflush(stdout);
+    _exit(0);
+}
+
 static gsr_capture* create_capture_impl(std::string &window_str, vec2i output_resolution, bool wayland, gsr_egl *egl, int fps, VideoCodec video_codec, gsr_color_range color_range,
     bool record_cursor, bool use_software_video_encoder, bool restore_portal_session, const char *portal_session_token_filepath,
     gsr_color_depth color_depth)
@@ -2273,10 +2329,30 @@ struct Arg {
     }
 };
 
+static void match_app_audio_input_to_available_apps(const std::vector<AudioInput> &requested_audio_inputs, const std::vector<std::string> &app_audio_names) {
+    for(const AudioInput &request_audio_input : requested_audio_inputs) {
+        bool match = false;
+        for(const std::string &app_name : app_audio_names) {
+            if(strcasecmp(app_name.c_str(), request_audio_input.name.c_str()) == 0) {
+                match = true;
+                break;
+            }
+        }
+
+        if(!match) {
+            fprintf(stderr, "gsr warning: no audio application with the name \"%s\" was found, expected one of the following:\n", request_audio_input.name.c_str());
+            for(const std::string &app_name : app_audio_names) {
+                fprintf(stderr, "  * %s\n", app_name.c_str());
+            }
+            fprintf(stderr, "  assuming this is intentional (if you are trying to record audio for applications that haven't started yet).\n");
+        }
+    }
+}
+
 // Manually check if the audio inputs we give exist. This is only needed for pipewire, not pulseaudio.
 // Pipewire instead DEFAULTS TO THE DEFAULT AUDIO INPUT. THAT'S RETARDED.
 // OH, YOU MISSPELLED THE AUDIO INPUT? FUCK YOU
-static std::vector<MergedAudioInputs> parse_audio_inputs(const AudioDevices &audio_devices, const Arg &audio_input_arg, bool &uses_amix) {
+static std::vector<MergedAudioInputs> parse_audio_inputs(const AudioDevices &audio_devices, const Arg &audio_input_arg, const Arg &app_audio_input_arg, const Arg &app_audio_input_inverted_arg, bool &uses_amix, const std::vector<std::string> &app_audio_names) {
     std::vector<MergedAudioInputs> requested_audio_inputs;
     uses_amix = false;
 
@@ -2284,7 +2360,7 @@ static std::vector<MergedAudioInputs> parse_audio_inputs(const AudioDevices &aud
         if(!audio_input || audio_input[0] == '\0')
             continue;
 
-        requested_audio_inputs.push_back({parse_audio_input_arg(audio_input, audio_devices)});
+        requested_audio_inputs.push_back({parse_audio_input_arg(audio_input, audio_devices), AudioInputType::DEVICE, false});
         if(requested_audio_inputs.back().audio_inputs.size() > 1)
             uses_amix = true;
 
@@ -2324,6 +2400,22 @@ static std::vector<MergedAudioInputs> parse_audio_inputs(const AudioDevices &aud
                 _exit(2);
             }
         }
+    }
+
+    for(const char *app_audio_input : app_audio_input_arg.values) {
+        if(!app_audio_input || app_audio_input[0] == '\0')
+            continue;
+
+        requested_audio_inputs.push_back({parse_app_audio_input_arg(app_audio_input), AudioInputType::APPLICATION, false});
+        match_app_audio_input_to_available_apps(requested_audio_inputs.back().audio_inputs, app_audio_names);
+    }
+
+    for(const char *app_audio_input : app_audio_input_inverted_arg.values) {
+        if(!app_audio_input || app_audio_input[0] == '\0')
+            continue;
+
+        requested_audio_inputs.push_back({parse_app_audio_input_arg(app_audio_input), AudioInputType::APPLICATION, true});
+        match_app_audio_input_to_available_apps(requested_audio_inputs.back().audio_inputs, app_audio_names);
     }
 
     return requested_audio_inputs;
@@ -2614,6 +2706,75 @@ static const AVCodec* select_video_codec_with_fallback(VideoCodec *video_codec, 
     return pick_video_codec(video_codec, egl, use_software_video_encoder, video_codec_auto, video_codec_to_use, is_flv, low_power);
 }
 
+static std::vector<AudioDevice> create_device_audio_inputs(const std::vector<AudioInput> &audio_inputs, AVCodecContext *audio_codec_context, int num_channels, double num_audio_frames_shift, std::vector<AVFilterContext*> &src_filter_ctx, bool use_amix) {
+    std::vector<AudioDevice> audio_track_audio_devices;
+    for(size_t i = 0; i < audio_inputs.size(); ++i) {
+        const auto &audio_input = audio_inputs[i];
+        AVFilterContext *src_ctx = nullptr;
+        if(use_amix)
+            src_ctx = src_filter_ctx[i];
+
+        AudioDevice audio_device;
+        audio_device.audio_input = audio_input;
+        audio_device.src_filter_ctx = src_ctx;
+
+        if(audio_input.name.empty()) {
+            audio_device.sound_device.handle = NULL;
+            audio_device.sound_device.frames = 0;
+        } else {
+            if(sound_device_get_by_name(&audio_device.sound_device, audio_input.name.c_str(), audio_input.description.c_str(), num_channels, audio_codec_context->frame_size, audio_codec_context_get_audio_format(audio_codec_context)) != 0) {
+                fprintf(stderr, "Error: failed to get \"%s\" audio device\n", audio_input.name.c_str());
+                _exit(1);
+            }
+        }
+
+        audio_device.frame = create_audio_frame(audio_codec_context);
+        audio_device.frame->pts = -audio_codec_context->frame_size * num_audio_frames_shift;
+
+        audio_track_audio_devices.push_back(std::move(audio_device));
+    }
+    return audio_track_audio_devices;
+}
+
+static AudioDevice create_application_audio_audio_input(const MergedAudioInputs &merged_audio_inputs, AVCodecContext *audio_codec_context, int num_channels, double num_audio_frames_shift, gsr_pipewire_audio *pipewire_audio) {
+    AudioDevice audio_device;
+    audio_device.frame = create_audio_frame(audio_codec_context);
+    audio_device.frame->pts = -audio_codec_context->frame_size * num_audio_frames_shift;
+
+    char random_str[8];
+    if(!generate_random_characters_standard_alphabet(random_str, sizeof(random_str))) {
+        fprintf(stderr, "gsr error: ailed to generate random string\n");
+        _exit(1);
+    }
+    audio_device.combined_sink_name = "gsr-combined-";
+    audio_device.combined_sink_name.append(random_str, sizeof(random_str));
+
+    if(sound_device_create_combined_sink_connect(&audio_device.sound_device, audio_device.combined_sink_name.c_str(), num_channels, audio_codec_context->frame_size, audio_codec_context_get_audio_format(audio_codec_context)) != 0) {
+        fprintf(stderr, "Error: failed to setup audio recording to combined sink\n");
+        _exit(1);
+    }
+
+    std::vector<const char*> app_names;
+    app_names.reserve(merged_audio_inputs.audio_inputs.size());
+    for(const auto &audio_input : merged_audio_inputs.audio_inputs) {
+        app_names.push_back(audio_input.name.c_str());
+    }
+
+    if(merged_audio_inputs.inverted) {
+        if(!gsr_pipewire_audio_add_link_from_apps_to_sink_inverted(pipewire_audio, app_names.data(), app_names.size(), audio_device.combined_sink_name.c_str())) {
+            fprintf(stderr, "gsr error: failed to add application audio link\n");
+            _exit(1);
+        }
+    } else {
+        if(!gsr_pipewire_audio_add_link_from_apps_to_sink(pipewire_audio, app_names.data(), app_names.size(), audio_device.combined_sink_name.c_str())) {
+            fprintf(stderr, "gsr error: failed to add application audio link\n");
+            _exit(1);
+        }
+    }
+
+    return audio_device;
+}
+
 int main(int argc, char **argv) {
     setlocale(LC_ALL, "C"); // Sigh... stupid C
 
@@ -2658,6 +2819,11 @@ int main(int argc, char **argv) {
         _exit(0);
     }
 
+    if(argc == 2 && strcmp(argv[1], "--list-application-audio") == 0) {
+        list_application_audio_command();
+        _exit(0);
+    }
+
     if(argc == 2 && strcmp(argv[1], "--version") == 0) {
         puts(GSR_VERSION);
         _exit(0);
@@ -2671,6 +2837,10 @@ int main(int argc, char **argv) {
         { "-f", Arg { {}, false, false } },
         { "-s", Arg { {}, true, false } },
         { "-a", Arg { {}, true, true } },
+#ifdef GSR_APP_AUDIO
+        { "-aa", Arg { {}, true, true } },
+        { "-aai", Arg { {}, true, true } },
+#endif
         { "-q", Arg { {}, true, false } },
         { "-o", Arg { {}, true, false } },
         { "-r", Arg { {}, true, false } },
@@ -2682,7 +2852,6 @@ int main(int argc, char **argv) {
         { "-bm", Arg { {}, true, false } },
         { "-pixfmt", Arg { {}, true, false } },
         { "-v", Arg { {}, true, false } },
-        { "-mf", Arg { {}, true, false } }, // TODO: Remove, this exists for backwards compatibility. -df should be used instead
         { "-df", Arg { {}, true, false } },
         { "-sc", Arg { {}, true, false } },
         { "-cr", Arg { {}, true, false } },
@@ -2866,11 +3035,6 @@ int main(int argc, char **argv) {
 
     bool date_folders = false;
     const char *date_folders_str = args["-df"].value();
-    if(!date_folders_str) {
-        date_folders_str = args["-mf"].value();
-        if(date_folders_str)
-            fprintf(stderr, "Warning: -mf is deprecated, use -df instead\n");
-    }
     if(!date_folders_str)
         date_folders_str = "no";
 
@@ -2935,12 +3099,35 @@ int main(int argc, char **argv) {
     }
 
     const Arg &audio_input_arg = args["-a"];
+    const Arg &app_audio_input_arg = args["-aa"];
+    const Arg &app_audio_input_inverted_arg = args["-aai"];
+
     AudioDevices audio_devices;
     if(!audio_input_arg.values.empty())
         audio_devices = get_pulseaudio_inputs();
 
+    bool uses_app_audio = false;
+    if(!app_audio_input_arg.values.empty() || !app_audio_input_inverted_arg.values.empty())
+        uses_app_audio = true;
+
+    std::vector<std::string> app_audio_names;
+    gsr_pipewire_audio pipewire_audio;
+    memset(&pipewire_audio, 0, sizeof(pipewire_audio));
+    if(uses_app_audio) {
+        if(!gsr_pipewire_audio_init(&pipewire_audio)) {
+            fprintf(stderr, "gsr error: failed to setup PipeWire audio for application audio capture. The likely reason for this failure is that your sound server is not PipeWire\n");
+            _exit(2);
+        }
+
+        gsr_pipewire_audio_for_each_app(&pipewire_audio, [](const char *app_name, void *userdata) {
+            std::vector<std::string> *app_audio_names = (std::vector<std::string>*)userdata;
+            app_audio_names->push_back(app_name);
+            return true;
+        }, &app_audio_names);
+    }
+
     bool uses_amix = false;
-    std::vector<MergedAudioInputs> requested_audio_inputs = parse_audio_inputs(audio_devices, audio_input_arg, uses_amix);
+    std::vector<MergedAudioInputs> requested_audio_inputs = parse_audio_inputs(audio_devices, audio_input_arg, app_audio_input_arg, app_audio_input_inverted_arg, uses_amix, app_audio_names);
 
     const char *container_format = args["-c"].value();
     if(container_format && strcmp(container_format, "mkv") == 0)
@@ -3248,7 +3435,7 @@ int main(int argc, char **argv) {
     const double target_fps = 1.0 / (double)fps;
 
     if(video_codec_is_hdr(video_codec) && is_portal_capture) {
-        fprintf(stderr, "Warning: portal capture option doesn't support hdr yet (pipewire doesn't support hdr), the video will be tonemapped from hdr to sdr\n");
+        fprintf(stderr, "Warning: portal capture option doesn't support hdr yet (PipeWire doesn't support hdr), the video will be tonemapped from hdr to sdr\n");
         video_codec = hdr_video_codec_to_sdr_video_codec(video_codec);
     }
 
@@ -3362,7 +3549,7 @@ int main(int argc, char **argv) {
         std::vector<AVFilterContext*> src_filter_ctx;
         AVFilterGraph *graph = nullptr;
         AVFilterContext *sink = nullptr;
-        if(use_amix) {
+        if(use_amix && merged_audio_inputs.type == AudioInputType::DEVICE) {
             int err = init_filter_graph(audio_codec_context, &graph, &sink, src_filter_ctx, merged_audio_inputs.audio_inputs.size());
             if(err < 0) {
                 fprintf(stderr, "Error: failed to create audio filter\n");
@@ -3379,30 +3566,13 @@ int main(int argc, char **argv) {
         const double num_audio_frames_shift = audio_startup_time_seconds / timeout_sec;
 
         std::vector<AudioDevice> audio_track_audio_devices;
-        for(size_t i = 0; i < merged_audio_inputs.audio_inputs.size(); ++i) {
-            auto &audio_input = merged_audio_inputs.audio_inputs[i];
-            AVFilterContext *src_ctx = nullptr;
-            if(use_amix)
-                src_ctx = src_filter_ctx[i];
-
-            AudioDevice audio_device;
-            audio_device.audio_input = audio_input;
-            audio_device.src_filter_ctx = src_ctx;
-
-            if(audio_input.name.empty()) {
-                audio_device.sound_device.handle = NULL;
-                audio_device.sound_device.frames = 0;
-            } else {
-                if(sound_device_get_by_name(&audio_device.sound_device, audio_input.name.c_str(), audio_input.description.c_str(), num_channels, audio_codec_context->frame_size, audio_codec_context_get_audio_format(audio_codec_context)) != 0) {
-                    fprintf(stderr, "Error: failed to get \"%s\" sound device\n", audio_input.name.c_str());
-                    _exit(1);
-                }
-            }
-
-            audio_device.frame = create_audio_frame(audio_codec_context);
-            audio_device.frame->pts = -audio_codec_context->frame_size * num_audio_frames_shift;
-
-            audio_track_audio_devices.push_back(std::move(audio_device));
+        switch(merged_audio_inputs.type) {
+            case AudioInputType::DEVICE:
+                audio_track_audio_devices = create_device_audio_inputs(merged_audio_inputs.audio_inputs, audio_codec_context, num_channels, num_audio_frames_shift, src_filter_ctx, use_amix);
+                break;
+            case AudioInputType::APPLICATION:
+                audio_track_audio_devices.push_back(create_application_audio_audio_input(merged_audio_inputs, audio_codec_context, num_channels, num_audio_frames_shift, &pipewire_audio));
+                break;
         }
 
         AudioTrack audio_track;
@@ -3883,6 +4053,7 @@ int main(int argc, char **argv) {
     gsr_color_conversion_deinit(&color_conversion);
     gsr_video_encoder_destroy(video_encoder, video_codec_context);
     gsr_capture_destroy(capture, video_codec_context);
+    gsr_pipewire_audio_deinit(&pipewire_audio);
 
     if(replay_buffer_size_secs == -1 && recording_saved_script)
         run_recording_saved_script_async(recording_saved_script, filename, "regular");

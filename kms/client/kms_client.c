@@ -1,4 +1,5 @@
 #include "kms_client.h"
+#include "../../include/utils.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -12,28 +13,12 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/capability.h>
-#include <sys/random.h>
 
 #define GSR_SOCKET_PAIR_LOCAL  0
 #define GSR_SOCKET_PAIR_REMOTE 1
 
 static void cleanup_socket(gsr_kms_client *self, bool kill_server);
 static int gsr_kms_client_replace_connection(gsr_kms_client *self);
-
-static bool generate_random_characters(char *buffer, int buffer_size, const char *alphabet, size_t alphabet_size) {
-    /* TODO: Use other functions on other platforms than linux */
-    if(getrandom(buffer, buffer_size, 0) < buffer_size) {
-        fprintf(stderr, "Failed to get random bytes, error: %s\n", strerror(errno));
-        return false;
-    }
-
-    for(int i = 0; i < buffer_size; ++i) {
-        unsigned char c = *(unsigned char*)&buffer[i];
-        buffer[i] = alphabet[c % alphabet_size];
-    }
-
-    return true;
-}
 
 static void close_fds(gsr_kms_response *response) {
     for(int i = 0; i < response->num_items; ++i) {
@@ -139,7 +124,7 @@ static bool create_socket_path(char *output_path, size_t output_path_size) {
 
     char random_characters[11];
     random_characters[10] = '\0';
-    if(!generate_random_characters(random_characters, 10, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 62))
+    if(!generate_random_characters_standard_alphabet(random_characters, 10))
         return false;
 
     snprintf(output_path, output_path_size, "%s/.gsr-kms-socket-%s", home, random_characters);

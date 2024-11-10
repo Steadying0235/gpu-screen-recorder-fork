@@ -28,26 +28,26 @@ static float abs_f(float v) {
 #define RGB_TO_P010_FULL "const mat4 RGBtoYUV = mat4(0.262700, -0.139630,  0.500000, 0.000000,\n" \
                          "                           0.678000, -0.360370, -0.459786, 0.000000,\n" \
                          "                           0.059300,  0.500000, -0.040214, 0.000000,\n" \
-                         "                           0.000000,  0.500000,  0.500000, 1.000000);"
+                         "                           0.000000,  0.500000,  0.500000, 1.000000);\n"
 
 /* ITU-R BT2020, limited (full multiplied by (235-16)/255, adding 16/255 to luma) */
 #define RGB_TO_P010_LIMITED "const mat4 RGBtoYUV = mat4(0.225613, -0.119918,  0.429412, 0.000000,\n" \
                             "                           0.582282, -0.309494, -0.394875, 0.000000,\n" \
                             "                           0.050928,  0.429412, -0.034537, 0.000000,\n" \
-                            "                           0.062745,  0.500000,  0.500000, 1.000000);"
+                            "                           0.062745,  0.500000,  0.500000, 1.000000);\n"
 
 /* ITU-R BT709, full, custom values: 0.2110 0.7110 0.0710 */
 /* https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.709-6-201506-I!!PDF-E.pdf */
 #define RGB_TO_NV12_FULL "const mat4 RGBtoYUV = mat4(0.211000, -0.113563,  0.500000, 0.000000,\n" \
                          "                           0.711000, -0.382670, -0.450570, 0.000000,\n" \
                          "                           0.071000,  0.500000, -0.044994, 0.000000,\n" \
-                         "                           0.000000,  0.500000,  0.500000, 1.000000);"
+                         "                           0.000000,  0.500000,  0.500000, 1.000000);\n"
 
 /* ITU-R BT709, limited, custom values: 0.2100 0.7100 0.0700 (full multiplied by (235-16)/255, adding 16/255 to luma) */
 #define RGB_TO_NV12_LIMITED "const mat4 RGBtoYUV = mat4(0.180353, -0.096964,  0.429412, 0.000000,\n" \
                             "                           0.609765, -0.327830, -0.385927, 0.000000,\n" \
                             "                           0.060118,  0.429412, -0.038049, 0.000000,\n" \
-                            "                           0.062745,  0.500000,  0.500000, 1.000000);"
+                            "                           0.062745,  0.500000,  0.500000, 1.000000);\n"
 
 static const char* color_format_range_get_transform_matrix(gsr_destination_color color_format, gsr_color_range color_range) {
     switch(color_format) {

@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <sys/random.h>
 #include <errno.h>
 #include <assert.h>
 
@@ -25,6 +26,25 @@ double clock_get_monotonic_seconds(void) {
     ts.tv_nsec = 0;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (double)ts.tv_sec + (double)ts.tv_nsec * 0.000000001;
+}
+
+bool generate_random_characters(char *buffer, int buffer_size, const char *alphabet, size_t alphabet_size) {
+    /* TODO: Use other functions on other platforms than linux */
+    if(getrandom(buffer, buffer_size, 0) < buffer_size) {
+        fprintf(stderr, "Failed to get random bytes, error: %s\n", strerror(errno));
+        return false;
+    }
+
+    for(int i = 0; i < buffer_size; ++i) {
+        unsigned char c = *(unsigned char*)&buffer[i];
+        buffer[i] = alphabet[c % alphabet_size];
+    }
+
+    return true;
+}
+
+bool generate_random_characters_standard_alphabet(char *buffer, int buffer_size) {
+    return generate_random_characters(buffer, buffer_size, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 62);
 }
 
 static gsr_monitor_rotation wayland_transform_to_gsr_rotation(int32_t rot) {

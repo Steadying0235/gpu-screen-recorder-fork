@@ -110,7 +110,12 @@ There is also a new alternative UI for GPU Screen Recorder in the style of Shado
 ## Recording
 Here is an example of how to record your monitor and the default audio output: `gpu-screen-recorder -w screen -f 60 -a default_output -o ~/Videos/test_video.mp4`.
 Yyou can stop and save the recording with `Ctrl+C` or by running `killall -SIGINT gpu-screen-recorder`.
-You can see a list of monitor names to record if you use an invalid monitor name, for example: `gpu-screen-recorder -w invalid -f 60 -o video.mp4`.
+You can see a list of capture options to record if you run `gpu-screen-recorder --list-capture-options`. This will list possible capture options and monitor names, for example:\
+```
+  window
+  DP-1|1920x1080
+```
+in this case you could record a window or a monitor with the name `DP-1`.
 ## Streaming
 Streaming works the same as recording, but the `-o` argument should be path to the live streaming service you want to use (including your live streaming key). Take a look at `scripts/twitch-stream.sh` to see an example of how to stream to twitch.
 ## Replay mode

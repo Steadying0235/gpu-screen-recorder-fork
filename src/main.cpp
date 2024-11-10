@@ -1081,9 +1081,12 @@ static void usage_full() {
     fprintf(stderr, "        If this is \"portal\" then xdg desktop screencast portal with PipeWire will be used. Portal option is only available on Wayland.\n");
     fprintf(stderr, "        If you select to save the session (token) in the desktop portal capture popup then the session will be saved for the next time you use \"portal\",\n");
     fprintf(stderr, "        but the session will be ignored unless you run GPU Screen Recorder with the '-restore-portal-session yes' option.\n");
-    fprintf(stderr, "        If this is \"screen\" or \"screen-direct-force\" then all monitors are recorded on Nvidia X11. On AMD/Intel or wayland \"screen\" will record the first monitor found.\n");
-    fprintf(stderr, "        \"screen-direct-force\" is not recommended unless you use a VRR (G-SYNC) monitor on Nvidia X11 and you are aware that using this option can cause games to freeze/crash or other issues because of Nvidia driver issues.\n");
+    fprintf(stderr, "        If this is \"screen\" or \"screen-direct-force\" then all monitors are recorded on Nvidia X11.\n");
+    fprintf(stderr, "        On AMD/Intel or wayland \"screen\" will record the first monitor found.\n");
+    fprintf(stderr, "        \"screen-direct-force\" is not recommended unless you use a VRR (G-SYNC) monitor on Nvidia X11 and you are aware that using this option can cause\n");
+    fprintf(stderr, "        games to freeze/crash or other issues because of Nvidia driver issues.\n");
     fprintf(stderr, "        \"screen-direct-force\" option is only available on Nvidia X11. VRR works without this option on other systems.\n");
+    fprintf(stderr, "        Run GPU Screen Recorder with the --list-capture-options to list valid values for this option.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -c    Container format for output file, for example mp4, or flv. Only required if no output file is specified or if recording in replay buffer mode.\n");
     fprintf(stderr, "        If an output file is specified and -c is not used then the container format is determined from the output filename extension.\n");
@@ -1200,6 +1203,15 @@ static void usage_full() {
     fprintf(stderr, "        Supported capture options (window, focused, screen, monitors and portal, if supported by the system).\n");
     fprintf(stderr, "        If opengl initialization fails then the program exits with 22, if no usable drm device is found then it exits with 23. On success it exits with 0.\n");
     fprintf(stderr, "\n");
+    fprintf(stderr, "  --list-capture-options\n");
+    fprintf(stderr, "        List available capture options. Lists capture options in the following format (prints them to stdout and exits):\n");
+    fprintf(stderr, "          <option>\n");
+    fprintf(stderr, "          <monitor_name>|<resolution>\n");
+    fprintf(stderr, "        For example:\n");
+    fprintf(stderr, "          window\n");
+    fprintf(stderr, "          DP-1|1920x1080\n");
+    fprintf(stderr, "        The <option> and <monitor_name> is the name that can be passed to GPU Screen Recorder with the -w option.\n");
+    fprintf(stderr, "\n");
     fprintf(stderr, "  --list-audio-devices\n");
     fprintf(stderr, "        List audio devices. Lists audio devices in the following format (prints them to stdout and exits):\n");
     fprintf(stderr, "          <audio_device_name>|<audio_device_name_in_human_readable_format>\n");
@@ -1243,8 +1255,8 @@ static void usage_full() {
     fprintf(stderr, "  %s -w portal -f 60 -a default_output -restore-portal-session yes -o \"$HOME/Videos/video.mp4\"\n", program_name);
     fprintf(stderr, "  %s -w screen -f 60 -a default_output -bm cbr -q 15000 -o \"$HOME/Videos/video.mp4\"\n", program_name);
 #ifdef GSR_APP_AUDIO
-    fprintf(stderr, "  %s -w screen -f 60 -a \"firefox|csgo\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
-    fprintf(stderr, "  %s -w screen -f 60 -a \"-firefox|-csgo\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -aa \"firefox|csgo\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -aai \"firefox|csgo\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
 #endif
     //fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -q ultra -pixfmt yuv444 -o video.mp4\n");
     _exit(1);
@@ -2147,6 +2159,56 @@ static void list_application_audio_command() {
     _exit(0);
 }
 
+static void list_capture_options_command() {
+    bool wayland = false;
+    Display *dpy = XOpenDisplay(nullptr);
+    if (!dpy) {
+        wayland = true;
+        fprintf(stderr, "Warning: failed to connect to the X server. Assuming wayland is running without Xwayland\n");
+    }
+
+    XSetErrorHandler(x11_error_handler);
+    XSetIOErrorHandler(x11_io_error_handler);
+
+    if(!wayland)
+        wayland = is_xwayland(dpy);
+
+    if(!wayland && is_using_prime_run()) {
+        // Disable prime-run and similar options as it doesn't work, the monitor to capture has to be run on the same device.
+        // This is fine on wayland since nvidia uses drm interface there and the monitor query checks the monitors connected
+        // to the drm device.
+        fprintf(stderr, "Warning: use of prime-run on X11 is not supported. Disabling prime-run\n");
+        disable_prime_run();
+    }
+
+    gsr_egl egl;
+    if(!gsr_egl_load(&egl, dpy, wayland, false)) {
+        fprintf(stderr, "gsr error: failed to load opengl\n");
+        _exit(1);
+    }
+
+    egl.card_path[0] = '\0';
+    if(monitor_capture_use_drm(&egl, wayland)) {
+        // TODO: Allow specifying another card, and in other places
+        if(!gsr_get_valid_card_path(&egl, egl.card_path, false)) {
+            fprintf(stderr, "Error: no /dev/dri/cardX device found. Make sure that you have at least one monitor connected\n");
+            _exit(23);
+        }
+    }
+
+    av_log_set_level(AV_LOG_FATAL);
+    list_supported_capture_options(&egl, wayland);
+
+    fflush(stdout);
+
+    // Not needed as this will just slow down shutdown
+    //gsr_egl_unload(&egl);
+    //if(dpy)
+    //    XCloseDisplay(dpy);
+
+    _exit(0);
+}
+
 static gsr_capture* create_capture_impl(std::string &window_str, vec2i output_resolution, bool wayland, gsr_egl *egl, int fps, VideoCodec video_codec, gsr_color_range color_range,
     bool record_cursor, bool use_software_video_encoder, bool restore_portal_session, const char *portal_session_token_filepath,
     gsr_color_depth color_depth)
@@ -2821,6 +2883,11 @@ int main(int argc, char **argv) {
 
     if(argc == 2 && strcmp(argv[1], "--list-application-audio") == 0) {
         list_application_audio_command();
+        _exit(0);
+    }
+
+    if(argc == 2 && strcmp(argv[1], "--list-capture-options") == 0) {
+        list_capture_options_command();
         _exit(0);
     }
 

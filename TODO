@@ -186,9 +186,6 @@ Support surround audio in application audio recording. Right now only stereo sou
 
 Support application audio recording without pulseaudio combined sink.
 
-If recording application audio setup gsr_pipewire_audio and add gsr_pipewire_audio_add_link_from_app_to_stream for application and the created combined sink.
-    Use gsr_pipewire_audio_add_link_from_app_to_stream_inverted for inverted scenario. Parse inverted scenario as well.
-
 Support transposing (rotating) with vaapi. This isn't supported on many devices with rgb buffer, but its supported with nv12 buffer (on intel at least).
 
-Link name for stream_name input is wrong. It should be Playback_FL/Playback_FR now with combined sink. Add function for combined sink, or rewrite existing code.
+Cleanup pipewire_audio.c (proper error handling and memory cleanup of proxies).

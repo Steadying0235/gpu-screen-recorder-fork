@@ -1067,7 +1067,12 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-aa <application_name>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr|cbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [--version] [-h|--help]\n", program_name);
+#ifdef GSR_APP_AUDIO
+    const char *app_audio_options = " [-aa <application_name>] [-aai <application_name>] ";
+#else
+    const char *app_audio_options = "";
+#endif
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>]%s[-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr|cbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [--version] [-h|--help]\n", program_name, app_audio_options);
 }
 
 // TODO: Update with portal info
@@ -1086,7 +1091,7 @@ static void usage_full() {
     fprintf(stderr, "        \"screen-direct-force\" is not recommended unless you use a VRR (G-SYNC) monitor on Nvidia X11 and you are aware that using this option can cause\n");
     fprintf(stderr, "        games to freeze/crash or other issues because of Nvidia driver issues.\n");
     fprintf(stderr, "        \"screen-direct-force\" option is only available on Nvidia X11. VRR works without this option on other systems.\n");
-    fprintf(stderr, "        Run GPU Screen Recorder with the --list-capture-options to list valid values for this option.\n");
+    fprintf(stderr, "        Run GPU Screen Recorder with the --list-capture-options option to list valid values for this option.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -c    Container format for output file, for example mp4, or flv. Only required if no output file is specified or if recording in replay buffer mode.\n");
     fprintf(stderr, "        If an output file is specified and -c is not used then the container format is determined from the output filename extension.\n");
@@ -1222,7 +1227,7 @@ static void usage_full() {
     fprintf(stderr, "\n");
 #ifdef GSR_APP_AUDIO
     fprintf(stderr, "  --list-application-audio\n");
-    fprintf(stderr, "        List application audio sources. Lists application audio sources (prints them to stdout and exits), for example:\n");
+    fprintf(stderr, "        Lists application that you can record from (with the -aa or -aai option) (prints them to stdout and exits), for example:\n");
     fprintf(stderr, "          firefox\n");
     fprintf(stderr, "          csgo\n");
     fprintf(stderr, "        These names are the application audio names that can be passed to GPU Screen Recorder with the -aa option.\n");
@@ -2149,11 +2154,13 @@ static bool app_audio_query_callback(const char *app_name, void*) {
 }
 
 static void list_application_audio_command() {
+#ifdef GSR_APP_AUDIO
     gsr_pipewire_audio audio;
     if(gsr_pipewire_audio_init(&audio)) {
         gsr_pipewire_audio_for_each_app(&audio, app_audio_query_callback, NULL);
         gsr_pipewire_audio_deinit(&audio);
     }
+#endif
 
     fflush(stdout);
     _exit(0);
@@ -2798,6 +2805,7 @@ static std::vector<AudioDevice> create_device_audio_inputs(const std::vector<Aud
     return audio_track_audio_devices;
 }
 
+#ifdef GSR_APP_AUDIO
 static AudioDevice create_application_audio_audio_input(const MergedAudioInputs &merged_audio_inputs, AVCodecContext *audio_codec_context, int num_channels, double num_audio_frames_shift, gsr_pipewire_audio *pipewire_audio) {
     AudioDevice audio_device;
     audio_device.frame = create_audio_frame(audio_codec_context);
@@ -2836,6 +2844,7 @@ static AudioDevice create_application_audio_audio_input(const MergedAudioInputs 
 
     return audio_device;
 }
+#endif
 
 int main(int argc, char **argv) {
     setlocale(LC_ALL, "C"); // Sigh... stupid C
@@ -3178,6 +3187,7 @@ int main(int argc, char **argv) {
         uses_app_audio = true;
 
     std::vector<std::string> app_audio_names;
+#ifdef GSR_APP_AUDIO
     gsr_pipewire_audio pipewire_audio;
     memset(&pipewire_audio, 0, sizeof(pipewire_audio));
     if(uses_app_audio) {
@@ -3192,6 +3202,7 @@ int main(int argc, char **argv) {
             return true;
         }, &app_audio_names);
     }
+#endif
 
     bool uses_amix = false;
     std::vector<MergedAudioInputs> requested_audio_inputs = parse_audio_inputs(audio_devices, audio_input_arg, app_audio_input_arg, app_audio_input_inverted_arg, uses_amix, app_audio_names);
@@ -3638,7 +3649,9 @@ int main(int argc, char **argv) {
                 audio_track_audio_devices = create_device_audio_inputs(merged_audio_inputs.audio_inputs, audio_codec_context, num_channels, num_audio_frames_shift, src_filter_ctx, use_amix);
                 break;
             case AudioInputType::APPLICATION:
+#ifdef GSR_APP_AUDIO
                 audio_track_audio_devices.push_back(create_application_audio_audio_input(merged_audio_inputs, audio_codec_context, num_channels, num_audio_frames_shift, &pipewire_audio));
+#endif
                 break;
         }
 
@@ -4120,7 +4133,9 @@ int main(int argc, char **argv) {
     gsr_color_conversion_deinit(&color_conversion);
     gsr_video_encoder_destroy(video_encoder, video_codec_context);
     gsr_capture_destroy(capture, video_codec_context);
+#ifdef GSR_APP_AUDIO
     gsr_pipewire_audio_deinit(&pipewire_audio);
+#endif
 
     if(replay_buffer_size_secs == -1 && recording_saved_script)
         run_recording_saved_script_async(recording_saved_script, filename, "regular");

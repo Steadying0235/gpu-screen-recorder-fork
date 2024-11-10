@@ -135,8 +135,9 @@ To record the default input device (microphone) you can use the `default_input` 
 To list all available audio devices run `gpu-screen-recorder --list-audio-devices`. The name to use with GPU Screen Recorder will be on the left side and the human readable name is on the right side.\
 To record multiple audio devices to multiple audio tracks specify the `-a` option multiple times, for example `-a default_output -a default_input`.\
 To record multiple audio devices into one audio track (merged) specify the `-a` option once split with `|` for each audio device, for example `-a "default_output|default_input"`.\
-In wireplumber the name of the audio will be in the format `gsr-<audio_device>`, but you can change that name by prefixing the audio device with a name and then a forward slash, for example: `-a "name/default_output"`.
-
+In wireplumber the name of the audio will be in the format `gsr-<audio_device>`, but you can change that name by prefixing the audio device with a name and then a forward slash, for example: `-a "name/default_output"`.\
+You can also record audio from specific applications instead of from audio devices by using the `-aa` option to only record the specified applications or `-aai` to record all applications except the ones provided.\
+To list all available application to record from run `gpu-screen-recorder --list-application-audio`.
 ## Simple way to run replay without gui
 Run the script `scripts/start-replay.sh` to start replay and then `scripts/save-replay.sh` to save a replay and `scripts/stop-replay.sh` to stop the replay. The videos are saved to `$HOME/Videos`.
 You can use these scripts to start replay at system startup if you add `scripts/start-replay.sh` to startup (this can be done differently depending on your desktop environment / window manager) and then go into

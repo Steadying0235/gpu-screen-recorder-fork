@@ -95,11 +95,11 @@ static void module_index_callback(pa_context*, uint32_t idx, void *userdata) {
     p->combined_sink_module_index = idx;
 }
 
-static bool create_combined_sink(pa_handle *p, const char *combined_sink_name) {
+static bool create_null_sink(pa_handle *p, const char *null_sink_name) {
     // TODO: Error handling
     char module_argument[256];
-    snprintf(module_argument, sizeof(module_argument), "sink_name=\"%s\" slaves= adjust_time=0", combined_sink_name);
-    pa_operation *module_pa = pa_context_load_module(p->context, "module-combine-sink", module_argument, module_index_callback, p);
+    snprintf(module_argument, sizeof(module_argument), "sink_name=\"%s\" slaves= adjust_time=0", null_sink_name);
+    pa_operation *module_pa = pa_context_load_module(p->context, "module-null-sink", module_argument, module_index_callback, p);
     for(;;) {
         if(pa_operation_get_state(module_pa) == PA_OPERATION_DONE) {
             pa_operation_unref(module_pa);
@@ -163,7 +163,7 @@ static pa_handle* pa_sound_device_new(const char *server,
 
     char device_to_record[256];
     if(combined_sink_name) {
-        if(!create_combined_sink(p, combined_sink_name)) {
+        if(!create_null_sink(p, combined_sink_name)) {
             fprintf(stderr, "gsr error: pa_sound_device_new: failed to create module-combine-sink\n");
             goto fail;
         }

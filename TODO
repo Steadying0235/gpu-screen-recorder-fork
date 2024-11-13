@@ -189,3 +189,5 @@ Support application audio recording without pulseaudio combined sink.
 Support transposing (rotating) with vaapi. This isn't supported on many devices with rgb buffer, but its supported with nv12 buffer (on intel at least).
 
 Cleanup pipewire_audio.c (proper error handling and memory cleanup of proxies).
+
+Hide application audio module-null-sink by using sink_properties=media.class="Audio/Sink/Internal".

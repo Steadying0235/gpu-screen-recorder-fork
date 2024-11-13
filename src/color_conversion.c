@@ -327,7 +327,7 @@ void gsr_color_conversion_deinit(gsr_color_conversion *self) {
 
 static void gsr_color_conversion_swizzle_texture_source(gsr_color_conversion *self, gsr_source_color source_color) {
     if(source_color == GSR_SOURCE_COLOR_BGR) {
-        const int swizzle_mask[] = { GL_BLUE, GL_GREEN, GL_RED, GL_ALPHA };
+        const int swizzle_mask[] = { GL_BLUE, GL_GREEN, GL_RED, 1 };
         self->params.egl->glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask);
     }
 }

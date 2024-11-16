@@ -1124,7 +1124,7 @@ static void usage_full() {
     fprintf(stderr, "        It's possible to use an application name that is not listed in --list-application-audio, for example when trying to record audio from an application that hasn't started yet.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -aai  Record audio from all applications except the ones specified with this option (case-insensitive). Can be specified multiple times.\n");
-    fprintf(stderr, "        Each time this is specified a new audio track is added that records all applications except the ones specified.\n");
+    fprintf(stderr, "        Each time this is specified a new audio track is added that records audio from all applications except the ones specified.\n");
     fprintf(stderr, "        Multiple application audio can be merged into one audio track by using \"|\" as a separator into one -a argument, for example: -a \"firefox|csgo\".\n");
     fprintf(stderr, "        If the application name is an empty string then the argument is ignored.\n");
     fprintf(stderr, "        Optional, no application audio is added by default.\n");
@@ -1899,6 +1899,15 @@ static void disable_prime_run() {
 
 static void list_system_info(bool wayland) {
     printf("display_server|%s\n", wayland ? "wayland" : "x11");
+    bool supports_app_audio = false;
+#ifdef GSR_APP_AUDIO
+    gsr_pipewire_audio audio;
+    if(gsr_pipewire_audio_init(&audio)) {
+        supports_app_audio = true;
+        gsr_pipewire_audio_deinit(&audio);
+    }
+#endif
+    printf("supports_app_audio|%s\n", supports_app_audio ? "yes" : "no");
 }
 
 static void list_gpu_info(gsr_egl *egl) {

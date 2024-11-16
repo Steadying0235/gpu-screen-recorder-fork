@@ -42,10 +42,6 @@ struct AudioDevices {
     std::vector<AudioInput> audio_inputs;
 };
 
-struct ApplicationAudio {
-    std::string name;
-};
-
 struct MergedAudioInputs {
     std::vector<AudioInput> audio_inputs;
     AudioInputType type = AudioInputType::DEVICE;
@@ -78,6 +74,5 @@ void sound_device_close(SoundDevice *device);
 int sound_device_read_next_chunk(SoundDevice *device, void **buffer, double timeout_sec, double *latency_seconds);
 
 AudioDevices get_pulseaudio_inputs();
-std::vector<ApplicationAudio> get_pulseaudio_applications();
 
 #endif /* GPU_SCREEN_RECORDER_H */

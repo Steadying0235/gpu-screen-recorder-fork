@@ -191,3 +191,5 @@ Support transposing (rotating) with vaapi. This isn't supported on many devices 
 Cleanup pipewire_audio.c (proper error handling and memory cleanup of proxies).
 
 Hide application audio module-null-sink by using sink_properties=media.class="Audio/Sink/Internal".
+
+Improve software encoding performance.

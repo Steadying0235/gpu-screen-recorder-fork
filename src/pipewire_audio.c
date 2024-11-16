@@ -398,6 +398,21 @@ void gsr_pipewire_audio_for_each_app(gsr_pipewire_audio *self, gsr_pipewire_audi
         if(node->type != GSR_PIPEWIRE_AUDIO_NODE_TYPE_STREAM_OUTPUT)
             continue;
 
+        bool duplicate_app = false;
+        for(int j = i - 1; j >= 0; --j) {
+            const gsr_pipewire_audio_node *prev_node = &self->stream_nodes[j];
+            if(prev_node->type != GSR_PIPEWIRE_AUDIO_NODE_TYPE_STREAM_OUTPUT)
+                continue;
+
+            if(strcasecmp(node->name, prev_node->name) == 0) {
+                duplicate_app = true;
+                break;
+            }
+        }
+
+        if(duplicate_app)
+            continue;
+
         if(!callback(node->name, userdata))
             break;
     }

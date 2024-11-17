@@ -1902,6 +1902,11 @@ static void list_system_info(bool wayland) {
     bool supports_app_audio = false;
 #ifdef GSR_APP_AUDIO
     supports_app_audio = pulseaudio_server_is_pipewire();
+    gsr_pipewire_audio audio;
+    if(gsr_pipewire_audio_init(&audio))
+        gsr_pipewire_audio_deinit(&audio);
+    else
+        supports_app_audio = false;
 #endif
     printf("supports_app_audio|%s\n", supports_app_audio ? "yes" : "no");
 }

@@ -332,7 +332,7 @@ void gsr_pipewire_audio_deinit(gsr_pipewire_audio *self) {
     self->num_requested_links = 0;
 
 #if PW_CHECK_VERSION(0, 3, 49)
-        pw_deinit();
+    pw_deinit();
 #endif
 }
 

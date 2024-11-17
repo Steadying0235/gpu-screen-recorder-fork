@@ -74,5 +74,6 @@ void sound_device_close(SoundDevice *device);
 int sound_device_read_next_chunk(SoundDevice *device, void **buffer, double timeout_sec, double *latency_seconds);
 
 AudioDevices get_pulseaudio_inputs();
+bool pulseaudio_server_is_pipewire();
 
 #endif /* GPU_SCREEN_RECORDER_H */

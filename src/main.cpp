@@ -1901,11 +1901,7 @@ static void list_system_info(bool wayland) {
     printf("display_server|%s\n", wayland ? "wayland" : "x11");
     bool supports_app_audio = false;
 #ifdef GSR_APP_AUDIO
-    gsr_pipewire_audio audio;
-    if(gsr_pipewire_audio_init(&audio)) {
-        supports_app_audio = true;
-        gsr_pipewire_audio_deinit(&audio);
-    }
+    supports_app_audio = pulseaudio_server_is_pipewire();
 #endif
     printf("supports_app_audio|%s\n", supports_app_audio ? "yes" : "no");
 }
@@ -3201,7 +3197,12 @@ int main(int argc, char **argv) {
     memset(&pipewire_audio, 0, sizeof(pipewire_audio));
     if(uses_app_audio) {
         if(!gsr_pipewire_audio_init(&pipewire_audio)) {
-            fprintf(stderr, "gsr error: failed to setup PipeWire audio for application audio capture. The likely reason for this failure is that your sound server is not PipeWire\n");
+            fprintf(stderr, "gsr error: failed to setup PipeWire audio for application audio capture. The likely reason for this failure is that your sound server is not PipeWire. The options -aa and -aai are only available when running PipeWire audio server.\n");
+            _exit(2);
+        }
+
+        if(!pulseaudio_server_is_pipewire()) {
+            fprintf(stderr, "gsr error: your sound server is not PipeWire. The options -aa and -aai are only available when running PipeWire audio server.\n");
             _exit(2);
         }
 

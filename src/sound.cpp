@@ -399,6 +399,12 @@ static void pa_server_info_cb(pa_context*, const pa_server_info *server_info, vo
         audio_devices->default_input = server_info->default_source_name;
 }
 
+static void server_info_callback(pa_context*, const pa_server_info *server_info, void *userdata) {
+    bool *is_server_pipewire = (bool*)userdata;
+    if(server_info->server_name && strstr(server_info->server_name, "PipeWire"))
+        *is_server_pipewire = true;
+}
+
 static void get_pulseaudio_default_inputs(AudioDevices &audio_devices) {
     int state = 0;
     int pa_ready = 0;
@@ -492,4 +498,51 @@ AudioDevices get_pulseaudio_inputs() {
     pa_context_unref(ctx);
     pa_mainloop_free(main_loop);
     return audio_devices;
+}
+
+bool pulseaudio_server_is_pipewire() {
+    int state = 0;
+    int pa_ready = 0;
+    pa_operation *pa_op = NULL;
+    bool is_server_pipewire = false;
+
+    pa_mainloop *main_loop = pa_mainloop_new();
+    if(!main_loop)
+        return is_server_pipewire;
+
+    pa_context *ctx = pa_context_new(pa_mainloop_get_api(main_loop), "gpu-screen-recorder");
+    if(pa_context_connect(ctx, NULL, PA_CONTEXT_NOFLAGS, NULL) < 0)
+        goto done;
+
+    pa_context_set_state_callback(ctx, pa_state_cb, &pa_ready);
+
+    for(;;) {
+        // Not ready
+        if(pa_ready == 0) {
+            pa_mainloop_iterate(main_loop, 1, NULL);
+            continue;
+        }
+
+        switch(state) {
+            case 0: {
+                pa_op = pa_context_get_server_info(ctx, server_info_callback, &is_server_pipewire);
+                ++state;
+                break;
+            }
+        }
+
+        // Couldn't get connection to the server
+        if(pa_ready == 2 || (state == 1 && pa_op && pa_operation_get_state(pa_op) == PA_OPERATION_DONE))
+            break;
+
+        pa_mainloop_iterate(main_loop, 1, NULL);
+    }
+
+    done:
+    if(pa_op)
+        pa_operation_unref(pa_op);
+    pa_context_disconnect(ctx);
+    pa_context_unref(ctx);
+    pa_mainloop_free(main_loop);
+    return is_server_pipewire;
 }

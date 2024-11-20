@@ -878,7 +878,7 @@ bool vaapi_copy_egl_image_to_video_surface(gsr_egl *egl, EGLImage image, vec2i s
     }
 
     if(texture_num_planes <= 0 || texture_num_planes > 8) {
-        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: expected planes size to be 0<planes<8 for drm buf, got %d planes\n", texture_num_planes);
+        fprintf(stderr, "gsr error: gsr_capture_xcomposite_vaapi_tick: expected planes size to be 0<planes<=8 for drm buf, got %d planes\n", texture_num_planes);
         return false;
     }
 

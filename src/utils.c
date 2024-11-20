@@ -816,6 +816,8 @@ bool vaapi_copy_drm_planes_to_video_surface(AVCodecContext *video_codec_context,
     // if (first surface to render)
     //     pipeline_param->output_background_color = 0xff000000; // black
 
+    vaSyncSurface(va_dpy, input_surface_id);
+
     va_status = vaCreateBuffer(va_dpy, context_id, VAProcPipelineParameterBufferType, sizeof(params), 1, &params, &buffer_id);
     if(va_status != VA_STATUS_SUCCESS) {
         fprintf(stderr, "gsr error: vaapi_copy_drm_planes_to_video_surface: vaCreateBuffer failed, error: %d\n", va_status);
@@ -845,9 +847,9 @@ bool vaapi_copy_drm_planes_to_video_surface(AVCodecContext *video_codec_context,
         goto done;
     }
 
-    // vaSyncBuffer(va_dpy, buffer_id, 1000 * 1000 * 1000);
-    // vaSyncSurface(va_dpy, input_surface_id);
-    // vaSyncSurface(va_dpy, output_surface_id);
+    vaSyncBuffer(va_dpy, buffer_id, 1000ULL * 1000ULL * 1000ULL); // 1 Second
+    //vaSyncSurface(va_dpy, input_surface_id);
+    vaSyncSurface(va_dpy, output_surface_id);
 
     done:
     if(buffer_id)

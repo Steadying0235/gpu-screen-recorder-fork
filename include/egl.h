@@ -131,6 +131,7 @@ typedef void(*__GLXextFuncPtr)(void);
 
 #define GL_VENDOR                               0x1F00
 #define GL_RENDERER                             0x1F01
+#define GL_VERSION                              0x1F02
 
 #define GL_COMPILE_STATUS                       0x8B81
 #define GL_INFO_LOG_LENGTH                      0x8B84

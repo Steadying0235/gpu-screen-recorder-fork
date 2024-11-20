@@ -39,6 +39,7 @@ bool get_monitor_by_name(const gsr_egl *egl, gsr_connection_type connection_type
 gsr_monitor_rotation drm_monitor_get_display_server_rotation(const gsr_egl *egl, const gsr_monitor *monitor);
 
 bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info);
+bool gl_driver_version_greater_than(const gsr_egl *egl, int major, int minor, int patch);
 
 /* |output| should be at least 128 bytes in size */
 bool gsr_get_valid_card_path(gsr_egl *egl, char *output, bool is_monitor_capture);

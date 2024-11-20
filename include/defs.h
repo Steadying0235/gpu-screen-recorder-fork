@@ -13,6 +13,11 @@ typedef struct {
     gsr_gpu_vendor vendor;
     int gpu_version; /* 0 if unknown */
     bool is_steam_deck;
+
+    /* Only currently set for Mesa. 0 if unknown format */
+    int driver_major;
+    int driver_minor;
+    int driver_patch;
 } gsr_gpu_info;
 
 typedef enum {

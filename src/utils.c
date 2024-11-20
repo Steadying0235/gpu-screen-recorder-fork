@@ -415,9 +415,13 @@ bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info) {
     bool supported = true;
     const unsigned char *gl_vendor = egl->glGetString(GL_VENDOR);
     const unsigned char *gl_renderer = egl->glGetString(GL_RENDERER);
+    const unsigned char *gl_version = egl->glGetString(GL_VERSION);
 
     info->gpu_version = 0;
     info->is_steam_deck = false;
+    info->driver_major = 0;
+    info->driver_minor = 0;
+    info->driver_patch = 0;
 
     if(!gl_vendor) {
         fprintf(stderr, "gsr error: failed to get gpu vendor\n");
@@ -455,8 +459,31 @@ bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info) {
         info->is_steam_deck = strstr((const char*)gl_renderer, "vangogh") != NULL;
     }
 
+    if(gl_version) {
+        const char *mesa_p = strstr((const char*)gl_version, "Mesa ");
+        if(mesa_p) {
+            mesa_p += 5;
+            int major = 0;
+            int minor = 0;
+            int patch = 0;
+            if(sscanf(mesa_p, "%d.%d.%d", &major, &minor, &patch) == 3) {
+                info->driver_major = major;
+                info->driver_minor = minor;
+                info->driver_patch = patch;
+            }
+        }
+    }
+
     end:
     return supported;
+}
+
+static bool version_greater_than(int major, int minor, int patch, int other_major, int other_minor, int other_patch) {
+    return (major > other_major) || (major == other_major && minor > other_minor) || (major == other_major && minor == other_minor && patch > other_patch);
+}
+
+bool gl_driver_version_greater_than(const gsr_egl *egl, int major, int minor, int patch) {
+    return version_greater_than(egl->gpu_info.driver_major, egl->gpu_info.driver_minor, egl->gpu_info.driver_patch, major, minor, patch);
 }
 
 static bool try_card_has_valid_plane(const char *card_path) {

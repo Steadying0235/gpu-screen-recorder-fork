@@ -34,6 +34,8 @@ enum class AudioInputType {
 struct AudioInput {
     std::string name;
     std::string description;
+    AudioInputType type = AudioInputType::DEVICE;
+    bool inverted = false;
 };
 
 struct AudioDevices {
@@ -44,8 +46,6 @@ struct AudioDevices {
 
 struct MergedAudioInputs {
     std::vector<AudioInput> audio_inputs;
-    AudioInputType type = AudioInputType::DEVICE;
-    bool inverted = false;
 };
 
 typedef enum {

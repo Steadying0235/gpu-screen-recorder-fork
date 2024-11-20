@@ -1067,12 +1067,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-#ifdef GSR_APP_AUDIO
-    const char *app_audio_options = " [-aa <application_name>] [-aai <application_name>] ";
-#else
-    const char *app_audio_options = "";
-#endif
-    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>]%s[-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr|cbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [--version] [-h|--help]\n", program_name, app_audio_options);
+    fprintf(stderr, "usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr|cbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [--version] [-h|--help]\n", program_name);
 }
 
 // TODO: Update with portal info
@@ -1106,33 +1101,24 @@ static void usage_full() {
     fprintf(stderr, "        For variable frame rate mode this option is the max frame rate and if the capture frame rate is below this target frame rate then frames will not be duplicated.\n");
     fprintf(stderr, "        Content frame rate is similar to variable frame rate mode, except the frame rate will match the frame rate of the captured content when possible, but not capturing above the frame rate set in this -f option.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -a    Audio device to record from (pulse audio device). Can be specified multiple times. Each time this is specified a new audio track is added for the specified audio device.\n");
+    fprintf(stderr, "  -a    Audio device or application to record from (pulse audio device). Can be specified multiple times. Each time this is specified a new audio track is added for the specified audio device or application.\n");
     fprintf(stderr, "        A name can be given to the audio input device by prefixing the audio input with <name>/, for example \"dummy/alsa_output.pci-0000_00_1b.0.analog-stereo.monitor\".\n");
-    fprintf(stderr, "        Multiple audio devices can be merged into one audio track by using \"|\" as a separator into one -a argument, for example: -a \"alsa_output1|alsa_output2\".\n");
+    fprintf(stderr, "        Multiple audio sources can be merged into one audio track by using \"|\" as a separator into one -a argument, for example: -a \"alsa_output1|alsa_output2\".\n");
     fprintf(stderr, "        The audio device can also be \"default_output\" in which case the default output device is used, or \"default_input\" in which case the default input device is used.\n");
-    fprintf(stderr, "        If the audio device is an empty string then the argument is ignored.\n");
-    fprintf(stderr, "        Optional, no audio track is added by default.\n");
-    fprintf(stderr, "        Run GPU Screen Recorder with the --list-audio-devices option to list valid audio devices to use with this -a option.\n");
-    fprintf(stderr, "\n");
+    fprintf(stderr, "        The audio name can also be prefixed with \"device:\", for example: -a \"device:alsa_output.pci-0000_00_1b.0.analog-stereo.monitor\".\n");
 #ifdef GSR_APP_AUDIO
-    fprintf(stderr, "  -aa   Application to record audio from (case-insensitive). Can be specified multiple times. Each time this is specified a new audio track is added for the specified application audio.\n");
-    fprintf(stderr, "        Multiple application audio can be merged into one audio track by using \"|\" as a separator into one -a argument, for example: -a \"firefox|csgo\".\n");
-    fprintf(stderr, "        If the application name is an empty string then the argument is ignored.\n");
-    fprintf(stderr, "        Optional, no application audio is added by default.\n");
-    fprintf(stderr, "        Note: this option is only available when the sound server on the system is PipeWire.\n");
-    fprintf(stderr, "        Run GPU Screen Recorder with the --list-application-audio option to list valid application names to use with this -aa option.\n");
-    fprintf(stderr, "        It's possible to use an application name that is not listed in --list-application-audio, for example when trying to record audio from an application that hasn't started yet.\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "  -aai  Record audio from all applications except the ones specified with this option (case-insensitive). Can be specified multiple times.\n");
-    fprintf(stderr, "        Each time this is specified a new audio track is added that records audio from all applications except the ones specified.\n");
-    fprintf(stderr, "        Multiple application audio can be merged into one audio track by using \"|\" as a separator into one -a argument, for example: -a \"firefox|csgo\".\n");
-    fprintf(stderr, "        If the application name is an empty string then the argument is ignored.\n");
-    fprintf(stderr, "        Optional, no application audio is added by default.\n");
-    fprintf(stderr, "        Note: this option is only available when the sound server on the system is PipeWire.\n");
-    fprintf(stderr, "        Run GPU Screen Recorder with the --list-application-audio option to list valid application names to use with this -aai option.\n");
-    fprintf(stderr, "        It's possible to use an application name that is not listed in --list-application-audio, for example when trying to record audio and the target application hasn't started yet.\n");
-    fprintf(stderr, "\n");
+    fprintf(stderr, "        To record audio from an application then prefix the audio name with \"app:\", for example: -a \"app:Brave\".\n");
+    fprintf(stderr, "        To record audio from all applications except the provided use prefix the audio name with \"app-inverse:\", for example: -a \"app-inverse:Brave\".\n");
+    fprintf(stderr, "        \"app:\" and \"app-inverse:\" can't be mixed in one audio track.\n");
+    fprintf(stderr, "        One audio track can contain both audio devices and application audio, for example: -a \"default_output|device:alsa_output.pci-0000_00_1b.0.analog-stereo.monitor|app:Brave\".\n");
+    fprintf(stderr, "        Recording application audio is only possible when the sound server on the system is PipeWire.\n");
 #endif
+    fprintf(stderr, "        If the audio name is an empty string then the argument is ignored.\n");
+    fprintf(stderr, "        Optional, no audio track is added by default.\n");
+    fprintf(stderr, "        Run GPU Screen Recorder with the --list-audio-devices option to list valid audio device names.\n");
+    fprintf(stderr, "        Run GPU Screen Recorder with the --list-application-audio option to list valid application names. It's possible to use an application name that is not listed in --list-application-audio,\n");
+    fprintf(stderr, "        for example when trying to record audio from an application that hasn't started yet.\n");
+    fprintf(stderr, "\n");
     fprintf(stderr, "  -q    Video quality. Should be either 'medium', 'high', 'very_high' or 'ultra' when using '-bm qp' or '-bm vbr' options, and '-bm qp' is the default option used.\n");
     fprintf(stderr, "        'high' is the recommended option when live streaming or when you have a slower harddrive.\n");
     fprintf(stderr, "        When using '-bm cbr' option then this is option is instead used to specify the video bitrate in kbps.\n");
@@ -1260,8 +1246,9 @@ static void usage_full() {
     fprintf(stderr, "  %s -w portal -f 60 -a default_output -restore-portal-session yes -o \"$HOME/Videos/video.mp4\"\n", program_name);
     fprintf(stderr, "  %s -w screen -f 60 -a default_output -bm cbr -q 15000 -o \"$HOME/Videos/video.mp4\"\n", program_name);
 #ifdef GSR_APP_AUDIO
-    fprintf(stderr, "  %s -w screen -f 60 -aa \"firefox|csgo\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
-    fprintf(stderr, "  %s -w screen -f 60 -aai \"firefox|csgo\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -a \"app:firefox|app:csgo\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -a \"app-inverse:firefox|app-inverse:csgo\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
+    fprintf(stderr, "  %s -w screen -f 60 -a \"default-input|app-inverse:Brave\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
 #endif
     //fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -q ultra -pixfmt yuv444 -o video.mp4\n");
     _exit(1);
@@ -1642,6 +1629,11 @@ static void split_string(const std::string &str, char delimiter, std::function<b
     }
 }
 
+static bool string_starts_with(const std::string &str, const char *substr) {
+    int len = strlen(substr);
+    return (int)str.size() >= len && memcmp(str.data(), substr, len) == 0;
+}
+
 static const AudioInput* get_audio_device_by_name(const std::vector<AudioInput> &audio_inputs, const std::string &name) {
     for(const auto &audio_input : audio_inputs) {
         if(audio_input.name == name)
@@ -1656,15 +1648,36 @@ static std::vector<AudioInput> parse_audio_input_arg(const char *str, const Audi
         AudioInput audio_input;
         audio_input.name.assign(sub, size);
 
-        const bool name_is_existing_audio_device = get_audio_device_by_name(audio_devices.audio_inputs, audio_input.name);
-        const size_t index = audio_input.name.find('/');
-        if(!name_is_existing_audio_device && index != std::string::npos) {
-            audio_input.description = audio_input.name.substr(0, index);
-            audio_input.name.erase(audio_input.name.begin(), audio_input.name.begin() + index + 1);
+        if(string_starts_with(audio_input.name.c_str(), "app:")) {
+            audio_input.name.erase(audio_input.name.begin(), audio_input.name.begin() + 4);
+            audio_input.description = audio_input.name;
+            audio_input.type = AudioInputType::APPLICATION;
+            audio_input.inverted = false;
+            audio_inputs.push_back(std::move(audio_input));
+            return true;
+        } else if(string_starts_with(audio_input.name.c_str(), "app-inverse:")) {
+            audio_input.name.erase(audio_input.name.begin(), audio_input.name.begin() + 12);
+            audio_input.description = audio_input.name;
+            audio_input.type = AudioInputType::APPLICATION;
+            audio_input.inverted = true;
+            audio_inputs.push_back(std::move(audio_input));
+            return true;
+        } else if(string_starts_with(audio_input.name.c_str(), "device:")) {
+            audio_input.name.erase(audio_input.name.begin(), audio_input.name.begin() + 7);
+            audio_input.type = AudioInputType::DEVICE;
+            audio_inputs.push_back(std::move(audio_input));
+            return true;
+        } else {
+            const bool name_is_existing_audio_device = get_audio_device_by_name(audio_devices.audio_inputs, audio_input.name);
+            const size_t index = audio_input.name.find('/');
+            if(!name_is_existing_audio_device && index != std::string::npos) {
+                audio_input.description = audio_input.name.substr(0, index);
+                audio_input.name.erase(audio_input.name.begin(), audio_input.name.begin() + index + 1);
+            }
+            audio_input.type = AudioInputType::DEVICE;
+            audio_inputs.push_back(std::move(audio_input));
+            return true;
         }
-
-        audio_inputs.push_back(std::move(audio_input));
-        return true;
     });
     return audio_inputs;
 }
@@ -1675,6 +1688,7 @@ static std::vector<AudioInput> parse_app_audio_input_arg(const char *str) {
         AudioInput audio_input;
         audio_input.name.assign(sub, size);
         audio_input.description = audio_input.name;
+        audio_input.type = AudioInputType::APPLICATION;
         audio_inputs.push_back(std::move(audio_input));
         return true;
     });
@@ -2410,6 +2424,9 @@ struct Arg {
 
 static void match_app_audio_input_to_available_apps(const std::vector<AudioInput> &requested_audio_inputs, const std::vector<std::string> &app_audio_names) {
     for(const AudioInput &request_audio_input : requested_audio_inputs) {
+        if(request_audio_input.type != AudioInputType::APPLICATION || request_audio_input.inverted)
+            continue;
+
         bool match = false;
         for(const std::string &app_name : app_audio_names) {
             if(strcasecmp(app_name.c_str(), request_audio_input.name.c_str()) == 0) {
@@ -2431,19 +2448,18 @@ static void match_app_audio_input_to_available_apps(const std::vector<AudioInput
 // Manually check if the audio inputs we give exist. This is only needed for pipewire, not pulseaudio.
 // Pipewire instead DEFAULTS TO THE DEFAULT AUDIO INPUT. THAT'S RETARDED.
 // OH, YOU MISSPELLED THE AUDIO INPUT? FUCK YOU
-static std::vector<MergedAudioInputs> parse_audio_inputs(const AudioDevices &audio_devices, const Arg &audio_input_arg, const Arg &app_audio_input_arg, const Arg &app_audio_input_inverted_arg, bool &uses_amix, const std::vector<std::string> &app_audio_names) {
+static std::vector<MergedAudioInputs> parse_audio_inputs(const AudioDevices &audio_devices, const Arg &audio_input_arg, const Arg &app_audio_input_arg, const Arg &app_audio_input_inverted_arg) {
     std::vector<MergedAudioInputs> requested_audio_inputs;
-    uses_amix = false;
 
     for(const char *audio_input : audio_input_arg.values) {
         if(!audio_input || audio_input[0] == '\0')
             continue;
 
-        requested_audio_inputs.push_back({parse_audio_input_arg(audio_input, audio_devices), AudioInputType::DEVICE, false});
-        if(requested_audio_inputs.back().audio_inputs.size() > 1)
-            uses_amix = true;
-
+        requested_audio_inputs.push_back({parse_audio_input_arg(audio_input, audio_devices)});
         for(AudioInput &request_audio_input : requested_audio_inputs.back().audio_inputs) {
+            if(request_audio_input.type != AudioInputType::DEVICE)
+                continue;
+
             bool match = false;
 
             if(!audio_devices.default_output.empty() && request_audio_input.name == "default_output") {
@@ -2485,22 +2501,85 @@ static std::vector<MergedAudioInputs> parse_audio_inputs(const AudioDevices &aud
         if(!app_audio_input || app_audio_input[0] == '\0')
             continue;
 
-        requested_audio_inputs.push_back({parse_app_audio_input_arg(app_audio_input), AudioInputType::APPLICATION, false});
-        match_app_audio_input_to_available_apps(requested_audio_inputs.back().audio_inputs, app_audio_names);
+        requested_audio_inputs.push_back({parse_app_audio_input_arg(app_audio_input)});
     }
 
     for(const char *app_audio_input : app_audio_input_inverted_arg.values) {
         if(!app_audio_input || app_audio_input[0] == '\0')
             continue;
 
-        requested_audio_inputs.push_back({parse_app_audio_input_arg(app_audio_input), AudioInputType::APPLICATION, true});
-        match_app_audio_input_to_available_apps(requested_audio_inputs.back().audio_inputs, app_audio_names);
+        requested_audio_inputs.push_back({parse_app_audio_input_arg(app_audio_input)});
+        for(auto &audio_input : requested_audio_inputs.back().audio_inputs) {
+            audio_input.inverted = true;
+        }
     }
 
     return requested_audio_inputs;
 }
 
-static AudioCodec select_audio_codec_with_fallback(AudioCodec audio_codec, const std::string &file_extension,bool uses_amix) {
+static bool audio_inputs_has_app_audio(const std::vector<AudioInput> &audio_inputs) {
+    for(const auto &audio_input : audio_inputs) {
+        if(audio_input.type == AudioInputType::APPLICATION)
+            return true;
+    }
+    return false;
+}
+
+static bool merged_audio_inputs_has_app_audio(const std::vector<MergedAudioInputs> &merged_audio_inputs) {
+    for(const auto &merged_audio_input : merged_audio_inputs) {
+        if(audio_inputs_has_app_audio(merged_audio_input.audio_inputs))
+            return true;
+    }
+    return false;
+}
+
+// Should use amix if more than 1 audio device and 0 application audio, merged
+static bool audio_inputs_should_use_amix(const std::vector<AudioInput> &audio_inputs) {
+    int num_audio_devices = 0;
+    int num_app_audio = 0;
+
+    for(const auto &audio_input : audio_inputs) {
+        if(audio_input.type == AudioInputType::DEVICE)
+            ++num_audio_devices;
+        else if(audio_input.type == AudioInputType::APPLICATION)
+            ++num_app_audio;
+    }
+
+    return num_audio_devices > 1 && num_app_audio == 0;
+}
+
+static bool merged_audio_inputs_should_use_amix(const std::vector<MergedAudioInputs> &merged_audio_inputs) {
+    for(const auto &merged_audio_input : merged_audio_inputs) {
+        if(audio_inputs_should_use_amix(merged_audio_input.audio_inputs))
+            return true;
+    }
+    return false;
+}
+
+static void validate_merged_audio_inputs_app_audio(const std::vector<MergedAudioInputs> &merged_audio_inputs, const std::vector<std::string> &app_audio_names) {
+    for(const auto &merged_audio_input : merged_audio_inputs) {
+        int num_app_audio = 0;
+        int num_app_inverted_audio = 0;
+
+        for(const auto &audio_input : merged_audio_input.audio_inputs) {
+            if(audio_input.type == AudioInputType::APPLICATION) {
+                if(audio_input.inverted)
+                    ++num_app_inverted_audio;
+                else
+                    ++num_app_audio;
+            }
+        }
+
+        match_app_audio_input_to_available_apps(merged_audio_input.audio_inputs, app_audio_names);
+
+        if(num_app_audio > 0 && num_app_inverted_audio > 0) {
+            fprintf(stderr, "gsr error: argument -a was provided with both app: and app-inverse:, only one of them can be used for one audio track\n");
+            _exit(2);
+        }
+    }
+}
+
+static AudioCodec select_audio_codec_with_fallback(AudioCodec audio_codec, const std::string &file_extension, bool uses_amix) {
     switch(audio_codec) {
         case AudioCodec::AAC: {
             if(file_extension == "webm") {
@@ -2834,13 +2913,29 @@ static AudioDevice create_application_audio_audio_input(const MergedAudioInputs 
         _exit(1);
     }
 
-    std::vector<const char*> app_names;
-    app_names.reserve(merged_audio_inputs.audio_inputs.size());
+    std::vector<const char*> audio_sources;
     for(const auto &audio_input : merged_audio_inputs.audio_inputs) {
-        app_names.push_back(audio_input.name.c_str());
+        if(audio_input.type == AudioInputType::DEVICE)
+            audio_sources.push_back(audio_input.name.c_str());
     }
 
-    if(merged_audio_inputs.inverted) {
+    bool app_audio_inverted = false;
+    std::vector<const char*> app_names;
+    for(const auto &audio_input : merged_audio_inputs.audio_inputs) {
+        if(audio_input.type == AudioInputType::APPLICATION) {
+            app_names.push_back(audio_input.name.c_str());
+            app_audio_inverted = audio_input.inverted;
+        }
+    }
+
+    if(!audio_sources.empty()) {
+        if(!gsr_pipewire_audio_add_link_from_sources_to_sink(pipewire_audio, audio_sources.data(), audio_sources.size(), audio_device.combined_sink_name.c_str())) {
+            fprintf(stderr, "gsr error: failed to add application audio link\n");
+            _exit(1);
+        }
+    }
+
+    if(app_audio_inverted) {
         if(!gsr_pipewire_audio_add_link_from_apps_to_sink_inverted(pipewire_audio, app_names.data(), app_names.size(), audio_device.combined_sink_name.c_str())) {
             fprintf(stderr, "gsr error: failed to add application audio link\n");
             _exit(1);
@@ -2924,8 +3019,8 @@ int main(int argc, char **argv) {
         { "-s", Arg { {}, true, false } },
         { "-a", Arg { {}, true, true } },
 #ifdef GSR_APP_AUDIO
-        { "-aa", Arg { {}, true, true } },
-        { "-aai", Arg { {}, true, true } },
+        { "-aa", Arg { {}, true, true } },   // TODO: Remove soon since this is deprecated. User should use -a with app: instead
+        { "-aai", Arg { {}, true, true } },  // TODO: Remove soon since this is deprecated. User should use -a with app-inverse: instead
 #endif
         { "-q", Arg { {}, true, false } },
         { "-o", Arg { {}, true, false } },
@@ -3191,23 +3286,28 @@ int main(int argc, char **argv) {
     AudioDevices audio_devices;
     if(!audio_input_arg.values.empty())
         audio_devices = get_pulseaudio_inputs();
+    
+    if(!app_audio_input_arg.values.empty())
+        fprintf(stderr, "gsr warning: argument -aa is deprecated, use -a with app: prefix instead, for example: -a \"app:Brave\"\n");
 
-    bool uses_app_audio = false;
-    if(!app_audio_input_arg.values.empty() || !app_audio_input_inverted_arg.values.empty())
-        uses_app_audio = true;
+    if(!app_audio_input_inverted_arg.values.empty())
+        fprintf(stderr, "gsr warning: argument -aai is deprecated, use -a with app-inverse: prefix instead, for example: -a \"app-inverse:Brave\"\n");
 
+    std::vector<MergedAudioInputs> requested_audio_inputs = parse_audio_inputs(audio_devices, audio_input_arg, app_audio_input_arg, app_audio_input_inverted_arg);
+
+    const bool uses_app_audio = merged_audio_inputs_has_app_audio(requested_audio_inputs);
     std::vector<std::string> app_audio_names;
 #ifdef GSR_APP_AUDIO
     gsr_pipewire_audio pipewire_audio;
     memset(&pipewire_audio, 0, sizeof(pipewire_audio));
     if(uses_app_audio) {
         if(!gsr_pipewire_audio_init(&pipewire_audio)) {
-            fprintf(stderr, "gsr error: failed to setup PipeWire audio for application audio capture. The likely reason for this failure is that your sound server is not PipeWire. The options -aa and -aai are only available when running PipeWire audio server.\n");
+            fprintf(stderr, "gsr error: failed to setup PipeWire audio for application audio capture. The likely reason for this failure is that your sound server is not PipeWire. Application audio is only available when running PipeWire audio server.\n");
             _exit(2);
         }
 
         if(!pulseaudio_server_is_pipewire()) {
-            fprintf(stderr, "gsr error: your sound server is not PipeWire. The options -aa and -aai are only available when running PipeWire audio server.\n");
+            fprintf(stderr, "gsr error: your sound server is not PipeWire. Application audio is only available when running PipeWire audio server.\n");
             _exit(2);
         }
 
@@ -3219,8 +3319,7 @@ int main(int argc, char **argv) {
     }
 #endif
 
-    bool uses_amix = false;
-    std::vector<MergedAudioInputs> requested_audio_inputs = parse_audio_inputs(audio_devices, audio_input_arg, app_audio_input_arg, app_audio_input_inverted_arg, uses_amix, app_audio_names);
+    validate_merged_audio_inputs_app_audio(requested_audio_inputs, app_audio_names);
 
     const char *container_format = args["-c"].value();
     if(container_format && strcmp(container_format, "mkv") == 0)
@@ -3532,6 +3631,7 @@ int main(int argc, char **argv) {
         video_codec = hdr_video_codec_to_sdr_video_codec(video_codec);
     }
 
+    const bool uses_amix = merged_audio_inputs_should_use_amix(requested_audio_inputs);
     audio_codec = select_audio_codec_with_fallback(audio_codec, file_extension, uses_amix);
     bool low_power = false;
     const AVCodec *video_codec_f = select_video_codec_with_fallback(&video_codec, video_codec_to_use, file_extension.c_str(), use_software_video_encoder, &egl, &low_power);
@@ -3620,7 +3720,7 @@ int main(int argc, char **argv) {
     int audio_max_frame_size = 1024;
     int audio_stream_index = VIDEO_STREAM_INDEX + 1;
     for(const MergedAudioInputs &merged_audio_inputs : requested_audio_inputs) {
-        const bool use_amix = merged_audio_inputs.audio_inputs.size() > 1;
+        const bool use_amix = audio_inputs_should_use_amix(merged_audio_inputs.audio_inputs);
         AVCodecContext *audio_codec_context = create_audio_codec_context(fps, audio_codec, use_amix, audio_bitrate);
 
         AVStream *audio_stream = nullptr;
@@ -3642,7 +3742,7 @@ int main(int argc, char **argv) {
         std::vector<AVFilterContext*> src_filter_ctx;
         AVFilterGraph *graph = nullptr;
         AVFilterContext *sink = nullptr;
-        if(use_amix && merged_audio_inputs.type == AudioInputType::DEVICE) {
+        if(use_amix) {
             int err = init_filter_graph(audio_codec_context, &graph, &sink, src_filter_ctx, merged_audio_inputs.audio_inputs.size());
             if(err < 0) {
                 fprintf(stderr, "Error: failed to create audio filter\n");
@@ -3659,15 +3759,13 @@ int main(int argc, char **argv) {
         const double num_audio_frames_shift = audio_startup_time_seconds / timeout_sec;
 
         std::vector<AudioDevice> audio_track_audio_devices;
-        switch(merged_audio_inputs.type) {
-            case AudioInputType::DEVICE:
-                audio_track_audio_devices = create_device_audio_inputs(merged_audio_inputs.audio_inputs, audio_codec_context, num_channels, num_audio_frames_shift, src_filter_ctx, use_amix);
-                break;
-            case AudioInputType::APPLICATION:
+        if(audio_inputs_has_app_audio(merged_audio_inputs.audio_inputs)) {
+            assert(!use_amix);
 #ifdef GSR_APP_AUDIO
-                audio_track_audio_devices.push_back(create_application_audio_audio_input(merged_audio_inputs, audio_codec_context, num_channels, num_audio_frames_shift, &pipewire_audio));
+            audio_track_audio_devices.push_back(create_application_audio_audio_input(merged_audio_inputs, audio_codec_context, num_channels, num_audio_frames_shift, &pipewire_audio));
 #endif
-                break;
+        } else {
+            audio_track_audio_devices = create_device_audio_inputs(merged_audio_inputs.audio_inputs, audio_codec_context, num_channels, num_audio_frames_shift, src_filter_ctx, use_amix);
         }
 
         AudioTrack audio_track;

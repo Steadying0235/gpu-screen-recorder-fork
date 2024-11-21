@@ -1106,13 +1106,11 @@ static void usage_full() {
     fprintf(stderr, "        Multiple audio sources can be merged into one audio track by using \"|\" as a separator into one -a argument, for example: -a \"alsa_output1|alsa_output2\".\n");
     fprintf(stderr, "        The audio device can also be \"default_output\" in which case the default output device is used, or \"default_input\" in which case the default input device is used.\n");
     fprintf(stderr, "        The audio name can also be prefixed with \"device:\", for example: -a \"device:alsa_output.pci-0000_00_1b.0.analog-stereo.monitor\".\n");
-#ifdef GSR_APP_AUDIO
     fprintf(stderr, "        To record audio from an application then prefix the audio name with \"app:\", for example: -a \"app:Brave\".\n");
     fprintf(stderr, "        To record audio from all applications except the provided use prefix the audio name with \"app-inverse:\", for example: -a \"app-inverse:Brave\".\n");
     fprintf(stderr, "        \"app:\" and \"app-inverse:\" can't be mixed in one audio track.\n");
     fprintf(stderr, "        One audio track can contain both audio devices and application audio, for example: -a \"default_output|device:alsa_output.pci-0000_00_1b.0.analog-stereo.monitor|app:Brave\".\n");
     fprintf(stderr, "        Recording application audio is only possible when the sound server on the system is PipeWire.\n");
-#endif
     fprintf(stderr, "        If the audio name is an empty string then the argument is ignored.\n");
     fprintf(stderr, "        Optional, no audio track is added by default.\n");
     fprintf(stderr, "        Run GPU Screen Recorder with the --list-audio-devices option to list valid audio device names.\n");
@@ -1211,14 +1209,12 @@ static void usage_full() {
     fprintf(stderr, "          alsa_output.pci-0000_0c_00.4.iec958-stereo|Monitor of Starship/Matisse HD Audio Controller Digital Stereo (IEC958)\n");
     fprintf(stderr, "        The <audio_device_name> is the name that can be passed to GPU Screen Recorder with the -a option.\n");
     fprintf(stderr, "\n");
-#ifdef GSR_APP_AUDIO
     fprintf(stderr, "  --list-application-audio\n");
     fprintf(stderr, "        Lists application that you can record from (with the -aa or -aai option) (prints them to stdout and exits), for example:\n");
     fprintf(stderr, "          firefox\n");
     fprintf(stderr, "          csgo\n");
     fprintf(stderr, "        These names are the application audio names that can be passed to GPU Screen Recorder with the -aa option.\n");
     fprintf(stderr, "\n");
-#endif
     fprintf(stderr, "  --version\n");
     fprintf(stderr, "        Print version (%s) and exit\n", GSR_VERSION);
     fprintf(stderr, "\n");
@@ -1245,11 +1241,9 @@ static void usage_full() {
     fprintf(stderr, "  %s -w screen -f 60 -a default_output -c mkv -sc script.sh -r 60 -o \"$HOME/Videos\"\n", program_name);
     fprintf(stderr, "  %s -w portal -f 60 -a default_output -restore-portal-session yes -o \"$HOME/Videos/video.mp4\"\n", program_name);
     fprintf(stderr, "  %s -w screen -f 60 -a default_output -bm cbr -q 15000 -o \"$HOME/Videos/video.mp4\"\n", program_name);
-#ifdef GSR_APP_AUDIO
     fprintf(stderr, "  %s -w screen -f 60 -a \"app:firefox|app:csgo\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
     fprintf(stderr, "  %s -w screen -f 60 -a \"app-inverse:firefox|app-inverse:csgo\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
     fprintf(stderr, "  %s -w screen -f 60 -a \"default-input|app-inverse:Brave\" -o \"$HOME/Videos/video.mp4\"\n", program_name);
-#endif
     //fprintf(stderr, "  gpu-screen-recorder -w screen -f 60 -q ultra -pixfmt yuv444 -o video.mp4\n");
     _exit(1);
 }
@@ -3018,10 +3012,8 @@ int main(int argc, char **argv) {
         { "-f", Arg { {}, false, false } },
         { "-s", Arg { {}, true, false } },
         { "-a", Arg { {}, true, true } },
-#ifdef GSR_APP_AUDIO
         { "-aa", Arg { {}, true, true } },   // TODO: Remove soon since this is deprecated. User should use -a with app: instead
         { "-aai", Arg { {}, true, true } },  // TODO: Remove soon since this is deprecated. User should use -a with app-inverse: instead
-#endif
         { "-q", Arg { {}, true, false } },
         { "-o", Arg { {}, true, false } },
         { "-r", Arg { {}, true, false } },

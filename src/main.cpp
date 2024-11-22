@@ -1910,11 +1910,13 @@ static void list_system_info(bool wayland) {
     bool supports_app_audio = false;
 #ifdef GSR_APP_AUDIO
     supports_app_audio = pulseaudio_server_is_pipewire();
-    gsr_pipewire_audio audio;
-    if(gsr_pipewire_audio_init(&audio))
-        gsr_pipewire_audio_deinit(&audio);
-    else
-        supports_app_audio = false;
+    if(supports_app_audio) {
+        gsr_pipewire_audio audio;
+        if(gsr_pipewire_audio_init(&audio))
+            gsr_pipewire_audio_deinit(&audio);
+        else
+            supports_app_audio = false;
+    }
 #endif
     printf("supports_app_audio|%s\n", supports_app_audio ? "yes" : "no");
 }
@@ -2173,10 +2175,12 @@ static bool app_audio_query_callback(const char *app_name, void*) {
 
 static void list_application_audio_command() {
 #ifdef GSR_APP_AUDIO
-    gsr_pipewire_audio audio;
-    if(gsr_pipewire_audio_init(&audio)) {
-        gsr_pipewire_audio_for_each_app(&audio, app_audio_query_callback, NULL);
-        gsr_pipewire_audio_deinit(&audio);
+    if(pulseaudio_server_is_pipewire()) {
+        gsr_pipewire_audio audio;
+        if(gsr_pipewire_audio_init(&audio)) {
+            gsr_pipewire_audio_for_each_app(&audio, app_audio_query_callback, NULL);
+            gsr_pipewire_audio_deinit(&audio);
+        }
     }
 #endif
 
@@ -3293,13 +3297,13 @@ int main(int argc, char **argv) {
     gsr_pipewire_audio pipewire_audio;
     memset(&pipewire_audio, 0, sizeof(pipewire_audio));
     if(uses_app_audio) {
-        if(!gsr_pipewire_audio_init(&pipewire_audio)) {
-            fprintf(stderr, "gsr error: failed to setup PipeWire audio for application audio capture. The likely reason for this failure is that your sound server is not PipeWire. Application audio is only available when running PipeWire audio server.\n");
+        if(!pulseaudio_server_is_pipewire()) {
+            fprintf(stderr, "gsr error: your sound server is not PipeWire. Application audio is only available when running PipeWire audio server\n");
             _exit(2);
         }
 
-        if(!pulseaudio_server_is_pipewire()) {
-            fprintf(stderr, "gsr error: your sound server is not PipeWire. Application audio is only available when running PipeWire audio server.\n");
+        if(!gsr_pipewire_audio_init(&pipewire_audio)) {
+            fprintf(stderr, "gsr error: failed to setup PipeWire audio for application audio capture\n");
             _exit(2);
         }
 

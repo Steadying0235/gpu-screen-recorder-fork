@@ -2053,22 +2053,24 @@ static void output_monitor_info(const gsr_monitor *monitor, void *userdata) {
     }
 }
 
-static void list_supported_capture_options(gsr_egl *egl, bool wayland) {
+static void list_supported_capture_options(gsr_egl *egl, bool wayland, bool list_monitors) {
     if(!wayland) {
         puts("window");
         puts("focused");
     }
 
-    capture_options_callback options;
-    options.wayland = wayland;
-    options.egl = egl;
-    if(monitor_capture_use_drm(egl, wayland)) {
-        const bool is_x11 = gsr_egl_get_display_server(egl) == GSR_DISPLAY_SERVER_X11;
-        const gsr_connection_type connection_type = is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
-        for_each_active_monitor_output(egl, connection_type, output_monitor_info, &options);
-    } else {
-        puts("screen"); // All monitors in one, only available on Nvidia X11
-        for_each_active_monitor_output(egl, GSR_CONNECTION_X11, output_monitor_info, &options);
+    if(list_monitors) {
+        capture_options_callback options;
+        options.wayland = wayland;
+        options.egl = egl;
+        if(monitor_capture_use_drm(egl, wayland)) {
+            const bool is_x11 = gsr_egl_get_display_server(egl) == GSR_DISPLAY_SERVER_X11;
+            const gsr_connection_type connection_type = is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
+            for_each_active_monitor_output(egl, connection_type, output_monitor_info, &options);
+        } else {
+            puts("screen"); // All monitors in one, only available on Nvidia X11
+            for_each_active_monitor_output(egl, GSR_CONNECTION_X11, output_monitor_info, &options);
+        }
     }
 
 #ifdef GSR_PORTAL
@@ -2117,12 +2119,13 @@ static void info_command() {
         _exit(22);
     }
 
+    bool list_monitors = true;
     egl.card_path[0] = '\0';
     if(monitor_capture_use_drm(&egl, wayland)) {
         // TODO: Allow specifying another card, and in other places
-        if(!gsr_get_valid_card_path(&egl, egl.card_path, false)) {
+        if(!gsr_get_valid_card_path(&egl, egl.card_path, true)) {
             fprintf(stderr, "Error: no /dev/dri/cardX device found. Make sure that you have at least one monitor connected\n");
-            _exit(23);
+            list_monitors = false;
         }
     }
 
@@ -2139,7 +2142,7 @@ static void info_command() {
     puts("section=video_codecs");
     list_supported_video_codecs(&egl, wayland);
     puts("section=capture_options");
-    list_supported_capture_options(&egl, wayland);
+    list_supported_capture_options(&egl, wayland, list_monitors);
 
     fflush(stdout);
 
@@ -2216,17 +2219,18 @@ static void list_capture_options_command() {
         _exit(1);
     }
 
+    bool list_monitors = true;
     egl.card_path[0] = '\0';
     if(monitor_capture_use_drm(&egl, wayland)) {
         // TODO: Allow specifying another card, and in other places
-        if(!gsr_get_valid_card_path(&egl, egl.card_path, false)) {
+        if(!gsr_get_valid_card_path(&egl, egl.card_path, true)) {
             fprintf(stderr, "Error: no /dev/dri/cardX device found. Make sure that you have at least one monitor connected\n");
-            _exit(23);
+            list_monitors = false;
         }
     }
 
     av_log_set_level(AV_LOG_FATAL);
-    list_supported_capture_options(&egl, wayland);
+    list_supported_capture_options(&egl, wayland, list_monitors);
 
     fflush(stdout);
 

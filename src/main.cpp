@@ -1123,9 +1123,10 @@ static void usage_full() {
     fprintf(stderr, "        Optional when using '-bm qp' or '-bm vbr' options, set to 'very_high' be default.\n");
     fprintf(stderr, "        Required when using '-bm cbr' option.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "  -r    Replay buffer size in seconds. If this is set, then only the last seconds as set by this option will be stored\n");
-    fprintf(stderr, "        and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature.\n");
-    fprintf(stderr, "        This option has be between 5 and 1200. Note that the replay buffer size will not always be precise, because of keyframes. Optional, disabled by default.\n");
+    fprintf(stderr, "  -r    Replay buffer time in seconds. If this is set, then only the last seconds as set by this option will be stored\n");
+    fprintf(stderr, "        and the video will only be saved when the gpu-screen-recorder is closed. This feature is similar to Nvidia's instant replay feature This option has be between 5 and 1200.\n");
+    fprintf(stderr, "        Note that the video data is stored in RAM, so don't use too long replay buffer time and use constant bitrate option (-bm cbr) to prevent RAM usage from going too high in busy scenes.\n");
+    fprintf(stderr, "        Optional, disabled by default.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "  -k    Video codec to use. Should be either 'auto', 'h264', 'hevc', 'av1', 'vp8', 'vp9', 'hevc_hdr', 'av1_hdr', 'hevc_10bit' or 'av1_10bit'.\n");
     fprintf(stderr, "        Optional, set to 'auto' by default which defaults to 'h264'. Forcefully set to 'h264' if the file container type is 'flv'.\n");
@@ -2980,6 +2981,11 @@ int main(int argc, char **argv) {
     unsetenv("__GL_SYNC_TO_VBLANK");
     // Same as above, but for amd/intel
     unsetenv("vblank_mode");
+
+    if(geteuid() == 0) {
+        fprintf(stderr, "Error: don't run gpu-screen-recorder as the root user\n");
+        _exit(1);
+    }
 
     if(argc <= 1)
         usage_full();

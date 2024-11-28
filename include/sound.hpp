@@ -26,6 +26,17 @@ typedef struct {
     unsigned int frames;
 } SoundDevice;
 
+struct AudioDevice {
+    std::string name;
+    std::string description;
+};
+
+struct AudioDevices {
+    std::string default_output;
+    std::string default_input;
+    std::vector<AudioDevice> audio_inputs;
+};
+
 enum class AudioInputType {
     DEVICE,
     APPLICATION
@@ -33,18 +44,12 @@ enum class AudioInputType {
 
 struct AudioInput {
     std::string name;
-    std::string description;
     AudioInputType type = AudioInputType::DEVICE;
     bool inverted = false;
 };
 
-struct AudioDevices {
-    std::string default_output;
-    std::string default_input;
-    std::vector<AudioInput> audio_inputs;
-};
-
 struct MergedAudioInputs {
+    std::string track_name;
     std::vector<AudioInput> audio_inputs;
 };
 

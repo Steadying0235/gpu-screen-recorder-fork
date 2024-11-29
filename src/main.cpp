@@ -1107,8 +1107,8 @@ static void usage_full() {
     printf("        Multiple audio sources can be merged into one audio track by using \"|\" as a separator into one -a argument, for example: -a \"default_output|default_input\".\n");
     printf("        A name can be given to the audio track by prefixing the audio with <name>/, for example \"track name/default_output\" or \"track name/default_output|default_input\".\n");
     printf("        The audio name can also be prefixed with \"device:\", for example: -a \"device:default_output\".\n");
-    printf("        To record audio from an application then prefix the audio name with \"app:\", for example: -a \"app:Brave\".\n");
-    printf("        To record audio from all applications except the provided use prefix the audio name with \"app-inverse:\", for example: -a \"app-inverse:Brave\".\n");
+    printf("        To record audio from an application then prefix the audio name with \"app:\", for example: -a \"app:Brave\". The application name is case-insensitive.\n");
+    printf("        To record audio from all applications except the provided ones prefix the audio name with \"app-inverse:\", for example: -a \"app-inverse:Brave\".\n");
     printf("        \"app:\" and \"app-inverse:\" can't be mixed in one audio track.\n");
     printf("        One audio track can contain both audio devices and application audio, for example: -a \"default_output|device:alsa_output.pci-0000_00_1b.0.analog-stereo.monitor|app:Brave\".\n");
     printf("        Recording application audio is only possible when the sound server on the system is PipeWire.\n");

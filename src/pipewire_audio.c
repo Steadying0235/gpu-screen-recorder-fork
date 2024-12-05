@@ -186,6 +186,8 @@ static void registry_event_global(void *data, uint32_t id, uint32_t permissions,
 
                 gsr_pipewire_audio_create_links(self);
             }
+        } else if(self->num_stream_nodes >= GSR_PIPEWIRE_AUDIO_MAX_STREAM_NODES) {
+            fprintf(stderr, "gsr error: reached the maximum amount of audio stream nodes\n");
         }
     } else if(strcmp(type, PW_TYPE_INTERFACE_Port) == 0) {
         const char *port_name = spa_dict_lookup(props, PW_KEY_PORT_NAME);
@@ -212,6 +214,8 @@ static void registry_event_global(void *data, uint32_t id, uint32_t permissions,
 
                 gsr_pipewire_audio_create_links(self);
             }
+        } else if(self->num_ports >= GSR_PIPEWIRE_AUDIO_MAX_PORTS) {
+            fprintf(stderr, "gsr error: reached the maximum amount of audio ports\n");
         }
     }
 }
@@ -370,8 +374,10 @@ static bool string_remove_suffix(char *str, const char *suffix) {
 }
 
 static bool gsr_pipewire_audio_add_link_from_apps_to_output(gsr_pipewire_audio *self, const char **output_names, int num_output_names, const char *input_name, gsr_pipewire_audio_node_type output_type, gsr_pipewire_audio_link_input_type input_type, bool inverted) {
-    if(self->num_requested_links >= GSR_PIPEWIRE_AUDIO_MAX_REQUESTED_LINKS)
+    if(self->num_requested_links >= GSR_PIPEWIRE_AUDIO_MAX_REQUESTED_LINKS) {
+        fprintf(stderr, "gsr error: reached the maximum amount of audio links\n");
         return false;
+    }
     
     char **output_names_copy = calloc(num_output_names, sizeof(char*));
     if(!output_names_copy)

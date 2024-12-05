@@ -193,3 +193,5 @@ Cleanup pipewire_audio.c (proper error handling and memory cleanup of proxies).
 Hide application audio module-null-sink by using sink_properties=media.class="Audio/Sink/Internal".
 
 Improve software encoding performance.
+
+Add option to record audio from the recorded window only.

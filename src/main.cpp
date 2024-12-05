@@ -1212,10 +1212,10 @@ static void usage_full() {
     printf("        The <audio_device_name> is the name that can be passed to GPU Screen Recorder with the -a option.\n");
     printf("\n");
     printf("  --list-application-audio\n");
-    printf("        Lists application that you can record from (with the -aa or -aai option) (prints them to stdout and exits), for example:\n");
+    printf("        Lists applications that you can record from (prints them to stdout and exits), for example:\n");
     printf("          firefox\n");
     printf("          csgo\n");
-    printf("        These names are the application audio names that can be passed to GPU Screen Recorder with the -aa option.\n");
+    printf("        These names are the application audio names that can be passed to GPU Screen Recorder with the -a option.\n");
     printf("\n");
     printf("  --version\n");
     printf("        Print version (%s) and exit\n", GSR_VERSION);

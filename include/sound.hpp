@@ -64,11 +64,6 @@ typedef enum {
     Returns 0 on success, or a negative value on failure.
 */
 int sound_device_get_by_name(SoundDevice *device, const char *device_name, const char *description, unsigned int num_channels, unsigned int period_frame_size, AudioFormat audio_format);
-/*
-    Creates a module-combine-sink and connects to it for recording, returning the device into the |device| parameter.
-    Returns 0 on success, or a negative value on failure.
-*/
-int sound_device_create_combined_sink_connect(SoundDevice *device, const char *combined_sink_name, unsigned int num_channels, unsigned int period_frame_size, AudioFormat audio_format);
 
 void sound_device_close(SoundDevice *device);
 

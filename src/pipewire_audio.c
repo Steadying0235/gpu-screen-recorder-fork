@@ -277,20 +277,20 @@ bool gsr_pipewire_audio_init(gsr_pipewire_audio *self) {
     
     self->thread_loop = pw_thread_loop_new("gsr screen capture", NULL);
     if(!self->thread_loop) {
-        fprintf(stderr, "gsr error: gsr_pipewire_video_setup_stream: failed to create pipewire thread\n");
+        fprintf(stderr, "gsr error: gsr_pipewire_audio_init: failed to create pipewire thread\n");
         gsr_pipewire_audio_deinit(self);
         return false;
     }
 
     self->context = pw_context_new(pw_thread_loop_get_loop(self->thread_loop), NULL, 0);
     if(!self->context) {
-        fprintf(stderr, "gsr error: gsr_pipewire_video_setup_stream: failed to create pipewire context\n");
+        fprintf(stderr, "gsr error: gsr_pipewire_audio_init: failed to create pipewire context\n");
         gsr_pipewire_audio_deinit(self);
         return false;
     }
 
     if(pw_thread_loop_start(self->thread_loop) < 0) {
-        fprintf(stderr, "gsr error: gsr_pipewire_video_setup_stream: failed to start thread\n");
+        fprintf(stderr, "gsr error: gsr_pipewire_audio_init: failed to start thread\n");
         gsr_pipewire_audio_deinit(self);
         return false;
     }
@@ -312,7 +312,6 @@ bool gsr_pipewire_audio_init(gsr_pipewire_audio *self) {
 
     self->server_version_sync = pw_core_sync(self->core, PW_ID_CORE, 0);
     pw_thread_loop_wait(self->thread_loop);
-
     pw_thread_loop_unlock(self->thread_loop);
     return true;
 }
@@ -322,6 +321,14 @@ void gsr_pipewire_audio_deinit(gsr_pipewire_audio *self) {
         //pw_thread_loop_wait(self->thread_loop);
         pw_thread_loop_stop(self->thread_loop);
     }
+
+    for(int i = 0; i < self->num_virtual_sink_proxies; ++i) {
+        if(self->virtual_sink_proxies[i]) {
+            pw_proxy_destroy(self->virtual_sink_proxies[i]);
+            self->virtual_sink_proxies[i] = NULL;
+        }
+    }
+    self->num_virtual_sink_proxies = 0;
 
     if(self->core) {
         pw_core_disconnect(self->core);
@@ -362,6 +369,55 @@ void gsr_pipewire_audio_deinit(gsr_pipewire_audio *self) {
 #endif
 }
 
+static struct pw_properties* gsr_pipewire_create_null_audio_sink(const char *name) {
+    struct spa_error_location err_loc;
+    char props_str[512];
+    snprintf(props_str, sizeof(props_str), "{ factory.name=support.null-audio-sink node.name=\"%s\" media.class=Audio/Sink object.linger=false audio.position=[FL FR] monitor.channel-volumes=true monitor.passthrough=true adjust_time=0 slaves=\"\" }", name);
+    struct pw_properties *props = pw_properties_new_string_checked(props_str, strlen(props_str), &err_loc);
+    if(!props) {
+        fprintf(stderr, "gsr error: gsr_pipewire_create_null_audio_sink: failed to create virtual sink properties, error: %d:%d: %s\n", err_loc.line, err_loc.col, err_loc.reason);
+        return NULL;
+    }
+    return props;
+}
+
+bool gsr_pipewire_audio_create_virtual_sink(gsr_pipewire_audio *self, const char *name) {
+    if(self->num_virtual_sink_proxies == GSR_PIPEWIRE_AUDIO_MAX_VIRTUAL_SINKS) {
+        fprintf(stderr, "gsr error: gsr_pipewire_audio_create_virtual_sink: reached max number of virtual sinks\n");
+        return false;
+    }
+
+    pw_thread_loop_lock(self->thread_loop);
+
+    struct pw_properties *virtual_sink_props = gsr_pipewire_create_null_audio_sink(name);
+    if(!virtual_sink_props) {
+        pw_thread_loop_unlock(self->thread_loop);
+        return false;
+    }
+
+    struct pw_proxy *virtual_sink_proxy = pw_core_create_object(self->core, "adapter", PW_TYPE_INTERFACE_Node, PW_VERSION_NODE, &virtual_sink_props->dict, 0);
+    // TODO:
+    // If these are done then the above needs sizeof(*self) as the last argument
+    //pw_proxy_add_object_listener(virtual_sink_proxy, &pd->object_listener, &node_events, self);
+	//pw_proxy_add_listener(virtual_sink_proxy, &pd->proxy_listener, &proxy_events, self);
+    // TODO: proxy
+    pw_properties_free(virtual_sink_props);
+    if(!virtual_sink_proxy) {
+        fprintf(stderr, "gsr error: gsr_pipewire_audio_create_virtual_sink: failed to create virtual sink\n");
+        pw_thread_loop_unlock(self->thread_loop);
+        return false;
+    }
+
+    self->server_version_sync = pw_core_sync(self->core, PW_ID_CORE, self->server_version_sync);
+    pw_thread_loop_wait(self->thread_loop);
+    pw_thread_loop_unlock(self->thread_loop);
+
+    self->virtual_sink_proxies[self->num_virtual_sink_proxies] = virtual_sink_proxy;
+    ++self->num_virtual_sink_proxies;
+
+    return true;
+}
+
 static bool string_remove_suffix(char *str, const char *suffix) {
     int str_len = strlen(str);
     int suffix_len = strlen(suffix);
@@ -386,6 +442,9 @@ static bool gsr_pipewire_audio_add_link_from_apps_to_output(gsr_pipewire_audio *
     char *input_name_copy = strdup(input_name);
     if(!input_name_copy)
         goto error;
+
+    if(input_type == GSR_PIPEWIRE_AUDIO_LINK_INPUT_TYPE_SINK)
+        string_remove_suffix(input_name_copy, ".monitor");
 
     for(int i = 0; i < num_output_names; ++i) {
         output_names_copy[i] = strdup(output_names[i]);

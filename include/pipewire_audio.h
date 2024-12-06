@@ -11,6 +11,7 @@
 #define GSR_PIPEWIRE_AUDIO_MAX_STREAM_NODES 128
 #define GSR_PIPEWIRE_AUDIO_MAX_PORTS 256
 #define GSR_PIPEWIRE_AUDIO_MAX_REQUESTED_LINKS 32
+#define GSR_PIPEWIRE_AUDIO_MAX_VIRTUAL_SINKS 32
 
 typedef enum {
     GSR_PIPEWIRE_AUDIO_NODE_TYPE_STREAM_OUTPUT, /* Application audio */
@@ -67,10 +68,15 @@ typedef struct {
 
     gsr_pipewire_audio_requested_link requested_links[GSR_PIPEWIRE_AUDIO_MAX_REQUESTED_LINKS];
     int num_requested_links;
+
+    struct pw_proxy *virtual_sink_proxies[GSR_PIPEWIRE_AUDIO_MAX_VIRTUAL_SINKS];
+    int num_virtual_sink_proxies;
 } gsr_pipewire_audio;
 
 bool gsr_pipewire_audio_init(gsr_pipewire_audio *self);
 void gsr_pipewire_audio_deinit(gsr_pipewire_audio *self);
+
+bool gsr_pipewire_audio_create_virtual_sink(gsr_pipewire_audio *self, const char *name);
 
 /*
     This function links audio source outputs from applications that match the name |app_names| to the input

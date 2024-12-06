@@ -42,29 +42,10 @@ struct pa_handle {
 
     int operation_success;
     double latency_seconds;
-
-    uint32_t combined_sink_module_index;
 };
-
-static void destroy_combined_sink(pa_handle *p) {
-    // TODO: error handling
-    pa_operation *module_pa = pa_context_unload_module(p->context, p->combined_sink_module_index, NULL, NULL);
-    for(;;) {
-        if(pa_operation_get_state(module_pa) == PA_OPERATION_DONE) {
-            pa_operation_unref(module_pa);
-            break;
-        }
-        pa_mainloop_iterate(p->mainloop, 1, NULL);
-    }
-}
 
 static void pa_sound_device_free(pa_handle *p) {
     assert(p);
-
-    if(p->combined_sink_module_index != PA_INVALID_INDEX) {
-        destroy_combined_sink(p);
-        p->combined_sink_module_index = PA_INVALID_INDEX;
-    }
 
     if (p->stream) {
         pa_stream_unref(p->stream);
@@ -90,31 +71,10 @@ static void pa_sound_device_free(pa_handle *p) {
     pa_xfree(p);
 }
 
-static void module_index_callback(pa_context*, uint32_t idx, void *userdata) {
-    pa_handle *p = (pa_handle*)userdata;
-    p->combined_sink_module_index = idx;
-}
-
-static bool create_null_sink(pa_handle *p, const char *null_sink_name) {
-    // TODO: Error handling
-    char module_argument[256];
-    snprintf(module_argument, sizeof(module_argument), "sink_name=\"%s\" slaves= adjust_time=0", null_sink_name);
-    pa_operation *module_pa = pa_context_load_module(p->context, "module-null-sink", module_argument, module_index_callback, p);
-    for(;;) {
-        if(pa_operation_get_state(module_pa) == PA_OPERATION_DONE) {
-            pa_operation_unref(module_pa);
-            break;
-        }
-        pa_mainloop_iterate(p->mainloop, 1, NULL);
-    }
-    return p->combined_sink_module_index != PA_INVALID_INDEX;
-}
-
 static pa_handle* pa_sound_device_new(const char *server,
         const char *name,
         const char *dev,
         const char *stream_name,
-        const char *combined_sink_name,
         const pa_sample_spec *ss,
         const pa_buffer_attr *attr,
         int *rerror) {
@@ -122,7 +82,6 @@ static pa_handle* pa_sound_device_new(const char *server,
     int error = PA_ERR_INTERNAL, r;
 
     p = pa_xnew0(pa_handle, 1);
-    p->combined_sink_module_index = PA_INVALID_INDEX;
 
     const int buffer_size = attr->fragsize;
     void *buffer = malloc(buffer_size);
@@ -161,23 +120,12 @@ static pa_handle* pa_sound_device_new(const char *server,
         pa_mainloop_iterate(p->mainloop, 1, NULL);
     }
 
-    char device_to_record[256];
-    if(combined_sink_name) {
-        if(!create_null_sink(p, combined_sink_name)) {
-            fprintf(stderr, "gsr error: pa_sound_device_new: failed to create module-combine-sink\n");
-            goto fail;
-        }
-        snprintf(device_to_record, sizeof(device_to_record), "%s.monitor", combined_sink_name);
-    } else {
-        snprintf(device_to_record, sizeof(device_to_record), "%s", dev);
-    }
-
     if (!(p->stream = pa_stream_new(p->context, stream_name, ss, NULL))) {
         error = pa_context_errno(p->context);
         goto fail;
     }
 
-    r = pa_stream_connect_record(p->stream, device_to_record, attr,
+    r = pa_stream_connect_record(p->stream, dev, attr,
         (pa_stream_flags_t)(PA_STREAM_INTERPOLATE_TIMING|PA_STREAM_ADJUST_LATENCY|PA_STREAM_AUTO_TIMING_UPDATE));
 
     if (r < 0) {
@@ -312,7 +260,7 @@ static int audio_format_to_get_bytes_per_sample(AudioFormat audio_format) {
     return 2;
 }
 
-static int sound_device_setup_record(SoundDevice *device, const char *device_name, const char *description, unsigned int num_channels, unsigned int period_frame_size, AudioFormat audio_format, const char *combined_sink_name) {
+int sound_device_get_by_name(SoundDevice *device, const char *device_name, const char *description, unsigned int num_channels, unsigned int period_frame_size, AudioFormat audio_format) {
     pa_sample_spec ss;
     ss.format = audio_format_to_pulse_audio_format(audio_format);
     ss.rate = 48000;
@@ -326,7 +274,7 @@ static int sound_device_setup_record(SoundDevice *device, const char *device_nam
     buffer_attr.maxlength = buffer_attr.fragsize;
 
     int error = 0;
-    pa_handle *handle = pa_sound_device_new(nullptr, description, device_name, description, combined_sink_name, &ss, &buffer_attr, &error);
+    pa_handle *handle = pa_sound_device_new(nullptr, description, device_name, description, &ss, &buffer_attr, &error);
     if(!handle) {
         fprintf(stderr, "pa_sound_device_new() failed: %s. Audio input device %s might not be valid\n", pa_strerror(error), description);
         return -1;
@@ -335,14 +283,6 @@ static int sound_device_setup_record(SoundDevice *device, const char *device_nam
     device->handle = handle;
     device->frames = period_frame_size;
     return 0;
-}
-
-int sound_device_get_by_name(SoundDevice *device, const char *device_name, const char *description, unsigned int num_channels, unsigned int period_frame_size, AudioFormat audio_format) {
-    return sound_device_setup_record(device, device_name, description, num_channels, period_frame_size, audio_format, NULL);
-}
-
-int sound_device_create_combined_sink_connect(SoundDevice *device, const char *combined_sink_name, unsigned int num_channels, unsigned int period_frame_size, AudioFormat audio_format) {
-    return sound_device_setup_record(device, "gpu-screen-recorder", "gpu-screen-recorder", num_channels, period_frame_size, audio_format, combined_sink_name);
 }
 
 void sound_device_close(SoundDevice *device) {

@@ -216,7 +216,7 @@ static bool gsr_egl_create_window(gsr_egl *self, bool wayland) {
 
     const int32_t ctxattr[] = {
         EGL_CONTEXT_CLIENT_VERSION, 2,
-        EGL_CONTEXT_PRIORITY_LEVEL_IMG, EGL_CONTEXT_PRIORITY_HIGH_IMG, /* requires cap_sys_nice, ignored otherwise */
+        //EGL_CONTEXT_PRIORITY_LEVEL_IMG, EGL_CONTEXT_PRIORITY_HIGH_IMG, /* requires cap_sys_nice, ignored otherwise */
         EGL_NONE, EGL_NONE
     };
 

@@ -276,7 +276,7 @@ int sound_device_get_by_name(SoundDevice *device, const char *device_name, const
     int error = 0;
     pa_handle *handle = pa_sound_device_new(nullptr, description, device_name, description, &ss, &buffer_attr, &error);
     if(!handle) {
-        fprintf(stderr, "pa_sound_device_new() failed: %s. Audio input device %s might not be valid\n", pa_strerror(error), description);
+        fprintf(stderr, "pa_sound_device_new() failed: %s. Audio input device %s might not be valid\n", pa_strerror(error), device_name);
         return -1;
     }
 

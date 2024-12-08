@@ -1,6 +1,7 @@
 #include "../include/pipewire_audio.h"
 
 #include <pipewire/pipewire.h>
+#include <spa/utils/defs.h>
 
 static void on_core_info_cb(void *user_data, const struct pw_core_info *info) {
     gsr_pipewire_audio *self = user_data;

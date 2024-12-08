@@ -7,6 +7,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define CONNECTOR_TYPE_COUNTS 32
+
 typedef struct AVCodecContext AVCodecContext;
 typedef struct AVFrame AVFrame;
 
@@ -27,16 +29,25 @@ typedef struct {
     bool found_monitor;
 } get_monitor_by_name_userdata;
 
+typedef struct {
+    int type;
+    int count;
+    int count_active;
+} drm_connector_type_count;
+
 double clock_get_monotonic_seconds(void);
 bool generate_random_characters(char *buffer, int buffer_size, const char *alphabet, size_t alphabet_size);
 bool generate_random_characters_standard_alphabet(char *buffer, int buffer_size);
 
 typedef void (*active_monitor_callback)(const gsr_monitor *monitor, void *userdata);
 void for_each_active_monitor_output_x11_not_cached(Display *display, active_monitor_callback callback, void *userdata);
-void for_each_active_monitor_output_x11(const gsr_egl *egl, active_monitor_callback callback, void *userdata);
 void for_each_active_monitor_output(const gsr_egl *egl, gsr_connection_type connection_type, active_monitor_callback callback, void *userdata);
 bool get_monitor_by_name(const gsr_egl *egl, gsr_connection_type connection_type, const char *name, gsr_monitor *monitor);
 gsr_monitor_rotation drm_monitor_get_display_server_rotation(const gsr_egl *egl, const gsr_monitor *monitor);
+
+int get_connector_type_by_name(const char *name);
+drm_connector_type_count* drm_connector_types_get_index(drm_connector_type_count *type_counts, int *num_type_counts, int connector_type);
+uint32_t monitor_identifier_from_type_and_count(int monitor_type_index, int monitor_type_count);
 
 bool gl_get_gpu_info(gsr_egl *egl, gsr_gpu_info *info);
 bool gl_driver_version_greater_than(const gsr_egl *egl, int major, int minor, int patch);

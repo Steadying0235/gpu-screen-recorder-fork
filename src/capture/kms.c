@@ -2,6 +2,7 @@
 #include "../../include/utils.h"
 #include "../../include/color_conversion.h"
 #include "../../include/cursor.h"
+#include "../../include/window/window.h"
 #include "../../kms/client/kms_client.h"
 
 #include <stdlib.h>
@@ -183,10 +184,12 @@ static int gsr_capture_kms_start(gsr_capture *cap, AVCodecContext *video_codec_c
     if(kms_init_res != 0)
         return kms_init_res;
 
-    self->is_x11 = gsr_egl_get_display_server(self->params.egl) == GSR_DISPLAY_SERVER_X11;
+    self->is_x11 = gsr_window_get_display_server(self->params.egl->window) == GSR_DISPLAY_SERVER_X11;
     const gsr_connection_type connection_type = self->is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
-    if(self->is_x11)
-        gsr_cursor_init(&self->x11_cursor, self->params.egl, self->params.egl->x11.dpy);
+    if(self->is_x11) {
+        Display *display = gsr_window_get_display(self->params.egl->window);
+        gsr_cursor_init(&self->x11_cursor, self->params.egl, display);
+    }
 
     MonitorCallbackUserdata monitor_callback_userdata = {
         &self->monitor_id,
@@ -240,7 +243,7 @@ static void gsr_capture_kms_on_event(gsr_capture *cap, gsr_egl *egl) {
     if(!self->is_x11)
         return;
 
-    XEvent *xev = gsr_egl_get_event_data(egl);
+    XEvent *xev = gsr_window_get_event_data(egl->window);
     gsr_cursor_on_event(&self->x11_cursor, xev);
 }
 
@@ -525,7 +528,8 @@ static void render_x11_cursor(gsr_capture_kms *self, gsr_color_conversion *color
         self->capture_size.y == 0 ? 0 : (double)output_size.y / (double)self->capture_size.y
     };
 
-    gsr_cursor_tick(&self->x11_cursor, DefaultRootWindow(self->params.egl->x11.dpy));
+    Display *display = gsr_window_get_display(self->params.egl->window);
+    gsr_cursor_tick(&self->x11_cursor, DefaultRootWindow(display));
 
     const vec2i cursor_pos = {
         target_pos.x + (self->x11_cursor.position.x - self->x11_cursor.hotspot.x - capture_pos.x) * scale.x,

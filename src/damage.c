@@ -1,5 +1,6 @@
 #include "../include/damage.h"
 #include "../include/utils.h"
+#include "../include/window/window.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -30,33 +31,34 @@ bool gsr_damage_init(gsr_damage *self, gsr_egl *egl, bool track_cursor) {
     self->egl = egl;
     self->track_cursor = track_cursor;
 
-    if(gsr_egl_get_display_server(egl) != GSR_DISPLAY_SERVER_X11) {
+    if(gsr_window_get_display_server(egl->window) != GSR_DISPLAY_SERVER_X11) {
         fprintf(stderr, "gsr warning: gsr_damage_init: damage tracking is not supported on wayland\n");
         return false;
     }
+    self->display = gsr_window_get_display(egl->window);
 
-    if(!XDamageQueryExtension(self->egl->x11.dpy, &self->damage_event, &self->damage_error)) {
+    if(!XDamageQueryExtension(self->display, &self->damage_event, &self->damage_error)) {
         fprintf(stderr, "gsr warning: gsr_damage_init: XDamage is not supported by your X11 server\n");
         gsr_damage_deinit(self);
         return false;
     }
 
-    if(!XRRQueryExtension(self->egl->x11.dpy, &self->randr_event, &self->randr_error)) {
+    if(!XRRQueryExtension(self->display, &self->randr_event, &self->randr_error)) {
         fprintf(stderr, "gsr warning: gsr_damage_init: XRandr is not supported by your X11 server\n");
         gsr_damage_deinit(self);
         return false;
     }
 
-    if(!xrandr_is_supported(self->egl->x11.dpy)) {
+    if(!xrandr_is_supported(self->display)) {
         fprintf(stderr, "gsr warning: gsr_damage_init: your X11 randr version is too old\n");
         gsr_damage_deinit(self);
         return false;
     }
 
     if(self->track_cursor)
-        self->track_cursor = gsr_cursor_init(&self->cursor, self->egl, self->egl->x11.dpy) == 0;
+        self->track_cursor = gsr_cursor_init(&self->cursor, self->egl, self->display) == 0;
 
-    XRRSelectInput(self->egl->x11.dpy, DefaultRootWindow(self->egl->x11.dpy), RRScreenChangeNotifyMask | RRCrtcChangeNotifyMask | RROutputChangeNotifyMask);
+    XRRSelectInput(self->display, DefaultRootWindow(self->display), RRScreenChangeNotifyMask | RRCrtcChangeNotifyMask | RROutputChangeNotifyMask);
 
     self->damaged = true;
     return true;
@@ -64,7 +66,7 @@ bool gsr_damage_init(gsr_damage *self, gsr_egl *egl, bool track_cursor) {
 
 void gsr_damage_deinit(gsr_damage *self) {
     if(self->damage) {
-        XDamageDestroy(self->egl->x11.dpy, self->damage);
+        XDamageDestroy(self->display, self->damage);
         self->damage = None;
     }
 
@@ -85,22 +87,22 @@ bool gsr_damage_set_target_window(gsr_damage *self, uint64_t window) {
         return true;
 
     if(self->damage) {
-        XDamageDestroy(self->egl->x11.dpy, self->damage);
+        XDamageDestroy(self->display, self->damage);
         self->damage = None;
     }
 
     if(self->window)
-        XSelectInput(self->egl->x11.dpy, self->window, 0);
+        XSelectInput(self->display, self->window, 0);
 
     self->window = window;
-    XSelectInput(self->egl->x11.dpy, self->window, StructureNotifyMask | ExposureMask);
+    XSelectInput(self->display, self->window, StructureNotifyMask | ExposureMask);
 
     XWindowAttributes win_attr;
     win_attr.x = 0;
     win_attr.y = 0;
     win_attr.width = 0;
     win_attr.height = 0;
-    if(!XGetWindowAttributes(self->egl->x11.dpy, self->window, &win_attr))
+    if(!XGetWindowAttributes(self->display, self->window, &win_attr))
         fprintf(stderr, "gsr warning: gsr_damage_set_target_window failed: failed to get window attributes: %ld\n", (long)self->window);
 
     //self->window_pos.x = win_attr.x;
@@ -109,9 +111,9 @@ bool gsr_damage_set_target_window(gsr_damage *self, uint64_t window) {
     self->window_size.x = win_attr.width;
     self->window_size.y = win_attr.height;
 
-    self->damage = XDamageCreate(self->egl->x11.dpy, window, XDamageReportNonEmpty);
+    self->damage = XDamageCreate(self->display, window, XDamageReportNonEmpty);
     if(self->damage) {
-        XDamageSubtract(self->egl->x11.dpy, self->damage, None, None);
+        XDamageSubtract(self->display, self->damage, None, None);
         self->damaged = true;
         self->track_type = GSR_DAMAGE_TRACK_WINDOW;
         return true;
@@ -130,7 +132,7 @@ bool gsr_damage_set_target_monitor(gsr_damage *self, const char *monitor_name) {
         return true;
 
     if(self->damage) {
-        XDamageDestroy(self->egl->x11.dpy, self->damage);
+        XDamageDestroy(self->display, self->damage);
         self->damage = None;
     }
 
@@ -141,12 +143,12 @@ bool gsr_damage_set_target_monitor(gsr_damage *self, const char *monitor_name) {
     }
 
     if(self->window)
-        XSelectInput(self->egl->x11.dpy, self->window, 0);
+        XSelectInput(self->display, self->window, 0);
 
-    self->window = DefaultRootWindow(self->egl->x11.dpy);
-    self->damage = XDamageCreate(self->egl->x11.dpy, self->window, XDamageReportNonEmpty);
+    self->window = DefaultRootWindow(self->display);
+    self->damage = XDamageCreate(self->display, self->window, XDamageReportNonEmpty);
     if(self->damage) {
-        XDamageSubtract(self->egl->x11.dpy, self->damage, None, None);
+        XDamageSubtract(self->display, self->damage, None, None);
         self->damaged = true;
         snprintf(self->monitor_name, sizeof(self->monitor_name), "%s", monitor_name);
         self->track_type = GSR_DAMAGE_TRACK_MONITOR;
@@ -184,14 +186,14 @@ static void gsr_damage_on_output_change(gsr_damage *self, XEvent *xev) {
     if(!rr_output_change_event->output || self->monitor.monitor_identifier == 0)
         return;
 
-    XRRScreenResources *screen_res = XRRGetScreenResources(self->egl->x11.dpy, DefaultRootWindow(self->egl->x11.dpy));
+    XRRScreenResources *screen_res = XRRGetScreenResources(self->display, DefaultRootWindow(self->display));
     if(!screen_res)
         return;
 
     // TODO: What about scaled output? look at for_each_active_monitor_output_x11_not_cached
-    XRROutputInfo *out_info = XRRGetOutputInfo(self->egl->x11.dpy, screen_res, rr_output_change_event->output);
+    XRROutputInfo *out_info = XRRGetOutputInfo(self->display, screen_res, rr_output_change_event->output);
     if(out_info && out_info->crtc && out_info->crtc == self->monitor.monitor_identifier) {
-        XRRCrtcInfo *crtc_info = XRRGetCrtcInfo(self->egl->x11.dpy, screen_res, out_info->crtc);
+        XRRCrtcInfo *crtc_info = XRRGetCrtcInfo(self->display, screen_res, out_info->crtc);
         if(crtc_info && (crtc_info->x != self->monitor.pos.x || crtc_info->y != self->monitor.pos.y ||
             (int)crtc_info->width != self->monitor.size.x || (int)crtc_info->height != self->monitor.size.y))
         {
@@ -226,15 +228,15 @@ static void gsr_damage_on_randr_event(gsr_damage *self, XEvent *xev) {
 
 static void gsr_damage_on_damage_event(gsr_damage *self, XEvent *xev) {
     const XDamageNotifyEvent *de = (XDamageNotifyEvent*)xev;
-    XserverRegion region = XFixesCreateRegion(self->egl->x11.dpy, NULL, 0);
+    XserverRegion region = XFixesCreateRegion(self->display, NULL, 0);
     /* Subtract all the damage, repairing the window */
-    XDamageSubtract(self->egl->x11.dpy, de->damage, None, region);
+    XDamageSubtract(self->display, de->damage, None, region);
 
     if(self->track_type == GSR_DAMAGE_TRACK_WINDOW || (self->track_type == GSR_DAMAGE_TRACK_MONITOR && self->monitor.connector_id == 0)) {
         self->damaged = true;
     } else {
         int num_rectangles = 0;
-        XRectangle *rectangles = XFixesFetchRegion(self->egl->x11.dpy, region, &num_rectangles);
+        XRectangle *rectangles = XFixesFetchRegion(self->display, region, &num_rectangles);
         if(rectangles) {
             const gsr_rectangle monitor_region = { self->monitor.pos, self->monitor.size };
             for(int i = 0; i < num_rectangles; ++i) {
@@ -247,8 +249,8 @@ static void gsr_damage_on_damage_event(gsr_damage *self, XEvent *xev) {
         }
     }
 
-    XFixesDestroyRegion(self->egl->x11.dpy, region);
-    XFlush(self->egl->x11.dpy);
+    XFixesDestroyRegion(self->display, region);
+    XFlush(self->display);
 }
 
 static void gsr_damage_on_tick_cursor(gsr_damage *self) {

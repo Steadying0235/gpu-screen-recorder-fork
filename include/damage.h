@@ -17,6 +17,7 @@ typedef enum {
 
 typedef struct {
     gsr_egl *egl;
+    Display *display;
     bool track_cursor;
     gsr_damage_track_type track_type;
 

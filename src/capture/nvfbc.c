@@ -3,12 +3,14 @@
 #include "../../include/egl.h"
 #include "../../include/utils.h"
 #include "../../include/color_conversion.h"
+#include "../../include/window/window.h"
 
 #include <dlfcn.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include <assert.h>
 
 #include <X11/Xlib.h>
 #include <libavcodec/avcodec.h>
@@ -136,7 +138,10 @@ static void set_vertical_sync_enabled(gsr_egl *egl, int enabled) {
     int result = 0;
 
     if(egl->glXSwapIntervalEXT) {
-        egl->glXSwapIntervalEXT(egl->x11.dpy, egl->x11.window, enabled ? 1 : 0);
+        assert(gsr_window_get_display_server(egl->window) == GSR_DISPLAY_SERVER_X11);
+        Display *display = gsr_window_get_display(egl->window);
+        const Window window = (Window)gsr_window_get_window(egl->window);
+        egl->glXSwapIntervalEXT(display, window, enabled ? 1 : 0);
     } else if(egl->glXSwapIntervalMESA) {
         result = egl->glXSwapIntervalMESA(enabled ? 1 : 0);
     } else if(egl->glXSwapIntervalSGI) {
@@ -219,8 +224,11 @@ static int gsr_capture_nvfbc_setup_handle(gsr_capture_nvfbc *self) {
         goto error_cleanup;
     }
 
-    self->tracking_width = XWidthOfScreen(DefaultScreenOfDisplay(self->params.egl->x11.dpy));
-    self->tracking_height = XHeightOfScreen(DefaultScreenOfDisplay(self->params.egl->x11.dpy));
+    assert(gsr_window_get_display_server(self->params.egl->window) == GSR_DISPLAY_SERVER_X11);
+    Display *display = gsr_window_get_display(self->params.egl->window);
+
+    self->tracking_width = XWidthOfScreen(DefaultScreenOfDisplay(display));
+    self->tracking_height = XHeightOfScreen(DefaultScreenOfDisplay(display));
     self->tracking_type = strcmp(self->params.display_to_capture, "screen") == 0 ? NVFBC_TRACKING_SCREEN : NVFBC_TRACKING_OUTPUT;
     if(self->tracking_type == NVFBC_TRACKING_OUTPUT) {
         if(!status_params.bXRandRAvailable) {

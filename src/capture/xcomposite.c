@@ -3,6 +3,7 @@
 #include "../../include/utils.h"
 #include "../../include/cursor.h"
 #include "../../include/color_conversion.h"
+#include "../../include/window/window.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -16,6 +17,7 @@
 
 typedef struct {
     gsr_capture_xcomposite_params params;
+    Display *display;
 
     bool should_stop;
     bool stop_is_error;
@@ -66,12 +68,12 @@ static int gsr_capture_xcomposite_start(gsr_capture *cap, AVCodecContext *video_
     gsr_capture_xcomposite *self = cap->priv;
 
     if(self->params.follow_focused) {
-        self->net_active_window_atom = XInternAtom(self->params.egl->x11.dpy, "_NET_ACTIVE_WINDOW", False);
+        self->net_active_window_atom = XInternAtom(self->display, "_NET_ACTIVE_WINDOW", False);
         if(!self->net_active_window_atom) {
             fprintf(stderr, "gsr error: gsr_capture_xcomposite_start failed: failed to get _NET_ACTIVE_WINDOW atom\n");
             return -1;
         }
-        self->window = get_focused_window(self->params.egl->x11.dpy, self->net_active_window_atom);
+        self->window = get_focused_window(self->display, self->net_active_window_atom);
     } else {
         self->window = self->params.window;
     }
@@ -79,7 +81,7 @@ static int gsr_capture_xcomposite_start(gsr_capture *cap, AVCodecContext *video_
     /* TODO: Do these in tick, and allow error if follow_focused */
 
     XWindowAttributes attr;
-    if(!XGetWindowAttributes(self->params.egl->x11.dpy, self->window, &attr) && !self->params.follow_focused) {
+    if(!XGetWindowAttributes(self->display, self->window, &attr) && !self->params.follow_focused) {
         fprintf(stderr, "gsr error: gsr_capture_xcomposite_start failed: invalid window id: %lu\n", self->window);
         return -1;
     }
@@ -88,19 +90,19 @@ static int gsr_capture_xcomposite_start(gsr_capture *cap, AVCodecContext *video_
     self->window_size.y = max_int(attr.height, 0);
 
     if(self->params.follow_focused)
-        XSelectInput(self->params.egl->x11.dpy, DefaultRootWindow(self->params.egl->x11.dpy), PropertyChangeMask);
+        XSelectInput(self->display, DefaultRootWindow(self->display), PropertyChangeMask);
 
     // TODO: Get select and add these on top of it and then restore at the end. Also do the same in other xcomposite
-    XSelectInput(self->params.egl->x11.dpy, self->window, StructureNotifyMask | ExposureMask);
+    XSelectInput(self->display, self->window, StructureNotifyMask | ExposureMask);
 
     /* Disable vsync */
     self->params.egl->eglSwapInterval(self->params.egl->egl_display, 0);
-    if(window_texture_init(&self->window_texture, self->params.egl->x11.dpy, self->window, self->params.egl) != 0 && !self->params.follow_focused) {
+    if(window_texture_init(&self->window_texture, self->display, self->window, self->params.egl) != 0 && !self->params.follow_focused) {
         fprintf(stderr, "gsr error: gsr_capture_xcomposite_start: failed to get window texture for window %ld\n", self->window);
         return -1;
     }
 
-    if(gsr_cursor_init(&self->cursor, self->params.egl, self->params.egl->x11.dpy) != 0) {
+    if(gsr_cursor_init(&self->cursor, self->params.egl, self->display) != 0) {
         gsr_capture_xcomposite_stop(self);
         return -1;
     }
@@ -143,24 +145,24 @@ static void gsr_capture_xcomposite_tick(gsr_capture *cap) {
 
     if(self->init_new_window) {
         self->init_new_window = false;
-        Window focused_window = get_focused_window(self->params.egl->x11.dpy, self->net_active_window_atom);
+        Window focused_window = get_focused_window(self->display, self->net_active_window_atom);
         if(focused_window != self->window || !self->follow_focused_initialized) {
             self->follow_focused_initialized = true;
-            XSelectInput(self->params.egl->x11.dpy, self->window, 0);
+            XSelectInput(self->display, self->window, 0);
             self->window = focused_window;
-            XSelectInput(self->params.egl->x11.dpy, self->window, StructureNotifyMask | ExposureMask);
+            XSelectInput(self->display, self->window, StructureNotifyMask | ExposureMask);
 
             XWindowAttributes attr;
             attr.width = 0;
             attr.height = 0;
-            if(!XGetWindowAttributes(self->params.egl->x11.dpy, self->window, &attr))
+            if(!XGetWindowAttributes(self->display, self->window, &attr))
                 fprintf(stderr, "gsr error: gsr_capture_xcomposite_tick failed: invalid window id: %lu\n", self->window);
 
             self->window_size.x = max_int(attr.width, 0);
             self->window_size.y = max_int(attr.height, 0);
 
             window_texture_deinit(&self->window_texture);
-            window_texture_init(&self->window_texture, self->params.egl->x11.dpy, self->window, self->params.egl); // TODO: Do not do the below window_texture_on_resize after this
+            window_texture_init(&self->window_texture, self->display, self->window, self->params.egl); // TODO: Do not do the below window_texture_on_resize after this
 
             self->texture_size.x = 0;
             self->texture_size.y = 0;
@@ -200,7 +202,7 @@ static void gsr_capture_xcomposite_tick(gsr_capture *cap) {
 
 static void gsr_capture_xcomposite_on_event(gsr_capture *cap, gsr_egl *egl) {
     gsr_capture_xcomposite *self = cap->priv;
-    XEvent *xev = gsr_egl_get_event_data(egl);
+    XEvent *xev = gsr_window_get_event_data(egl->window);
     switch(xev->type) {
         case DestroyNotify: {
             /* Window died (when not following focused window), so we stop recording */
@@ -350,6 +352,7 @@ gsr_capture* gsr_capture_xcomposite_create(const gsr_capture_xcomposite_params *
     }
 
     cap_xcomp->params = *params;
+    cap_xcomp->display = gsr_window_get_display(params->egl->window);
     
     *cap = (gsr_capture) {
         .start = gsr_capture_xcomposite_start,

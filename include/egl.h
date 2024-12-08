@@ -10,6 +10,8 @@
 #include "vec2.h"
 #include "defs.h"
 
+typedef struct gsr_window gsr_window;
+
 #ifdef _WIN64
 typedef signed   long long int khronos_intptr_t;
 typedef unsigned long long int khronos_uintptr_t;
@@ -152,53 +154,10 @@ typedef int (*FUNC_eglQueryDisplayAttribEXT)(EGLDisplay dpy, int32_t attribute, 
 typedef const char* (*FUNC_eglQueryDeviceStringEXT)(void *device, int32_t name);
 typedef int (*FUNC_eglQueryDmaBufModifiersEXT)(EGLDisplay dpy, int32_t format, int32_t max_modifiers, uint64_t *modifiers, int *external_only, int32_t *num_modifiers);
 
-#define GSR_MAX_OUTPUTS 32
-
-typedef struct {
-    char *name;
-    vec2i pos;
-    vec2i size;
-    uint32_t connector_id;
-    gsr_monitor_rotation rotation;
-    uint32_t monitor_identifier; /* crtc id */
-} gsr_x11_output;
-
-typedef struct {
-    Display *dpy;
-    Window window;
-    gsr_x11_output outputs[GSR_MAX_OUTPUTS];
-    int num_outputs;
-    XEvent xev;
-} gsr_x11;
-
-typedef struct {
-    uint32_t wl_name;
-    void *output;
-    vec2i pos;
-    vec2i size;
-    int32_t transform;
-    char *name;
-} gsr_wayland_output;
-
-typedef struct {
-    void *dpy;
-    void *window;
-    void *registry;
-    void *surface;
-    void *compositor;
-    gsr_wayland_output outputs[GSR_MAX_OUTPUTS];
-    int num_outputs;
-} gsr_wayland;
-
 typedef enum {
     GSR_GL_CONTEXT_TYPE_EGL,
     GSR_GL_CONTEXT_TYPE_GLX
 } gsr_gl_context_type;
-
-typedef enum {
-    GSR_DISPLAY_SERVER_X11,
-    GSR_DISPLAY_SERVER_WAYLAND
-} gsr_display_server;
 
 typedef struct gsr_egl gsr_egl;
 struct gsr_egl {
@@ -207,6 +166,7 @@ struct gsr_egl {
     void *gl_library;
 
     gsr_gl_context_type context_type;
+    gsr_window *window;
 
     EGLDisplay egl_display;
     EGLSurface egl_surface;
@@ -218,8 +178,6 @@ struct gsr_egl {
 
     gsr_gpu_info gpu_info;
 
-    gsr_x11 x11;
-    gsr_wayland wayland;
     char card_path[128];
 
     int32_t (*eglGetError)(void);
@@ -319,15 +277,10 @@ struct gsr_egl {
     unsigned char (*glUnmapBuffer)(unsigned int target);
 };
 
-bool gsr_egl_load(gsr_egl *self, Display *dpy, bool wayland, bool is_monitor_capture);
+bool gsr_egl_load(gsr_egl *self, gsr_window *window, bool is_monitor_capture);
 void gsr_egl_unload(gsr_egl *self);
 
-/* Returns true if an event is available */
-bool gsr_egl_process_event(gsr_egl *self);
 /* Does opengl swap with egl or glx, depending on which one is active */
 void gsr_egl_swap_buffers(gsr_egl *self);
-
-gsr_display_server gsr_egl_get_display_server(const gsr_egl *self);
-XEvent* gsr_egl_get_event_data(gsr_egl *self);
 
 #endif /* GSR_EGL_H */

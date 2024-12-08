@@ -1,7 +1,6 @@
 #include "../include/pipewire_audio.h"
 
 #include <pipewire/pipewire.h>
-#include <spa/utils/defs.h>
 
 static void on_core_info_cb(void *user_data, const struct pw_core_info *info) {
     gsr_pipewire_audio *self = user_data;
@@ -371,12 +370,11 @@ void gsr_pipewire_audio_deinit(gsr_pipewire_audio *self) {
 }
 
 static struct pw_properties* gsr_pipewire_create_null_audio_sink(const char *name) {
-    struct spa_error_location err_loc;
     char props_str[512];
     snprintf(props_str, sizeof(props_str), "{ factory.name=support.null-audio-sink node.name=\"%s\" media.class=Audio/Sink object.linger=false audio.position=[FL FR] monitor.channel-volumes=true monitor.passthrough=true adjust_time=0 slaves=\"\" }", name);
-    struct pw_properties *props = pw_properties_new_string_checked(props_str, strlen(props_str), &err_loc);
+    struct pw_properties *props = pw_properties_new_string_checked(props_str, strlen(props_str), NULL);
     if(!props) {
-        fprintf(stderr, "gsr error: gsr_pipewire_create_null_audio_sink: failed to create virtual sink properties, error: %d:%d: %s\n", err_loc.line, err_loc.col, err_loc.reason);
+        fprintf(stderr, "gsr error: gsr_pipewire_create_null_audio_sink: failed to create virtual sink properties\n");
         return NULL;
     }
     return props;

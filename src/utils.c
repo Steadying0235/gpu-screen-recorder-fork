@@ -188,10 +188,12 @@ static bool connector_get_property_by_name(int drmfd, drmModeConnectorPtr props,
     return false;
 }
 
-static void for_each_active_monitor_output_drm(const gsr_egl *egl, active_monitor_callback callback, void *userdata) {
-    int fd = open(egl->card_path, O_RDONLY);
-    if(fd == -1)
+static void for_each_active_monitor_output_drm(const char *card_path, active_monitor_callback callback, void *userdata) {
+    int fd = open(card_path, O_RDONLY);
+    if(fd == -1) {
+        fprintf(stderr, "gsr error: for_each_active_monitor_output_drm failed, failed to open \"%s\", error: %s\n", card_path, strerror(errno));
         return;
+    }
 
     drmSetClientCap(fd, DRM_CLIENT_CAP_ATOMIC, 1);
 
@@ -250,14 +252,14 @@ static void for_each_active_monitor_output_drm(const gsr_egl *egl, active_monito
     close(fd);
 }
 
-void for_each_active_monitor_output(const gsr_egl *egl, gsr_connection_type connection_type, active_monitor_callback callback, void *userdata) {
+void for_each_active_monitor_output(const gsr_window *window, const char *card_path, gsr_connection_type connection_type, active_monitor_callback callback, void *userdata) {
     switch(connection_type) {
         case GSR_CONNECTION_X11:
         case GSR_CONNECTION_WAYLAND:
-            gsr_window_for_each_active_monitor_output_cached(egl->window, callback, userdata);
+            gsr_window_for_each_active_monitor_output_cached(window, callback, userdata);
             break;
         case GSR_CONNECTION_DRM:
-            for_each_active_monitor_output_drm(egl, callback, userdata);
+            for_each_active_monitor_output_drm(card_path, callback, userdata);
             break;
     }
 }
@@ -280,7 +282,7 @@ bool get_monitor_by_name(const gsr_egl *egl, gsr_connection_type connection_type
     userdata.name_len = strlen(name);
     userdata.monitor = monitor;
     userdata.found_monitor = false;
-    for_each_active_monitor_output(egl, connection_type, get_monitor_by_name_callback, &userdata);
+    for_each_active_monitor_output(egl->window, egl->card_path, connection_type, get_monitor_by_name_callback, &userdata);
     return userdata.found_monitor;
 }
 
@@ -312,14 +314,14 @@ static void get_monitor_by_connector_id_callback(const gsr_monitor *monitor, voi
     }
 }
 
-gsr_monitor_rotation drm_monitor_get_display_server_rotation(const gsr_egl *egl, const gsr_monitor *monitor) {
-    if(gsr_window_get_display_server(egl->window) == GSR_DISPLAY_SERVER_WAYLAND) {
+gsr_monitor_rotation drm_monitor_get_display_server_rotation(const gsr_window *window, const gsr_monitor *monitor) {
+    if(gsr_window_get_display_server(window) == GSR_DISPLAY_SERVER_WAYLAND) {
         {
             get_monitor_by_connector_id_userdata userdata;
             userdata.monitor = monitor;
             userdata.rotation = GSR_MONITOR_ROT_0;
             userdata.match_found = false;
-            gsr_window_for_each_active_monitor_output_cached(egl->window, get_monitor_by_name_and_size_callback, &userdata);
+            gsr_window_for_each_active_monitor_output_cached(window, get_monitor_by_name_and_size_callback, &userdata);
             if(userdata.match_found)
                 return userdata.rotation;
         }
@@ -328,7 +330,7 @@ gsr_monitor_rotation drm_monitor_get_display_server_rotation(const gsr_egl *egl,
             userdata.monitor = monitor;
             userdata.rotation = GSR_MONITOR_ROT_0;
             userdata.match_found = false;
-            gsr_window_for_each_active_monitor_output_cached(egl->window, get_monitor_by_connector_id_callback, &userdata);
+            gsr_window_for_each_active_monitor_output_cached(window, get_monitor_by_connector_id_callback, &userdata);
             return userdata.rotation;
         }
     } else {
@@ -336,7 +338,7 @@ gsr_monitor_rotation drm_monitor_get_display_server_rotation(const gsr_egl *egl,
         userdata.monitor = monitor;
         userdata.rotation = GSR_MONITOR_ROT_0;
         userdata.match_found = false;
-        gsr_window_for_each_active_monitor_output_cached(egl->window, get_monitor_by_connector_id_callback, &userdata);
+        gsr_window_for_each_active_monitor_output_cached(window, get_monitor_by_connector_id_callback, &userdata);
         return userdata.rotation;
     }
 
@@ -419,7 +421,7 @@ bool gl_driver_version_greater_than(const gsr_egl *egl, int major, int minor, in
     return version_greater_than(egl->gpu_info.driver_major, egl->gpu_info.driver_minor, egl->gpu_info.driver_patch, major, minor, patch);
 }
 
-static bool try_card_has_valid_plane(const char *card_path) {
+bool try_card_has_valid_plane(const char *card_path) {
     drmVersion *ver = NULL;
     drmModePlaneResPtr planes = NULL;
     bool found_screen_card = false;

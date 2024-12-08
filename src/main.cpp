@@ -1069,7 +1069,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    printf("usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr|cbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [-v yes|no] [--version] [-h|--help]\n", program_name);
+    printf("usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr|cbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [--list-capture-options [card_path] [vendor]] [--list-audio-devices] [--list-application-audio] [-v yes|no] [--version] [-h|--help]\n", program_name);
     fflush(stdout);
 }
 
@@ -1204,6 +1204,7 @@ static void usage_full() {
     printf("          window\n");
     printf("          DP-1|1920x1080\n");
     printf("        The <option> and <monitor_name> is the name that can be passed to GPU Screen Recorder with the -w option.\n");
+    printf("        --list-capture-options optionally accepts a card path (\"/dev/dri/cardN\") and vendor (\"amd\", \"intel\" or \"nvidia\") which can improve the performance of running this command.\n");
     printf("\n");
     printf("  --list-audio-devices\n");
     printf("        List audio devices. Lists audio devices in the following format (prints them to stdout and exits):\n");
@@ -1939,6 +1940,7 @@ static void list_gpu_info(gsr_egl *egl) {
             printf("vendor|nvidia\n");
             break;
     }
+    printf("card_path|%s\n", egl->card_path);
 }
 
 static const AVCodec* get_ffmpeg_video_codec(VideoCodec video_codec, gsr_gpu_vendor vendor) {
@@ -2037,19 +2039,19 @@ static void list_supported_video_codecs(gsr_egl *egl, bool wayland) {
     //    puts("hevc_vulkan"); // TODO: hdr, 10 bit
 }
 
-static bool monitor_capture_use_drm(gsr_egl *egl) {
-    return gsr_window_get_display_server(egl->window) == GSR_DISPLAY_SERVER_WAYLAND || egl->gpu_info.vendor != GSR_GPU_VENDOR_NVIDIA;
+static bool monitor_capture_use_drm(const gsr_window *window, gsr_gpu_vendor vendor) {
+    return gsr_window_get_display_server(window) == GSR_DISPLAY_SERVER_WAYLAND || vendor != GSR_GPU_VENDOR_NVIDIA;
 }
 
 typedef struct {
-    gsr_egl *egl;
+    const gsr_window *window;
 } capture_options_callback;
 
 static void output_monitor_info(const gsr_monitor *monitor, void *userdata) {
     const capture_options_callback *options = (capture_options_callback*)userdata;
-    if(gsr_window_get_display_server(options->egl->window) == GSR_DISPLAY_SERVER_WAYLAND) {
+    if(gsr_window_get_display_server(options->window) == GSR_DISPLAY_SERVER_WAYLAND) {
         vec2i monitor_size = monitor->size;
-        const gsr_monitor_rotation rot = drm_monitor_get_display_server_rotation(options->egl, monitor);
+        const gsr_monitor_rotation rot = drm_monitor_get_display_server_rotation(options->window, monitor);
         if(rot == GSR_MONITOR_ROT_90 || rot == GSR_MONITOR_ROT_270)
             std::swap(monitor_size.x, monitor_size.y);
         printf("%.*s|%dx%d\n", monitor->name_len, monitor->name, monitor_size.x, monitor_size.y);
@@ -2058,8 +2060,8 @@ static void output_monitor_info(const gsr_monitor *monitor, void *userdata) {
     }
 }
 
-static void list_supported_capture_options(gsr_egl *egl, bool list_monitors) {
-    const bool wayland = gsr_window_get_display_server(egl->window) == GSR_DISPLAY_SERVER_WAYLAND;
+static void list_supported_capture_options(const gsr_window *window, const char *card_path, gsr_gpu_vendor vendor, bool list_monitors) {
+    const bool wayland = gsr_window_get_display_server(window) == GSR_DISPLAY_SERVER_WAYLAND;
     if(!wayland) {
         puts("window");
         puts("focused");
@@ -2067,14 +2069,14 @@ static void list_supported_capture_options(gsr_egl *egl, bool list_monitors) {
 
     if(list_monitors) {
         capture_options_callback options;
-        options.egl = egl;
-        if(monitor_capture_use_drm(egl)) {
-            const bool is_x11 = gsr_window_get_display_server(egl->window) == GSR_DISPLAY_SERVER_X11;
+        options.window = window;
+        if(monitor_capture_use_drm(window, vendor)) {
+            const bool is_x11 = gsr_window_get_display_server(window) == GSR_DISPLAY_SERVER_X11;
             const gsr_connection_type connection_type = is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
-            for_each_active_monitor_output(egl, connection_type, output_monitor_info, &options);
+            for_each_active_monitor_output(window, card_path, connection_type, output_monitor_info, &options);
         } else {
             puts("screen"); // All monitors in one, only available on Nvidia X11
-            for_each_active_monitor_output(egl, GSR_CONNECTION_X11, output_monitor_info, &options);
+            for_each_active_monitor_output(window, card_path, GSR_CONNECTION_X11, output_monitor_info, &options);
         }
     }
 
@@ -2132,7 +2134,7 @@ static void info_command() {
 
     bool list_monitors = true;
     egl.card_path[0] = '\0';
-    if(monitor_capture_use_drm(&egl)) {
+    if(monitor_capture_use_drm(window, egl.gpu_info.vendor)) {
         // TODO: Allow specifying another card, and in other places
         if(!gsr_get_valid_card_path(&egl, egl.card_path, true)) {
             fprintf(stderr, "Error: no /dev/dri/cardX device found. Make sure that you have at least one monitor connected\n");
@@ -2153,12 +2155,13 @@ static void info_command() {
     puts("section=video_codecs");
     list_supported_video_codecs(&egl, wayland);
     puts("section=capture_options");
-    list_supported_capture_options(&egl, list_monitors);
+    list_supported_capture_options(window, egl.card_path, egl.gpu_info.vendor, list_monitors);
 
     fflush(stdout);
 
     // Not needed as this will just slow down shutdown
     //gsr_egl_unload(&egl);
+    //gsr_window_destroy(&window);
     //if(dpy)
     //    XCloseDisplay(dpy);
 
@@ -2202,7 +2205,8 @@ static void list_application_audio_command() {
     _exit(0);
 }
 
-static void list_capture_options_command() {
+// |card_path| can be NULL. If not NULL then |vendor| has to be valid
+static void list_capture_options_command(const char *card_path, gsr_gpu_vendor vendor) {
     bool wayland = false;
     Display *dpy = XOpenDisplay(nullptr);
     if (!dpy) {
@@ -2230,33 +2234,51 @@ static void list_capture_options_command() {
         _exit(1);
     }
 
-    gsr_egl egl;
-    if(!gsr_egl_load(&egl, window, false)) {
-        fprintf(stderr, "gsr error: failed to load opengl\n");
-        _exit(1);
-    }
-
-    bool list_monitors = true;
-    egl.card_path[0] = '\0';
-    if(monitor_capture_use_drm(&egl)) {
-        // TODO: Allow specifying another card, and in other places
-        if(!gsr_get_valid_card_path(&egl, egl.card_path, true)) {
-            fprintf(stderr, "Error: no /dev/dri/cardX device found. Make sure that you have at least one monitor connected\n");
-            list_monitors = false;
+    if(card_path) {
+        list_supported_capture_options(window, card_path, vendor, true);
+    } else {
+        gsr_egl egl;
+        if(!gsr_egl_load(&egl, window, false)) {
+            fprintf(stderr, "gsr error: failed to load opengl\n");
+            _exit(1);
         }
-    }
 
-    av_log_set_level(AV_LOG_FATAL);
-    list_supported_capture_options(&egl, list_monitors);
+        bool list_monitors = true;
+        egl.card_path[0] = '\0';
+        if(monitor_capture_use_drm(window, egl.gpu_info.vendor)) {
+            // TODO: Allow specifying another card, and in other places
+            if(!gsr_get_valid_card_path(&egl, egl.card_path, true)) {
+                fprintf(stderr, "Error: no /dev/dri/cardX device found. Make sure that you have at least one monitor connected\n");
+                list_monitors = false;
+            }
+        }
+        list_supported_capture_options(window, egl.card_path, egl.gpu_info.vendor, list_monitors);
+    }
 
     fflush(stdout);
 
     // Not needed as this will just slow down shutdown
     //gsr_egl_unload(&egl);
+    //gsr_window_destroy(&window);
     //if(dpy)
     //    XCloseDisplay(dpy);
 
     _exit(0);
+}
+
+static bool gpu_vendor_from_string(const char *vendor_str, gsr_gpu_vendor *vendor) {
+    if(strcmp(vendor_str, "amd") == 0) {
+        *vendor = GSR_GPU_VENDOR_AMD;
+        return true;
+    } else if(strcmp(vendor_str, "intel") == 0) {
+        *vendor = GSR_GPU_VENDOR_INTEL;
+        return true;
+    } else if(strcmp(vendor_str, "nvidia") == 0) {
+        *vendor = GSR_GPU_VENDOR_NVIDIA;
+        return true;
+    } else {
+        return false;
+    }
 }
 
 static gsr_capture* create_capture_impl(std::string &window_str, vec2i output_resolution, bool wayland, gsr_egl *egl, int fps, VideoCodec video_codec, gsr_color_range color_range,
@@ -2303,14 +2325,14 @@ static gsr_capture* create_capture_impl(std::string &window_str, vec2i output_re
         _exit(2);
 #endif
     } else if(contains_non_hex_number(window_str.c_str())) {
-        if(monitor_capture_use_drm(egl)) {
+        if(monitor_capture_use_drm(egl->window, egl->gpu_info.vendor)) {
             const bool is_x11 = gsr_window_get_display_server(egl->window) == GSR_DISPLAY_SERVER_X11;
             const gsr_connection_type connection_type = is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
 
             if(strcmp(window_str.c_str(), "screen") == 0) {
                 FirstOutputCallback first_output;
                 first_output.output_name = NULL;
-                for_each_active_monitor_output(egl, connection_type, get_first_output, &first_output);
+                for_each_active_monitor_output(egl->window, egl->card_path, connection_type, get_first_output, &first_output);
 
                 if(first_output.output_name) {
                     window_str = first_output.output_name;
@@ -2323,7 +2345,7 @@ static gsr_capture* create_capture_impl(std::string &window_str, vec2i output_re
                 if(!get_monitor_by_name(egl, connection_type, window_str.c_str(), &gmon)) {
                     fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str.c_str());
                     fprintf(stderr, "    \"screen\"\n");
-                    for_each_active_monitor_output(egl, connection_type, monitor_output_callback_print, NULL);
+                    for_each_active_monitor_output(egl->window, egl->card_path, connection_type, monitor_output_callback_print, NULL);
                     _exit(1);
                 }
             }
@@ -2338,7 +2360,7 @@ static gsr_capture* create_capture_impl(std::string &window_str, vec2i output_re
                     fprintf(stderr, "    \"screen\"    (%dx%d+%d+%d)\n", screens_width, screens_height, 0, 0);
                     fprintf(stderr, "    \"screen-direct\"    (%dx%d+%d+%d)\n", screens_width, screens_height, 0, 0);
                     fprintf(stderr, "    \"screen-direct-force\"    (%dx%d+%d+%d)\n", screens_width, screens_height, 0, 0);
-                    for_each_active_monitor_output(egl, GSR_CONNECTION_X11, monitor_output_callback_print, NULL);
+                    for_each_active_monitor_output(egl->window, egl->card_path, GSR_CONNECTION_X11, monitor_output_callback_print, NULL);
                     _exit(1);
                 }
             }
@@ -3015,9 +3037,30 @@ int main(int argc, char **argv) {
         _exit(0);
     }
 
-    if(argc == 2 && strcmp(argv[1], "--list-capture-options") == 0) {
-        list_capture_options_command();
-        _exit(0);
+    if(strcmp(argv[1], "--list-capture-options") == 0) {
+        if(argc == 2) {
+            list_capture_options_command(nullptr, GSR_GPU_VENDOR_AMD);
+            _exit(0);
+        } else if(argc == 4) {
+            const char *card_path = argv[2];
+            if(!try_card_has_valid_plane(card_path)) {
+                fprintf(stderr, "Error: \"%s\" is not a valid /dev/dri/cardN card. Make sure that you have at least one monitor connected\n", card_path);
+                _exit(1);
+            }
+
+            const char *vendor_str = argv[3];
+            gsr_gpu_vendor vendor;
+            if(!gpu_vendor_from_string(vendor_str, &vendor)) {
+                fprintf(stderr, "Error: \"%s\" is not a valid vendor, expected \"amd\", \"intel\" or \"nvidia\"\n", vendor_str);
+                _exit(1);
+            }
+
+            list_capture_options_command(card_path, vendor);
+            _exit(0);
+        } else {
+            fprintf(stderr, "Error: expected --list-capture-options to be called with either no extra arguments or 2 extra arguments (card path and vendor)\n");
+            _exit(1);
+        }
     }
 
     if(argc == 2 && strcmp(argv[1], "--version") == 0) {
@@ -3421,7 +3464,7 @@ int main(int argc, char **argv) {
     }
 
     egl.card_path[0] = '\0';
-    if(monitor_capture_use_drm(&egl)) {
+    if(monitor_capture_use_drm(window, egl.gpu_info.vendor)) {
         // TODO: Allow specifying another card, and in other places
         if(!gsr_get_valid_card_path(&egl, egl.card_path, is_monitor_capture)) {
             fprintf(stderr, "Error: no /dev/dri/cardX device found. Make sure that you have at least one monitor connected or record a single window instead on X11 or record with the -w portal option\n");

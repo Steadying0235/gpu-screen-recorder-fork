@@ -196,7 +196,7 @@ static int gsr_capture_kms_start(gsr_capture *cap, AVCodecContext *video_codec_c
         self->params.display_to_capture, strlen(self->params.display_to_capture),
         0,
     };
-    for_each_active_monitor_output(self->params.egl, connection_type, monitor_callback, &monitor_callback_userdata);
+    for_each_active_monitor_output(self->params.egl->window, self->params.egl->card_path, connection_type, monitor_callback, &monitor_callback_userdata);
 
     if(!get_monitor_by_name(self->params.egl, connection_type, self->params.display_to_capture, &monitor)) {
         fprintf(stderr, "gsr error: gsr_capture_kms_start: failed to find monitor by name \"%s\"\n", self->params.display_to_capture);
@@ -205,7 +205,7 @@ static int gsr_capture_kms_start(gsr_capture *cap, AVCodecContext *video_codec_c
     }
 
     monitor.name = self->params.display_to_capture;
-    self->monitor_rotation = drm_monitor_get_display_server_rotation(self->params.egl, &monitor);
+    self->monitor_rotation = drm_monitor_get_display_server_rotation(self->params.egl->window, &monitor);
 
     self->capture_pos = monitor.pos;
     /* Monitor size is already rotated on x11 when the monitor is rotated, no need to apply it ourselves */

@@ -210,6 +210,8 @@ static bool gsr_window_wayland_init(gsr_window_wayland *self) {
         goto fail;
     }
 
+    return true;
+
     fail:
     gsr_window_wayland_deinit(self);
     return false;

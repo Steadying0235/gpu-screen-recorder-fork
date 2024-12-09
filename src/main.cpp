@@ -3043,11 +3043,6 @@ int main(int argc, char **argv) {
             _exit(0);
         } else if(argc == 4) {
             const char *card_path = argv[2];
-            if(!try_card_has_valid_plane(card_path)) {
-                fprintf(stderr, "Error: \"%s\" is not a valid /dev/dri/cardN card. Make sure that you have at least one monitor connected\n", card_path);
-                _exit(1);
-            }
-
             const char *vendor_str = argv[3];
             gsr_gpu_vendor vendor;
             if(!gpu_vendor_from_string(vendor_str, &vendor)) {

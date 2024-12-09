@@ -195,3 +195,5 @@ Hide application audio module-null-sink by using sink_properties=media.class="Au
 Improve software encoding performance.
 
 Add option to record audio from the recorded window only.
+
+Add option to automatically select best video codec available. Add -k best, -k best_10bit and -k best_hdr.

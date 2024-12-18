@@ -23,9 +23,8 @@ Supported audio codecs:
 ## Note
 This software works on X11 and Wayland on AMD, Intel and NVIDIA.
 ### TEMPORARY ISSUES
-1) screen-direct capture has been temporary disabled as it causes issues with stuttering. This might be a nvfbc bug.
-2) Videos are in variable framerate format. Use MPV to play such videos, otherwise you might experience stuttering in the video if you are using a buggy video player. You can try saving the video into a .mkv file instead as some software may have better support for .mkv files (such as kdenlive). You can use the "-fm cfr" option to to use constant framerate mode.
-3) FLAC audio codec is disabled at the moment because of temporary issues.
+1) Videos are in variable framerate format. Use MPV to play such videos, otherwise you might experience stuttering in the video if you are using a buggy video player. You can try saving the video into a .mkv file instead as some software may have better support for .mkv files (such as kdenlive). You can use the "-fm cfr" option to to use constant framerate mode.
+2) FLAC audio codec is disabled at the moment because of temporary issues.
 ### AMD/Intel/Wayland root permission
 When recording a window or when using the `-w portal` option under AMD/Intel no special user permission is required,
 however when recording a monitor (or when using wayland) the program needs root permission (to access KMS).\
@@ -44,7 +43,7 @@ To enable overclocking for optimal performance use the `-oc` option when running
 Note that this only works when Xorg server is running as root, and using this option will only give you a performance boost if the game you are recording is bottlenecked by your GPU.\
 Note! use at your own risk!
 # VRR/G-SYNC
-This should work fine on AMD/Intel X11 or Wayland. On Nvidia X11 G-SYNC only works with the -w screen-direct-force option, but because of bugs in the Nvidia driver this option is not always recommended.
+This should work fine on AMD/Intel X11 or Wayland. On Nvidia X11 G-SYNC only works with the -w screen-direct option, but because of bugs in the Nvidia driver this option is not always recommended.
 For example it can cause your computer to freeze when recording certain games.
 
 # Installation

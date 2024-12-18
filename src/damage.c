@@ -137,7 +137,7 @@ bool gsr_damage_set_target_monitor(gsr_damage *self, const char *monitor_name) {
     }
 
     memset(&self->monitor, 0, sizeof(self->monitor));
-    if(strcmp(monitor_name, "screen") != 0 && strcmp(monitor_name, "screen-direct") != 0 && strcmp(monitor_name, "screen-direct-force") != 0) {
+    if(strcmp(monitor_name, "screen-direct") != 0 && strcmp(monitor_name, "screen-direct-force") != 0) {
         if(!get_monitor_by_name(self->egl, GSR_CONNECTION_X11, monitor_name, &self->monitor))
             fprintf(stderr, "gsr warning: gsr_damage_set_target_monitor: failed to find monitor: %s\n", monitor_name);
     }

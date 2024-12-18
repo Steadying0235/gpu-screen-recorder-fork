@@ -377,7 +377,7 @@ bool gsr_egl_load(gsr_egl *self, gsr_window *window, bool is_monitor_capture) {
     self->glx_library = dlopen("libGLX.so.0", RTLD_LAZY);
 
     self->gl_library = dlopen("libGL.so.1", RTLD_LAZY);
-    if(!self->egl_library) {
+    if(!self->gl_library) {
         fprintf(stderr, "gsr error: gsr_egl_load: failed to load libGL.so.1, error: %s\n", dlerror());
         goto fail;
     }

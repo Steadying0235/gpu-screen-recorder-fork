@@ -1080,15 +1080,14 @@ static void usage_full() {
     usage_header();
     printf("\n");
     printf("OPTIONS:\n");
-    printf("  -w    Window id to record, a display (monitor name), \"screen\", \"screen-direct-force\", \"focused\" or \"portal\".\n");
+    printf("  -w    Window id to record, a display (monitor name), \"screen\", \"screen-direct\", \"focused\" or \"portal\".\n");
     printf("        If this is \"portal\" then xdg desktop screencast portal with PipeWire will be used. Portal option is only available on Wayland.\n");
     printf("        If you select to save the session (token) in the desktop portal capture popup then the session will be saved for the next time you use \"portal\",\n");
     printf("        but the session will be ignored unless you run GPU Screen Recorder with the '-restore-portal-session yes' option.\n");
-    printf("        If this is \"screen\" or \"screen-direct-force\" then all monitors are recorded on Nvidia X11.\n");
-    printf("        On AMD/Intel or wayland \"screen\" will record the first monitor found.\n");
-    printf("        \"screen-direct-force\" is not recommended unless you use a VRR (G-SYNC) monitor on Nvidia X11 and you are aware that using this option can cause\n");
-    printf("        games to freeze/crash or other issues because of Nvidia driver issues.\n");
-    printf("        \"screen-direct-force\" option is only available on Nvidia X11. VRR works without this option on other systems.\n");
+    printf("        If this is \"screen\" then the first monitor found is recorded.\n");
+    printf("        \"screen-direct\" can only be used on Nvidia X11, to allow recording without breaking VRR (G-SYNC). This also records all of your monitors.\n");
+    printf("        Using this \"screen-direct\" option is not recommended unless you use VRR (G-SYNC) as there are Nvidia driver issues that can cause your system or games to freeze/crash.\n");
+    printf("        The \"screen-direct\" option is not needed on AMD, Intel nor Nvidia on Wayland as VRR works properly in those cases.\n");
     printf("        Run GPU Screen Recorder with the --list-capture-options option to list valid values for this option.\n");
     printf("\n");
     printf("  -c    Container format for output file, for example mp4, or flv. Only required if no output file is specified or if recording in replay buffer mode.\n");
@@ -2060,7 +2059,7 @@ static void output_monitor_info(const gsr_monitor *monitor, void *userdata) {
     }
 }
 
-static void list_supported_capture_options(const gsr_window *window, const char *card_path, gsr_gpu_vendor vendor, bool list_monitors) {
+static void list_supported_capture_options(const gsr_window *window, const char *card_path, bool list_monitors) {
     const bool wayland = gsr_window_get_display_server(window) == GSR_DISPLAY_SERVER_WAYLAND;
     if(!wayland) {
         puts("window");
@@ -2070,14 +2069,9 @@ static void list_supported_capture_options(const gsr_window *window, const char 
     if(list_monitors) {
         capture_options_callback options;
         options.window = window;
-        if(monitor_capture_use_drm(window, vendor)) {
-            const bool is_x11 = gsr_window_get_display_server(window) == GSR_DISPLAY_SERVER_X11;
-            const gsr_connection_type connection_type = is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
-            for_each_active_monitor_output(window, card_path, connection_type, output_monitor_info, &options);
-        } else {
-            puts("screen"); // All monitors in one, only available on Nvidia X11
-            for_each_active_monitor_output(window, card_path, GSR_CONNECTION_X11, output_monitor_info, &options);
-        }
+        const bool is_x11 = gsr_window_get_display_server(window) == GSR_DISPLAY_SERVER_X11;
+        const gsr_connection_type connection_type = is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
+        for_each_active_monitor_output(window, card_path, connection_type, output_monitor_info, &options);
     }
 
 #ifdef GSR_PORTAL
@@ -2155,7 +2149,7 @@ static void info_command() {
     puts("section=video_codecs");
     list_supported_video_codecs(&egl, wayland);
     puts("section=capture_options");
-    list_supported_capture_options(window, egl.card_path, egl.gpu_info.vendor, list_monitors);
+    list_supported_capture_options(window, egl.card_path, list_monitors);
 
     fflush(stdout);
 
@@ -2207,6 +2201,7 @@ static void list_application_audio_command() {
 
 // |card_path| can be NULL. If not NULL then |vendor| has to be valid
 static void list_capture_options_command(const char *card_path, gsr_gpu_vendor vendor) {
+    (void)vendor;
     bool wayland = false;
     Display *dpy = XOpenDisplay(nullptr);
     if (!dpy) {
@@ -2235,7 +2230,7 @@ static void list_capture_options_command(const char *card_path, gsr_gpu_vendor v
     }
 
     if(card_path) {
-        list_supported_capture_options(window, card_path, vendor, true);
+        list_supported_capture_options(window, card_path, true);
     } else {
         gsr_egl egl;
         if(!gsr_egl_load(&egl, window, false)) {
@@ -2252,7 +2247,7 @@ static void list_capture_options_command(const char *card_path, gsr_gpu_vendor v
                 list_monitors = false;
             }
         }
-        list_supported_capture_options(window, egl.card_path, egl.gpu_info.vendor, list_monitors);
+        list_supported_capture_options(window, egl.card_path, list_monitors);
     }
 
     fflush(stdout);
@@ -2278,6 +2273,35 @@ static bool gpu_vendor_from_string(const char *vendor_str, gsr_gpu_vendor *vendo
         return true;
     } else {
         return false;
+    }
+}
+
+static void validate_monitor_get_valid(const gsr_egl *egl, std::string &window_str) {
+    const bool is_x11 = gsr_window_get_display_server(egl->window) == GSR_DISPLAY_SERVER_X11;
+    const gsr_connection_type connection_type = is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
+    const bool capture_use_drm = monitor_capture_use_drm(egl->window, egl->gpu_info.vendor);
+
+    if(strcmp(window_str.c_str(), "screen") == 0) {
+        FirstOutputCallback first_output;
+        first_output.output_name = NULL;
+        for_each_active_monitor_output(egl->window, egl->card_path, connection_type, get_first_output, &first_output);
+
+        if(first_output.output_name) {
+            window_str = first_output.output_name;
+        } else {
+            fprintf(stderr, "Error: no usable output found\n");
+            _exit(1);
+        }
+    } else if(capture_use_drm || (strcmp(window_str.c_str(), "screen-direct") != 0 && strcmp(window_str.c_str(), "screen-direct-force") != 0)) {
+        gsr_monitor gmon;
+        if(!get_monitor_by_name(egl, connection_type, window_str.c_str(), &gmon)) {
+            fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str.c_str());
+            fprintf(stderr, "    \"screen\"\n");
+            if(!capture_use_drm)
+                fprintf(stderr, "    \"screen-direct\"\n");
+            for_each_active_monitor_output(egl->window, egl->card_path, connection_type, monitor_output_callback_print, NULL);
+            _exit(1);
+        }
     }
 }
 
@@ -2325,60 +2349,13 @@ static gsr_capture* create_capture_impl(std::string &window_str, vec2i output_re
         _exit(2);
 #endif
     } else if(contains_non_hex_number(window_str.c_str())) {
-        if(monitor_capture_use_drm(egl->window, egl->gpu_info.vendor)) {
-            const bool is_x11 = gsr_window_get_display_server(egl->window) == GSR_DISPLAY_SERVER_X11;
-            const gsr_connection_type connection_type = is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
-
-            if(strcmp(window_str.c_str(), "screen") == 0) {
-                FirstOutputCallback first_output;
-                first_output.output_name = NULL;
-                for_each_active_monitor_output(egl->window, egl->card_path, connection_type, get_first_output, &first_output);
-
-                if(first_output.output_name) {
-                    window_str = first_output.output_name;
-                } else {
-                    fprintf(stderr, "Error: no usable output found\n");
-                    _exit(1);
-                }
-            } else {
-                gsr_monitor gmon;
-                if(!get_monitor_by_name(egl, connection_type, window_str.c_str(), &gmon)) {
-                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str.c_str());
-                    fprintf(stderr, "    \"screen\"\n");
-                    for_each_active_monitor_output(egl->window, egl->card_path, connection_type, monitor_output_callback_print, NULL);
-                    _exit(1);
-                }
-            }
-        } else {
-            if(strcmp(window_str.c_str(), "screen") != 0 && strcmp(window_str.c_str(), "screen-direct") != 0 && strcmp(window_str.c_str(), "screen-direct-force") != 0) {
-                gsr_monitor gmon;
-                if(!get_monitor_by_name(egl, GSR_CONNECTION_X11, window_str.c_str(), &gmon)) {
-                    Display *display = (Display*)gsr_window_get_display(egl->window);
-                    const int screens_width = XWidthOfScreen(DefaultScreenOfDisplay(display));
-                    const int screens_height = XWidthOfScreen(DefaultScreenOfDisplay(display));
-                    fprintf(stderr, "gsr error: display \"%s\" not found, expected one of:\n", window_str.c_str());
-                    fprintf(stderr, "    \"screen\"    (%dx%d+%d+%d)\n", screens_width, screens_height, 0, 0);
-                    fprintf(stderr, "    \"screen-direct\"    (%dx%d+%d+%d)\n", screens_width, screens_height, 0, 0);
-                    fprintf(stderr, "    \"screen-direct-force\"    (%dx%d+%d+%d)\n", screens_width, screens_height, 0, 0);
-                    for_each_active_monitor_output(egl->window, egl->card_path, GSR_CONNECTION_X11, monitor_output_callback_print, NULL);
-                    _exit(1);
-                }
-            }
-        }
-
-        if(egl->gpu_info.vendor == GSR_GPU_VENDOR_NVIDIA && !wayland) {
+        validate_monitor_get_valid(egl, window_str);
+        if(!monitor_capture_use_drm(egl->window, egl->gpu_info.vendor)) {
             const char *capture_target = window_str.c_str();
-            bool direct_capture = strcmp(window_str.c_str(), "screen-direct") == 0;
+            const bool direct_capture = strcmp(window_str.c_str(), "screen-direct") == 0 || strcmp(window_str.c_str(), "screen-direct-force") == 0;
             if(direct_capture) {
                 capture_target = "screen";
-                // TODO: Temporary disable direct capture because push model causes stuttering when it's direct capturing. This might be a nvfbc bug. This does not happen when using a compositor.
-                direct_capture = false;
-                fprintf(stderr, "Warning: screen-direct has temporary been disabled as it causes stuttering. This is likely a NvFBC bug. Falling back to \"screen\".\n");
-            }
-
-            if(strcmp(window_str.c_str(), "screen-direct-force") == 0) {
-                direct_capture = true;
-                capture_target = "screen";
+                fprintf(stderr, "Warning: %s capture option is not recommended unless you use G-SYNC as Nvidia has driver issues that can cause your system or games to freeze/crash.\n", window_str.c_str());
             }
 
             gsr_capture_nvfbc_params nvfbc_params;

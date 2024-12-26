@@ -2290,7 +2290,7 @@ static void validate_monitor_get_valid(const gsr_egl *egl, std::string &window_s
             window_str = first_output.output_name;
         } else {
             fprintf(stderr, "Error: no usable output found\n");
-            _exit(1);
+            _exit(51);
         }
     } else if(capture_use_drm || (strcmp(window_str.c_str(), "screen-direct") != 0 && strcmp(window_str.c_str(), "screen-direct-force") != 0)) {
         gsr_monitor gmon;
@@ -2300,7 +2300,7 @@ static void validate_monitor_get_valid(const gsr_egl *egl, std::string &window_s
             if(!capture_use_drm)
                 fprintf(stderr, "    \"screen-direct\"\n");
             for_each_active_monitor_output(egl->window, egl->card_path, connection_type, monitor_output_callback_print, NULL);
-            _exit(1);
+            _exit(51);
         }
     }
 }
@@ -2389,7 +2389,7 @@ static gsr_capture* create_capture_impl(std::string &window_str, vec2i output_re
         }
     } else {
         if(wayland) {
-            fprintf(stderr, "Error: GPU Screen Recorder window capture only works in a pure X11 session. Xwayland is not supported. You can record a monitor instead on wayland\n");
+            fprintf(stderr, "Error: GPU Screen Recorder window capture only works in a pure X11 session. Xwayland is not supported. You can record a monitor instead on wayland or use -w portal option which supports window capture if your wayland compositor supports window capture\n");
             _exit(2);
         }
 
@@ -2510,7 +2510,7 @@ static std::vector<MergedAudioInputs> parse_audio_inputs(const AudioDevices &aud
                 for(const auto &audio_device_input : audio_devices.audio_inputs) {
                     fprintf(stderr, "    %s (%s)\n", audio_device_input.name.c_str(), audio_device_input.description.c_str());
                 }
-                _exit(2);
+                _exit(50);
             }
         }
     }

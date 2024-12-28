@@ -19,6 +19,7 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <drm_mode.h>
+#include <drm_fourcc.h>
 
 #define MAX_CONNECTORS 32
 
@@ -362,7 +363,7 @@ static int kms_get_fb(gsr_drm *drm, gsr_kms_response *response, connector_to_crt
         response->items[item_index].width = drmfb->width;
         response->items[item_index].height = drmfb->height;
         response->items[item_index].pixel_format = drmfb->pixel_format;
-        response->items[item_index].modifier = drmfb->modifier;
+        response->items[item_index].modifier = drmfb->flags & DRM_MODE_FB_MODIFIERS ? drmfb->modifier : DRM_FORMAT_MOD_INVALID;
         response->items[item_index].connector_id = crtc_pair ? crtc_pair->connector_id : 0;
         response->items[item_index].is_cursor = property_mask & PLANE_PROPERTY_IS_CURSOR;
         if(property_mask & PLANE_PROPERTY_IS_CURSOR) {

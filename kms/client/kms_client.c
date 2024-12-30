@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/wait.h>
+#include <sys/poll.h>
 #include <sys/stat.h>
 #include <sys/capability.h>
 
@@ -318,17 +319,14 @@ int gsr_kms_client_init(gsr_kms_client *self, const char *card_path) {
     }
 
     fprintf(stderr, "gsr info: gsr_kms_client_init: waiting for server to connect\n");
+    struct pollfd poll_fd = {
+        .fd = self->initial_socket_fd,
+        .events = POLLIN,
+        .revents = 0
+    };
     for(;;) {
-        struct timeval tv;
-        fd_set rfds;
-        FD_ZERO(&rfds);
-        FD_SET(self->initial_socket_fd, &rfds);
-
-        tv.tv_sec = 0;
-        tv.tv_usec = 100 * 1000; // 100 ms
-
-        int select_res = select(1 + self->initial_socket_fd, &rfds, NULL, NULL, &tv);
-        if(select_res > 0) {
+        int poll_res = poll(&poll_fd, 1, 100);
+        if(poll_res > 0 && (poll_fd.revents & POLLIN)) {
             socklen_t sock_len = 0;
             self->initial_client_fd = accept(self->initial_socket_fd, (struct sockaddr*)&remote_addr, &sock_len);
             if(self->initial_client_fd == -1) {

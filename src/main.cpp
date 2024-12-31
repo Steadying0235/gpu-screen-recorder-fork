@@ -3072,17 +3072,17 @@ int main(int argc, char **argv) {
     for(int i = 1; i < argc; i += 2) {
         auto it = args.find(argv[i]);
         if(it == args.end()) {
-            fprintf(stderr, "Invalid argument '%s'\n", argv[i]);
+            fprintf(stderr, "Error: invalid argument '%s'\n", argv[i]);
             usage();
         }
 
         if(!it->second.values.empty() && !it->second.list) {
-            fprintf(stderr, "Expected argument '%s' to only be specified once\n", argv[i]);
+            fprintf(stderr, "Error: expected argument '%s' to only be specified once\n", argv[i]);
             usage();
         }
 
         if(i + 1 >= argc) {
-            fprintf(stderr, "Missing value for argument '%s'\n", argv[i]);
+            fprintf(stderr, "Error: missing value for argument '%s'\n", argv[i]);
             usage();
         }
 
@@ -3091,7 +3091,7 @@ int main(int argc, char **argv) {
 
     for(auto &it : args) {
         if(!it.second.optional && !it.second.value()) {
-            fprintf(stderr, "Missing argument '%s'\n", it.first.c_str());
+            fprintf(stderr, "Error: missing argument '%s'\n", it.first.c_str());
             usage();
         }
     }

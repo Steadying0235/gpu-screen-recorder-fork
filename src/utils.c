@@ -417,8 +417,8 @@ static bool version_greater_than(int major, int minor, int patch, int other_majo
     return (major > other_major) || (major == other_major && minor > other_minor) || (major == other_major && minor == other_minor && patch > other_patch);
 }
 
-bool gl_driver_version_greater_than(const gsr_egl *egl, int major, int minor, int patch) {
-    return version_greater_than(egl->gpu_info.driver_major, egl->gpu_info.driver_minor, egl->gpu_info.driver_patch, major, minor, patch);
+bool gl_driver_version_greater_than(const gsr_gpu_info *gpu_info, int major, int minor, int patch) {
+    return version_greater_than(gpu_info->driver_major, gpu_info->driver_minor, gpu_info->driver_patch, major, minor, patch);
 }
 
 bool try_card_has_valid_plane(const char *card_path) {

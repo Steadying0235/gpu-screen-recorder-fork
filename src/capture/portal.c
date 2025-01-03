@@ -310,7 +310,7 @@ static int gsr_capture_portal_start(gsr_capture *cap, AVCodecContext *video_code
         video_codec_context->height = FFALIGN(self->params.output_resolution.y, 2);
     }
 
-    self->fast_path_failed = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && !gl_driver_version_greater_than(self->params.egl, 24, 0, 9);
+    self->fast_path_failed = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && !gl_driver_version_greater_than(&self->params.egl->gpu_info, 24, 0, 9);
     if(self->fast_path_failed)
         fprintf(stderr, "gsr warning: gsr_capture_kms_start: your amd driver (mesa) version is known to be buggy (<= version 24.0.9), falling back to opengl copy\n");
 

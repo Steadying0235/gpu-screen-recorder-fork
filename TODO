@@ -208,3 +208,5 @@ Ffmpeg fixed black bars in videos on amd when using hevc and when recording at s
     https://github.com/FFmpeg/FFmpeg/commit/bcfbf2bac8f9eeeedc407b40596f5c7aaa0d5b47
     https://github.com/FFmpeg/FFmpeg/commit/d0facac679faf45d3356dff2e2cb382580d7a521
     Disable gpu screen recorder black bar handling when using hevc on amd when the libavcodec version is the one that comes after those commits.
+
+Use opengl compute shader instead of graphics shader. This might allow for better performance when games are using 100% of graphics unit which might fix issue with 100% gpu usage causing gpu screen recorder to run slow when not using vaapi to convert rgb to nv12(?).

@@ -1894,7 +1894,7 @@ static bool is_xwayland(Display *display) {
 
 static bool is_using_prime_run() {
     const char *prime_render_offload = getenv("__NV_PRIME_RENDER_OFFLOAD");
-    return prime_render_offload && strcmp(prime_render_offload, "1") == 0;
+    return (prime_render_offload && strcmp(prime_render_offload, "1") == 0) || getenv("DRI_PRIME");
 }
 
 static void disable_prime_run() {
@@ -1902,6 +1902,7 @@ static void disable_prime_run() {
     unsetenv("__NV_PRIME_RENDER_OFFLOAD_PROVIDER");
     unsetenv("__GLX_VENDOR_LIBRARY_NAME");
     unsetenv("__VK_LAYER_NV_optimus");
+    unsetenv("DRI_PRIME");
 }
 
 static gsr_window* gsr_window_create(Display *display, bool wayland) {

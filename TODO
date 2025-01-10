@@ -216,3 +216,6 @@ Always disable prime run/dri prime and list all monitors to record from from all
     On Wayland each gpu will have its own list of monitors with framebuffers.
         Iterate through all cards with drm and list all monitors with associated framebuffers and when choosing a monitor to record
         automatically use the associated gpu card.
+
+Allow flv av1 if recent ffmpeg version and streaming to youtube (and twitch?) and for custom services.
+Use explicit sync in pipewire video code: https://docs.pipewire.org/page_dma_buf.html.

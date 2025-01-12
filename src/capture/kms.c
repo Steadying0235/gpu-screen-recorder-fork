@@ -18,6 +18,8 @@
 #include <libavutil/mastering_display_metadata.h>
 #include <libavformat/avformat.h>
 
+#define FIND_CRTC_BY_NAME_TIMEOUT_SECONDS 2.0
+
 #define HDMI_STATIC_METADATA_TYPE1 0
 #define HDMI_EOTF_SMPTE_ST2084 2
 
@@ -63,6 +65,8 @@ typedef struct {
 
     vec2i prev_target_pos;
     vec2i prev_plane_size;
+
+    double last_time_monitor_check;
 } gsr_capture_kms;
 
 static void gsr_capture_kms_cleanup_kms_fds(gsr_capture_kms *self) {
@@ -235,6 +239,7 @@ static int gsr_capture_kms_start(gsr_capture *cap, AVCodecContext *video_codec_c
     frame->height = video_codec_context->height;
 
     self->video_codec_context = video_codec_context;
+    self->last_time_monitor_check = clock_get_monotonic_seconds();
     return 0;
 }
 
@@ -428,7 +433,7 @@ static gsr_kms_response_item* find_monitor_drm(gsr_capture_kms *self, bool *capt
     }
 
     // Will never happen on wayland unless the target monitor has been disconnected
-    if(!drm_fd) {
+    if(!drm_fd && self->is_x11) {
         drm_fd = find_largest_drm(&self->kms_response);
         *capture_is_combined_plane = true;
     }
@@ -555,6 +560,45 @@ static void gsr_capture_kms_update_capture_size_change(gsr_capture_kms *self, gs
     }
 }
 
+static void gsr_capture_kms_update_connector_ids(gsr_capture_kms *self) {
+    const double now = clock_get_monotonic_seconds();
+    if(now - self->last_time_monitor_check < FIND_CRTC_BY_NAME_TIMEOUT_SECONDS)
+        return;
+
+    self->last_time_monitor_check = now;
+    /* TODO: Assume for now that there is only 1 framebuffer for all monitors and it doesn't change */
+    if(self->is_x11)
+        return;
+
+    self->monitor_id.num_connector_ids = 0;
+    const gsr_connection_type connection_type = self->is_x11 ? GSR_CONNECTION_X11 : GSR_CONNECTION_DRM;
+    // MonitorCallbackUserdata monitor_callback_userdata = {
+    //     &self->monitor_id,
+    //     self->params.display_to_capture, strlen(self->params.display_to_capture),
+    //     0,
+    // };
+    // for_each_active_monitor_output(self->params.egl->window, self->params.egl->card_path, connection_type, monitor_callback, &monitor_callback_userdata);
+
+    gsr_monitor monitor;
+    if(!get_monitor_by_name(self->params.egl, connection_type, self->params.display_to_capture, &monitor)) {
+        fprintf(stderr, "gsr error: gsr_capture_kms_update_connector_ids: failed to find monitor by name \"%s\"\n", self->params.display_to_capture);
+        return;
+    }
+
+    self->monitor_id.num_connector_ids = 1;
+    self->monitor_id.connector_ids[0] = monitor.connector_id;
+
+    monitor.name = self->params.display_to_capture;
+    self->monitor_rotation = drm_monitor_get_display_server_rotation(self->params.egl->window, &monitor);
+
+    self->capture_pos = monitor.pos;
+    /* Monitor size is already rotated on x11 when the monitor is rotated, no need to apply it ourselves */
+    if(self->is_x11)
+        self->capture_size = monitor.size;
+    else
+        self->capture_size = rotate_capture_size_if_rotated(self, monitor.size);
+}
+
 static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
     gsr_capture_kms *self = cap->priv;
 
@@ -573,6 +617,8 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
         }
         return -1;
     }
+
+    gsr_capture_kms_update_connector_ids(self);
 
     bool capture_is_combined_plane = false;
     const gsr_kms_response_item *drm_fd = find_monitor_drm(self, &capture_is_combined_plane);

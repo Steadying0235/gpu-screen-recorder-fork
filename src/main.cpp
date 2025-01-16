@@ -1069,7 +1069,7 @@ static void open_video_hardware(AVCodecContext *codec_context, VideoQuality vide
 static void usage_header() {
     const bool inside_flatpak = getenv("FLATPAK_ID") != NULL;
     const char *program_name = inside_flatpak ? "flatpak run --command=gpu-screen-recorder com.dec05eba.gpu_screen_recorder" : "gpu-screen-recorder";
-    printf("usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr|cbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [--list-capture-options [card_path] [vendor]] [--list-audio-devices] [--list-application-audio] [-v yes|no] [--version] [-h|--help]\n", program_name);
+    printf("usage: %s -w <window_id|monitor|focused|portal> [-c <container_format>] [-s WxH] -f <fps> [-a <audio_input>] [-q <quality>] [-r <replay_buffer_size_sec>] [-k h264|hevc|av1|vp8|vp9|hevc_hdr|av1_hdr|hevc_10bit|av1_10bit] [-ac aac|opus|flac] [-ab <bitrate>] [-oc yes|no] [-fm cfr|vfr|content] [-bm auto|qp|vbr|cbr] [-cr limited|full] [-df yes|no] [-sc <script_path>] [-cursor yes|no] [-keyint <value>] [-restore-portal-session yes|no] [-portal-session-token-filepath filepath] [-encoder gpu|cpu] [-o <output_file>] [--list-capture-options [card_path] [vendor]] [--list-audio-devices] [--list-application-audio] [-v yes|no] [-gl-debug yes|no] [--version] [-h|--help]\n", program_name);
     fflush(stdout);
 }
 
@@ -1228,6 +1228,9 @@ static void usage_full() {
     printf("        Note: the directory to the file is created automatically if it doesn't already exist.\n");
     printf("\n");
     printf("  -v    Prints fps and damage info once per second. Optional, set to 'yes' by default.\n");
+    printf("\n");
+    printf("  -gl-debug\n");
+    printf("        Print opengl debug output. Optional, set to 'no' by default.\n");
     printf("\n");
     printf("  -h, --help\n");
     printf("        Show this help.\n");
@@ -2122,7 +2125,7 @@ static void info_command() {
     }
 
     gsr_egl egl;
-    if(!gsr_egl_load(&egl, window, false)) {
+    if(!gsr_egl_load(&egl, window, false, false)) {
         fprintf(stderr, "gsr error: failed to load opengl\n");
         _exit(22);
     }
@@ -2234,7 +2237,7 @@ static void list_capture_options_command(const char *card_path, gsr_gpu_vendor v
         list_supported_capture_options(window, card_path, true);
     } else {
         gsr_egl egl;
-        if(!gsr_egl_load(&egl, window, false)) {
+        if(!gsr_egl_load(&egl, window, false, false)) {
             fprintf(stderr, "gsr error: failed to load opengl\n");
             _exit(1);
         }
@@ -3060,6 +3063,7 @@ int main(int argc, char **argv) {
         { "-bm", Arg { {}, true, false } },
         { "-pixfmt", Arg { {}, true, false } },
         { "-v", Arg { {}, true, false } },
+        { "-gl-debug", Arg { {}, true, false } },
         { "-df", Arg { {}, true, false } },
         { "-sc", Arg { {}, true, false } },
         { "-cr", Arg { {}, true, false } },
@@ -3224,6 +3228,20 @@ int main(int argc, char **argv) {
         verbose = false;
     } else {
         fprintf(stderr, "Error: -v should either be either 'yes' or 'no', got: '%s'\n", verbose_str);
+        usage();
+    }
+
+    bool gl_debug = false;
+    const char *gl_debug_str = args["-gl-debug"].value();
+    if(!gl_debug_str)
+        gl_debug_str = "no";
+
+    if(strcmp(gl_debug_str, "yes") == 0) {
+        gl_debug = true;
+    } else if(strcmp(gl_debug_str, "no") == 0) {
+        gl_debug = false;
+    } else {
+        fprintf(stderr, "Error: -gl-debug should either be either 'yes' or 'no', got: '%s'\n", gl_debug_str);
         usage();
     }
 
@@ -3409,7 +3427,7 @@ int main(int argc, char **argv) {
 
     const bool is_monitor_capture = strcmp(window_str.c_str(), "focused") != 0 && !is_portal_capture && contains_non_hex_number(window_str.c_str());
     gsr_egl egl;
-    if(!gsr_egl_load(&egl, window, is_monitor_capture)) {
+    if(!gsr_egl_load(&egl, window, is_monitor_capture, gl_debug)) {
         fprintf(stderr, "gsr error: failed to load opengl\n");
         _exit(1);
     }

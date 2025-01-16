@@ -277,7 +277,7 @@ struct gsr_egl {
     unsigned char (*glUnmapBuffer)(unsigned int target);
 };
 
-bool gsr_egl_load(gsr_egl *self, gsr_window *window, bool is_monitor_capture);
+bool gsr_egl_load(gsr_egl *self, gsr_window *window, bool is_monitor_capture, bool enable_debug);
 void gsr_egl_unload(gsr_egl *self);
 
 /* Does opengl swap with egl or glx, depending on which one is active */

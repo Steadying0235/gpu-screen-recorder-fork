@@ -344,25 +344,18 @@ static bool gsr_egl_load_gl(gsr_egl *self, void *library) {
     return true;
 }
 
-// #define GL_DEBUG_TYPE_ERROR               0x824C
-// static void debug_callback( unsigned int source,
-//                  unsigned int type,
-//                  unsigned int id,
-//                  unsigned int severity,
-//                  int length,
-//                  const char* message,
-//                  const void* userParam )
-// {
-//     (void)source;
-//     (void)id;
-//     (void)length;
-//     (void)userParam;
-//   fprintf( stderr, "GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n",
-//            ( type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : "" ),
-//             type, severity, message );
-// }
+#define GL_DEBUG_TYPE_ERROR               0x824C
+#define GL_DEBUG_SEVERITY_NOTIFICATION    0x826B
+static void debug_callback(unsigned int source, unsigned int type, unsigned int id, unsigned int severity, int length, const char* message, const void* userParam) {
+    (void)source;
+    (void)id;
+    (void)length;
+    (void)userParam;
+    if(severity != GL_DEBUG_SEVERITY_NOTIFICATION)
+        fprintf(stderr, "gsr info: gl callback: %s type = 0x%x, severity = 0x%x, message = %s\n", type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : "", type, severity, message);
+}
 
-bool gsr_egl_load(gsr_egl *self, gsr_window *window, bool is_monitor_capture) {
+bool gsr_egl_load(gsr_egl *self, gsr_window *window, bool is_monitor_capture, bool enable_debug) {
     memset(self, 0, sizeof(gsr_egl));
     self->context_type = GSR_GL_CONTEXT_TYPE_EGL;
     self->window = window;
@@ -418,8 +411,10 @@ bool gsr_egl_load(gsr_egl *self, gsr_window *window, bool is_monitor_capture) {
     self->glEnable(GL_BLEND);
     self->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    //self->glEnable(GL_DEBUG_OUTPUT);
-    //self->glDebugMessageCallback(debug_callback, NULL);
+    if(enable_debug) {
+        self->glEnable(GL_DEBUG_OUTPUT);
+        self->glDebugMessageCallback(debug_callback, NULL);
+    }
 
     return true;
 

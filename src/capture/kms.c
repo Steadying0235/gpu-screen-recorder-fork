@@ -58,6 +58,7 @@ typedef struct {
     AVCodecContext *video_codec_context;
     bool performance_error_shown;
     bool fast_path_failed;
+    bool mesa_supports_compute_only_vaapi_copy;
 
     //int drm_fd;
     //uint64_t prev_sequence;
@@ -234,6 +235,8 @@ static int gsr_capture_kms_start(gsr_capture *cap, AVCodecContext *video_codec_c
     self->fast_path_failed = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && !gl_driver_version_greater_than(&self->params.egl->gpu_info, 24, 0, 9);
     if(self->fast_path_failed)
         fprintf(stderr, "gsr warning: gsr_capture_kms_start: your amd driver (mesa) version is known to be buggy (<= version 24.0.9), falling back to opengl copy\n");
+
+    self->mesa_supports_compute_only_vaapi_copy = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && gl_driver_version_greater_than(&self->params.egl->gpu_info, 24, 3, 3);
 
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
@@ -599,6 +602,16 @@ static void gsr_capture_kms_update_connector_ids(gsr_capture_kms *self) {
         self->capture_size = rotate_capture_size_if_rotated(self, monitor.size);
 }
 
+static void gsr_capture_kms_fail_fast_path_if_not_fast(gsr_capture_kms *self, uint32_t pixel_format) {
+    const uint8_t pixel_format_color_depth_1 = (pixel_format >> 16) & 0xFF;
+    if(!self->fast_path_failed && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && !self->mesa_supports_compute_only_vaapi_copy && (pixel_format_color_depth_1 == '3' || pixel_format_color_depth_1 == '4')) {
+        self->fast_path_failed = true;
+        fprintf(stderr, "gsr warning: gsr_capture_kms_capture: the monitor you are recording is in 10/12-bit color format and your mesa version is <= 24.3.3, composition will be used."
+            " If you experience performance problems in the video then record on a single window on X11 or use portal capture option instead or disable 10/12-bit color option in your desktop environment settings,"
+            " or try to record the monitor on X11 instead (if you aren't already doing that) or update your mesa version.\n");
+    }
+}
+
 static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
     gsr_capture_kms *self = cap->priv;
 
@@ -632,9 +645,12 @@ static int gsr_capture_kms_capture(gsr_capture *cap, AVFrame *frame, gsr_color_c
 
     if(!self->performance_error_shown && self->monitor_rotation != GSR_MONITOR_ROT_0 && video_codec_context_is_vaapi(self->video_codec_context) && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD) {
         self->performance_error_shown = true;
-        fprintf(stderr,"gsr warning: gsr_capture_kms_capture: the monitor you are recording is rotated, composition will have to be used."
-            " If you are experience performance problems in the video then record a single window on X11 or use portal capture option instead\n");
+        self->fast_path_failed = true;
+        fprintf(stderr, "gsr warning: gsr_capture_kms_capture: the monitor you are recording is rotated, composition will have to be used."
+            " If you experience performance problems in the video then record a single window on X11 or use portal capture option instead\n");
     }
+
+    gsr_capture_kms_fail_fast_path_if_not_fast(self, drm_fd->pixel_format);
 
     self->capture_size = rotate_capture_size_if_rotated(self, (vec2i){ drm_fd->src_w, drm_fd->src_h });
 

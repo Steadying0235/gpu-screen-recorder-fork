@@ -27,6 +27,7 @@ typedef struct {
 
     AVCodecContext *video_codec_context;
     bool fast_path_failed;
+    bool mesa_supports_compute_only_vaapi_copy;
 } gsr_capture_portal;
 
 static void gsr_capture_portal_cleanup_plane_fds(gsr_capture_portal *self) {
@@ -314,6 +315,8 @@ static int gsr_capture_portal_start(gsr_capture *cap, AVCodecContext *video_code
     if(self->fast_path_failed)
         fprintf(stderr, "gsr warning: gsr_capture_kms_start: your amd driver (mesa) version is known to be buggy (<= version 24.0.9), falling back to opengl copy\n");
 
+    self->mesa_supports_compute_only_vaapi_copy = self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && gl_driver_version_greater_than(&self->params.egl->gpu_info, 24, 3, 3);
+
     frame->width = video_codec_context->width;
     frame->height = video_codec_context->height;
 
@@ -323,6 +326,16 @@ static int gsr_capture_portal_start(gsr_capture *cap, AVCodecContext *video_code
 
 static int max_int(int a, int b) {
     return a > b ? a : b;
+}
+
+static void gsr_capture_portal_fail_fast_path_if_not_fast(gsr_capture_portal *self, uint32_t pixel_format) {
+    const uint8_t pixel_format_color_depth_1 = (pixel_format >> 16) & 0xFF;
+    if(!self->fast_path_failed && self->params.egl->gpu_info.vendor == GSR_GPU_VENDOR_AMD && !self->mesa_supports_compute_only_vaapi_copy && (pixel_format_color_depth_1 == '3' || pixel_format_color_depth_1 == '4')) {
+        self->fast_path_failed = true;
+        fprintf(stderr, "gsr warning: gsr_capture_kms_capture: the monitor you are recording is in 10/12-bit color format and your mesa version is <= 24.3.3, composition will be used."
+            " If you experience performance problems in the video then record on a single window on X11 instead or disable 10/12-bit color option in your desktop environment settings,"
+            " or try to record the monitor on X11 instead (if you aren't already doing that) or update your mesa version.\n");
+    }
 }
 
 static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_color_conversion *color_conversion) {
@@ -345,6 +358,8 @@ static int gsr_capture_portal_capture(gsr_capture *cap, AVFrame *frame, gsr_colo
     } else {
         return 0;
     }
+
+    gsr_capture_portal_fail_fast_path_if_not_fast(self, pipewire_fourcc);
 
     const bool is_scaled = self->params.output_resolution.x > 0 && self->params.output_resolution.y > 0;
     vec2i output_size = is_scaled ? self->params.output_resolution : self->capture_size;

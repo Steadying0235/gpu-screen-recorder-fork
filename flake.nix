@@ -64,13 +64,12 @@
 
           ];
 
-          # Set any necessary environment variables here
+           # For runtime linker to locate libraries like libEGL.so.1
           shellHook = ''
             export CXX=${pkgs.gcc}/bin/g++
             export CC=${pkgs.gcc}/bin/gcc
+            export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [pkgs.mesa pkgs.libglvnd]}:$LD_LIBRARY_PATH
           '';
-
-          # Optionally, you can provide additional setup commands or environment variables
         };
       }
     );

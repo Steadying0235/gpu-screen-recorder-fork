@@ -60,6 +60,7 @@
             # Additional Runtime Dependencies
             pipewire
             dbus
+            pkg-config
 
           ];
 
